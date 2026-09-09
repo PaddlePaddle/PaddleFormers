@@ -171,6 +171,7 @@ from ..utils.tools import paddle_device
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
+from .startup_profile import span as _sprof_span
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
@@ -1291,7 +1292,8 @@ class Trainer:
             assert len(metadata_files) == 1, f"Found multiple metadata files in {path}"
             return metadata_files[0]
 
-        model_sharded_state_dict = self.model.sharded_state_dict()
+        with _sprof_span("sharded_state_dict"):
+            model_sharded_state_dict = self.model.sharded_state_dict()
         master_weights_path = os.path.join(resume_from_checkpoint, MASTER_WEIGHT_DIC)
         opt_states_path = os.path.join(resume_from_checkpoint, OPTIMIZER_STATE_DIC)
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
@@ -1387,14 +1389,16 @@ class Trainer:
             os.path.join(master_weights_path, get_metadata_file_name(master_weights_path)),
         ]
 
-        for metadata_file in metadata_paths:
-            if not os.path.exists(metadata_file):
-                raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
-            metadata = paddle.load(metadata_file)
-            state_dict_metadata.update(metadata.state_dict_metadata)
+        with _sprof_span("read_metadata"):
+            for metadata_file in metadata_paths:
+                if not os.path.exists(metadata_file):
+                    raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
+                metadata = paddle.load(metadata_file)
+                state_dict_metadata.update(metadata.state_dict_metadata)
 
         if not self.args.sharded_model_from_ema:
-            init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+            with _sprof_span("init_optimizer"):
+                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
             # ===== EMA State Resharding for ZCC (right after optimizer init) =====
             # Non-ZCC handles reshard internally in EMABufferFcBased._load()
@@ -1421,7 +1425,8 @@ class Trainer:
                     else:
                         logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
 
-            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+            with _sprof_span("opt_sharded_state_dict"):
+                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
             opt_states = {}
             master_weights = {}
             for k, v in optimizer_sharded_state_dict.items():
@@ -1438,14 +1443,18 @@ class Trainer:
                 logger.info("[AOAConfig] generate master_weight_aoa by _gen_ckpt_convert_aoa !")
                 master_weight_aoa = self.model._gen_ckpt_convert_aoa(self.model.config)
 
-            dist.load_state_dict(
-                master_weights,
-                master_weights_path,
-                aoa_config=master_weight_aoa,
-                offload=self.args.load_via_cpu,
-                comm_method=flex_ckpt_comm_method,
-                worker_groups=worker_groups,
-            )
+            # The three loads below are opaque from here -- the work happens inside
+            # FlexCheckpoint -- so each span carries the number of tensors it was
+            # asked for, which is what turns the duration into a per-tensor cost.
+            with _sprof_span("load_master_weight", collective=True, n=len(master_weights)):
+                dist.load_state_dict(
+                    master_weights,
+                    master_weights_path,
+                    aoa_config=master_weight_aoa,
+                    offload=self.args.load_via_cpu,
+                    comm_method=flex_ckpt_comm_method,
+                    worker_groups=worker_groups,
+                )
 
             if not self.args.ignore_load_lr_and_optim:
                 opt_stat_aoa = self.args.aoa_config
@@ -1455,14 +1464,15 @@ class Trainer:
                     logger.info("[AOAConfig] generate opt_stat_aoa by _gen_ckpt_convert_aoa !")
                     opt_stat_aoa = self.model._gen_ckpt_convert_aoa(self.model.config, target="opt_state")
 
-                dist.load_state_dict(
-                    opt_states,
-                    opt_states_path,
-                    aoa_config=opt_stat_aoa,
-                    offload=self.args.load_via_cpu,
-                    comm_method=flex_ckpt_comm_method,
-                    worker_groups=worker_groups,
-                )
+                with _sprof_span("load_opt_state", collective=True, n=len(opt_states)):
+                    dist.load_state_dict(
+                        opt_states,
+                        opt_states_path,
+                        aoa_config=opt_stat_aoa,
+                        offload=self.args.load_via_cpu,
+                        comm_method=flex_ckpt_comm_method,
+                        worker_groups=worker_groups,
+                    )
                 self._load_scheduler(resume_from_checkpoint)
 
             if self.args.tensorwise_offload_optimizer:
@@ -1542,17 +1552,19 @@ class Trainer:
             else:
                 aoa_config = self.args.aoa_config
 
-            dist.load_state_dict(
-                model_sharded_state_dict,
-                model_states_path,
-                aoa_config=aoa_config,
-                offload=self.args.load_via_cpu,
-                comm_method=flex_ckpt_comm_method,
-                worker_groups=worker_groups,
-            )
+            with _sprof_span("load_model_state", collective=True, n=len(model_sharded_state_dict)):
+                dist.load_state_dict(
+                    model_sharded_state_dict,
+                    model_states_path,
+                    aoa_config=aoa_config,
+                    offload=self.args.load_via_cpu,
+                    comm_method=flex_ckpt_comm_method,
+                    worker_groups=worker_groups,
+                )
 
         if enable_bf16_opt:
-            opt_state_dict = self.optimizer.state_dict()
+            with _sprof_span("opt_state_dict"):
+                opt_state_dict = self.optimizer.state_dict()
 
             def _assign_master_weights_to_model(master_weights):
                 model_state_dict = self.model.state_dict()
@@ -1588,13 +1600,18 @@ class Trainer:
                 # _restore_master_weights_2d_on_device can gather them in place.
                 # 1D parameters go through ShardingV2's redistribute-and-
                 # concatenate, which is host-resident, so they move to host here.
-                for k, v in tmp.items():
-                    name = v.name
-                    if k in param_2d_names and reshard_util.use_device_gather():
-                        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16)
-                    else:
-                        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
-                    master_weights[k].name = name
+                #
+                # Timed separately from the restores below: this loop is pure
+                # cast + device-to-host copy, so a large number here means the
+                # D2H traffic dominates, not the reshard collectives.
+                with _sprof_span("mw_cast_bf16", n=len(tmp), n_2d=len(param_2d_names)):
+                    for k, v in tmp.items():
+                        name = v.name
+                        if k in param_2d_names and reshard_util.use_device_gather():
+                            master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16)
+                        else:
+                            master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+                        master_weights[k].name = name
 
                 structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
 
@@ -1617,26 +1634,34 @@ class Trainer:
                     device_param_sink = {
                         p.name: p for p in self.model.state_dict().values() if p.dtype == paddle.bfloat16
                     }
-                    restored_2d = _restore_master_weights_2d_on_device(mw_2d, group, device_param_sink)
-                    if restored_2d is None:  # reshard_master_weight_device_gather=False
-                        restored_2d = _restore_master_weights_single(
-                            mw_2d,
+                    # 2D and 1D are separate spans because they use different reshard
+                    # paths -- device gather vs ShardingV2's host-resident
+                    # redistribute-and-concatenate -- and in practice one of the two
+                    # dominates. `restore_2d_host` names the fallback explicitly so a
+                    # report shows which path actually ran.
+                    with _sprof_span("restore_2d", collective=True, n=len(mw_2d)):
+                        restored_2d = _restore_master_weights_2d_on_device(mw_2d, group, device_param_sink)
+                        if restored_2d is None:  # reshard_master_weight_device_gather=False
+                            with _sprof_span("restore_2d_host", collective=True):
+                                restored_2d = _restore_master_weights_single(
+                                    mw_2d,
+                                    self.model,
+                                    self.optimizer,
+                                    group,
+                                    structure_name_map,
+                                    reshard_util.sharding_v1.restore,
+                                )
+                    all_master_weights.update(restored_2d)
+
+                    with _sprof_span("restore_1d", collective=True, n=len(mw_1d)):
+                        restored_1d = _restore_master_weights_single(
+                            mw_1d,
                             self.model,
                             self.optimizer,
                             group,
                             structure_name_map,
-                            reshard_util.sharding_v1.restore,
+                            reshard_util.sharding_v2.restore,
                         )
-                    all_master_weights.update(restored_2d)
-
-                    restored_1d = _restore_master_weights_single(
-                        mw_1d,
-                        self.model,
-                        self.optimizer,
-                        group,
-                        structure_name_map,
-                        reshard_util.sharding_v2.restore,
-                    )
                     all_master_weights.update(restored_1d)
 
                     master_weights = all_master_weights
@@ -1648,16 +1673,26 @@ class Trainer:
                         if sharding_strategy == SHARDING_STRATEGY_V1
                         else reshard_util.sharding_v2.restore
                     )
-                    master_weights = _restore_master_weights_single(
-                        master_weights, self.model, self.optimizer, group, structure_name_map, restore_func
-                    )
+                    with _sprof_span("restore_master_weights", collective=True, n=len(master_weights)):
+                        master_weights = _restore_master_weights_single(
+                            master_weights, self.model, self.optimizer, group, structure_name_map, restore_func
+                        )
 
-                _assign_master_weights_to_model(master_weights)
+                # Final fp32 -> bf16 assign into the model parameters. Anything the
+                # device gather already wrote in place is skipped here, so a large
+                # number means the host path carried most of the parameters.
+                with _sprof_span("assign_to_model", n=len(master_weights)):
+                    _assign_master_weights_to_model(master_weights)
 
-            with paddle.no_grad():
+            # fp32 master weight -> bf16 parameter write-back. Broken down inside
+            # into the split, the cast and the per-sharding-group restores, because
+            # on a large job this block dominates the whole checkpoint load and a
+            # single number does not say which of those three to attack.
+            with _sprof_span("master_weight_writeback", collective=True), paddle.no_grad():
                 if paddle.distributed.is_initialized():
                     group_getter = GroupGetter(self.model)
-                    opt_state_dict = split_opt_state(opt_state_dict, group_getter)
+                    with _sprof_span("split_opt_state"):
+                        opt_state_dict = split_opt_state(opt_state_dict, group_getter)
                     for gid in group_getter.get_group_ids():
                         sub_opt_state_dict = opt_state_dict.get(gid, {})
                         group = group_getter.get_group_by_id(gid)
@@ -4727,12 +4762,20 @@ class Trainer:
                 inputs, self.optimizer, self.lr_scheduler
             )  # None, None => [optimizer, lr_scheduler]
 
-        if PipelineDatasetPreprocessor is None or self.args.use_dualpipev:
-            inputs = _dataset_process_function()
-        else:
-            inputs = PipelineDatasetPreprocessor(_dataset_process_function)
+        # With gradient_accumulation_steps > 1 the early micro-steps only push data
+        # into _pp_data_buffer and return above, so the whole cost of the first
+        # pipeline step lands on the last call, in these two blocks. Splitting them
+        # tells data preparation apart from pipeline scheduling.
+        with _sprof_span("pp_dataset_prepare"):
+            if PipelineDatasetPreprocessor is None or self.args.use_dualpipev:
+                inputs = _dataset_process_function()
+            else:
+                # Lazy branch: the real work happens inside forward_backward_pipeline,
+                # so this span reads near zero. Do not conclude that data preparation
+                # is free.
+                inputs = PipelineDatasetPreprocessor(_dataset_process_function)
 
-        with self.autocast_smart_context_manager():
+        with self.autocast_smart_context_manager(), _sprof_span("pp_forward_backward", collective=True):
             loss = model.forward_backward_pipeline(inputs, self.scaler if self.do_grad_scaling else None)
 
         # MTP magic send: reset per-depth counters after each optimizer step
