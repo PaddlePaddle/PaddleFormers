@@ -4505,6 +4505,17 @@ class Trainer:
 
         return loss.detach()
 
+    def _fsdp_all_gather_params(self):
+        from paddle.distributed.fsdp._fsdp_context import get_fsdp_context
+
+        fsdp_context = get_fsdp_context()
+        if fsdp_context is None:
+            logger.warning("sharding=fsdp but no fsdp context is registered, skip param all_gather.")
+            return
+        comm_manager = fsdp_context.comm_manager
+        for group in fsdp_context.buffer_manager.buffer_groups:
+            comm_manager.all_gather_params(group.params)
+
     def save_model(
         self,
         output_dir: Optional[str] = None,
@@ -4529,11 +4540,7 @@ class Trainer:
             self.model_wrapped.get_all_parameters(convert2cpu=True, with_freeze_param=True)
 
         if ShardingOption.FSDP in self.args.sharding:
-            if self.args.save_checkpoint_format != "flex_checkpoint":
-                raise NotImplementedError("sharding=fsdp only supports save_checkpoint_format=flex_checkpoint.")
-            if last_fc_to_hf:
-                logger.warning("sharding=fsdp cannot export HF format; saving flex_checkpoint shards instead.")
-                last_fc_to_hf = False
+            self._fsdp_all_gather_params()
 
         if self.args.should_save_model_state:
             self._save(output_dir=output_dir, merge_tensor_parallel=merge_tensor_parallel, last_fc_to_hf=last_fc_to_hf)
