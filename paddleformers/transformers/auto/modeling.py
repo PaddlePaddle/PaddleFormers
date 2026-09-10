@@ -62,6 +62,7 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
+        ("Florence2", "florence2"),
         ("Llama", "llama"),
         ("KimiK2", "kimi_k2"),
         ("KimiK3", "kimi_k3"),
@@ -122,7 +123,7 @@ MAPPING_TASKS = OrderedDict(
 )
 
 
-MODEL_FOR_CAUSAL_LM_MAPPING_NAMES = OrderedDict([])
+MODEL_FOR_CAUSAL_LM_MAPPING_NAMES = OrderedDict([("Florence2", "Florence2ForConditionalGeneration")])
 
 MODEL_FOR_CAUSAL_LM_INFERENCE_MAPPING_NAMES = OrderedDict([])
 
@@ -144,6 +145,11 @@ def get_name_mapping(task="Model"):
         new_key = key + "Model_Import_Class"
         NAME_MAPPING[new_key] = import_class
         NAME_MAPPING[import_class] = value
+
+    if task == "ForCausalLM":
+        for model_name, import_class in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES.items():
+            NAME_MAPPING[model_name + "Model_Import_Class"] = import_class
+            NAME_MAPPING[import_class] = MAPPING_NAMES[model_name]
 
     return NAME_MAPPING
 
