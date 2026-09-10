@@ -124,6 +124,14 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
     rotary_percent: float = 0.25
     mrope_section: list = None
 
+    @classmethod
+    def from_config(cls, config):
+        # PretrainedConfig keeps model_type as a class attribute, while the
+        # provider converter only copies instance attributes.
+        provider_config = copy.copy(config)
+        provider_config.model_type = config.model_type
+        return super().from_config(provider_config)
+
     def __post_init__(self):
         super().__post_init__()
         # Qwen3.5 uses multimodal RoPE with 3D position_ids

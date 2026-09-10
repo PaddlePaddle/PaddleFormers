@@ -158,7 +158,7 @@ class Qwen3_5MoETextConfig(PretrainedConfig):
     >>> configuration = model.config
     ```"""
 
-    model_type = "qwen3_vl_moe_text"
+    model_type = "qwen3_5_moe_text"
     base_config_key = "text_config"
     keys_to_ignore_at_inference = ["past_key_values"]
 
