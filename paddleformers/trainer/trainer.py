@@ -372,7 +372,6 @@ def _fused_expert_optimizer_save_views(model, model_sharded_state_dict, optimize
             mapping[name] = tensor
 
 
-
 class Trainer:
     """
     Trainer is a simple but feature-complete training and eval loop for PaddlePaddle, optimized for PaddleFormers.

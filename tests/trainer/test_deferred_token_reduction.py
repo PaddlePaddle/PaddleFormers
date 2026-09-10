@@ -20,10 +20,6 @@ import paddle
 from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
     DygraphShardingOptimizerV2,
 )
-from paddlefleet.models.common.language_loss.language_loss import (
-    clear_pending_gradient_divisor,
-    set_pending_gradient_divisor,
-)
 
 from paddleformers.trainer import Trainer
 
@@ -31,10 +27,23 @@ from paddleformers.trainer import Trainer
 class TestDeferredTokenReduction(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        from paddlefleet.models.common.language_loss import language_loss
+
+        required = (
+            "clear_pending_gradient_divisor",
+            "get_pending_gradient_divisor",
+            "set_pending_gradient_divisor",
+        )
+        missing = [name for name in required if not callable(getattr(language_loss, name, None))]
+        if missing:
+            raise unittest.SkipTest(
+                "Requires PaddleFleet deferred token normalization support; missing: " + ", ".join(missing)
+            )
+        cls.language_loss = language_loss
         paddle.set_device(os.environ.get("PADDLE_TEST_DEVICE", "cpu"))
 
     def tearDown(self):
-        clear_pending_gradient_divisor()
+        self.language_loss.clear_pending_gradient_divisor()
 
     def parameter(self, name, main=True):
         grad = paddle.to_tensor([2.0, 4.0], dtype="float32")
@@ -51,7 +60,7 @@ class TestDeferredTokenReduction(unittest.TestCase):
     def apply(self, optimizer, parameters):
         trainer = object.__new__(Trainer)
         trainer.optimizer = optimizer
-        set_pending_gradient_divisor(4.0)
+        self.language_loss.set_pending_gradient_divisor(4.0)
         trainer._apply_deferred_token_normalization(SimpleNamespace(parameters=lambda: iter(parameters)))
 
     def values(self, parameter):

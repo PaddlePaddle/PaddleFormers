@@ -232,11 +232,25 @@ def test_glm_moe_dsa_training_contract_uses_yaml_despite_legacy_env(monkeypatch,
 
     apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, SimpleNamespace())
 
-    assert model_config.use_accuracy_compatible is enabled
+    assert model_config.use_accuracy_compatible == ("megatron" if enabled else False)
     assert model_config.overlap_p2p_comm is enabled
     assert model_config.batch_p2p_comm is not enabled
     assert model_config.variable_seq_lengths is enabled
     assert model_config.bias_activation_fusion is enabled
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected"),
+    [("false", False), ("True", "megatron"), ("megatron", "megatron"), ("hf", "hf")],
+)
+def test_glm_moe_dsa_training_contract_preserves_normalized_accuracy_target(requested, expected):
+    model_config = SimpleNamespace(model_type="glm_moe_dsa")
+    training_args = _base_training_args(use_accuracy_compatible=requested)
+    model_args = SimpleNamespace(mtp_attention_flexible=True, persist_layer_norm=False)
+
+    apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, SimpleNamespace())
+
+    assert model_config.use_accuracy_compatible == expected
 
 
 def test_glm_moe_dsa_training_contract_keeps_registered_mtp_loss_weight_when_cli_is_silent():

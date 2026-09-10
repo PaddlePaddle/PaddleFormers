@@ -304,7 +304,7 @@ class LlmMetaConfig:
         (
             "moe_token_dispatcher_type",
             str,
-            "deepep",
+            "alltoall",
             'Communication type used by MoE module "deepep" or "alltoall". ',
         ),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
@@ -816,7 +816,7 @@ class PretrainedConfig:
             `"single_label_classification"` or `"multi_label_classification"`.
         moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
-        moe_token_dispatcher_type (`str`, *optional*, defaults to `deepep`):
+        moe_token_dispatcher_type (`str`, *optional*, defaults to `alltoall`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
         use_unified_moe (`bool`, *optional*, defaults to `False`):
             Whether to use unified MoE.

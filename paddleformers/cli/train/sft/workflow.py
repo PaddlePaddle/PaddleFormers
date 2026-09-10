@@ -73,6 +73,7 @@ from paddleformers.transformers.configuration_utils import (
     LlmMetaConfig,
     QuantizationConfig,
 )
+from paddleformers.utils.accuracy_target import normalize_accuracy_target
 from paddleformers.utils.log import logger
 
 from .make_data_utils import DataGenerator
@@ -718,7 +719,9 @@ def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args,
     if getattr(model_config, "model_type", None) != "glm_moe_dsa":
         return
 
-    model_config.use_accuracy_compatible = bool(getattr(training_args, "use_accuracy_compatible", False))
+    model_config.use_accuracy_compatible = normalize_accuracy_target(
+        getattr(training_args, "use_accuracy_compatible", False)
+    )
     requested_mtp = int(getattr(training_args, "num_nextn_predict_layers", 0) or 0)
     explicit_mtp = int(getattr(training_args, "mtp_num_layers", 0) or 0)
     if requested_mtp and explicit_mtp and requested_mtp != explicit_mtp:
@@ -1005,7 +1008,7 @@ def run_sft(
     LlmMetaConfig.set_llm_config(model_config, training_args)
     apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
     if getattr(model_config, "model_type", None) == "glm_moe_dsa":
-        paddle.set_flags({"FLAGS_use_accuracy_compatible_kernel": model_config.use_accuracy_compatible})
+        paddle.set_flags({"FLAGS_use_accuracy_compatible_kernel": bool(model_config.use_accuracy_compatible)})
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
     # autoregressive mtp training (non GLM MoE DSA). GLM MoE DSA already mapped
