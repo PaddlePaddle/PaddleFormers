@@ -51,6 +51,7 @@ from .hf_bitexact_clip import (
     hf_param_norm_sq,
     unwrap_hf_bitexact_clip,
 )
+from .reproducible_norm import ReproducibleL2Norm
 
 __all__ = [
     "MoEHybridParallelOptimizer",
@@ -66,6 +67,7 @@ class MoEHybridParallelClipGrad:
             self.moe_group = hcg.get_expert_parallel_group()
             self.moe_sharding_group = hcg.get_moe_sharding_parallel_group()
 
+        self._reproducible_norm = bool(getattr(clip, "reproducible_norm", False))
         self.stat = {}  # for logging
         self._timers = timers
         self.processed_steps = 0
@@ -79,10 +81,11 @@ class MoEHybridParallelClipGrad:
         pp_flag = self._hcg.get_pipe_parallel_world_size() > 1
 
         """do comm"""
-        logger.info(
-            f"before reduce: dist-moe-grad-norm={global_norm_var_dist_moe.item()} "
-            f"before reduce: non-dist-moe-grad-norm={global_norm_var_not_dist_moe.item()}"
-        )
+        if not self._reproducible_norm:
+            logger.info(
+                f"before reduce: dist-moe-grad-norm={global_norm_var_dist_moe.item()} "
+                f"before reduce: non-dist-moe-grad-norm={global_norm_var_not_dist_moe.item()}"
+            )
 
         if self.moe_sharding_group:
             dist.all_reduce(
@@ -153,10 +156,11 @@ class MoEHybridParallelClipGrad:
                 group=self._hcg.get_pipe_parallel_group(),
             )
 
-        logger.info(
-            f"after reduce: dist-grad-norm={global_norm_var_dist.item()} "
-            f"after reduce: non-dist-grad-norm={global_norm_var_not_dist.item()}"
-        )
+        if not self._reproducible_norm:
+            logger.info(
+                f"after reduce: dist-grad-norm={global_norm_var_dist.item()} "
+                f"after reduce: non-dist-grad-norm={global_norm_var_not_dist.item()}"
+            )
 
     @no_grad()
     def _dygraph_clip(self, params_grads):
@@ -173,6 +177,9 @@ class MoEHybridParallelClipGrad:
         # its several BF16 norms here rather than one over the whole block.
         hf_bitexact = unwrap_hf_bitexact_clip(self._clip) is not None
         norm_fn = hf_param_norm_sq if hf_bitexact else (lambda _p, g: clip._squared_l2_norm(g))
+        if self._reproducible_norm:
+            accumulator = ReproducibleL2Norm()
+            norm_fn = lambda _p, g: accumulator.accumulate(accumulator.zeros(), g)
 
         sum_square_dist_fp16 = []
         sum_square_dist_bf16 = []
@@ -197,6 +204,8 @@ class MoEHybridParallelClipGrad:
                 continue
             merge_grad = g
             if g.type == core.VarDesc.VarType.SELECTED_ROWS:
+                if self._reproducible_norm:
+                    raise TypeError("Reproducible clipping requires dense FP32 gradients")
                 merge_grad = clip.merge_selected_rows(g)
                 merge_grad = clip.get_tensor_from_selected_rows(merge_grad)
             sum_square = norm_fn(p, merge_grad)
@@ -243,6 +252,8 @@ class MoEHybridParallelClipGrad:
                 assert not getattr(p, "no_sync", False), "MoE cannot handle shared param"
 
         def add_n_list(tensor_list):
+            if self._reproducible_norm:
+                return paddle.add_n(tensor_list) if tensor_list else accumulator.zeros()
             if not tensor_list:
                 return paddle.zeros((1,), dtype=paddle.float32)
             return paddle.add_n(tensor_list).cast(paddle.float32)
@@ -341,9 +352,10 @@ class MoEHybridParallelClipGrad:
                 self._timers("dygraph-clip").stop()
             return _hf_scale_grads(params_grads, clip_coef)
 
-        global_norm_var_fp32 = paddle.sqrt(
+        total = (
             global_norm_var_dist + global_norm_var_not_dist + global_norm_var_dist_moe + global_norm_var_not_dist_moe
         )
+        global_norm_var_fp32 = ReproducibleL2Norm().finish(total)[0] if self._reproducible_norm else paddle.sqrt(total)
         self.stat["global_grad_norm"] = global_norm_var_fp32.astype("float32").item()
 
         max_global_norm = paddle.full(
@@ -356,6 +368,10 @@ class MoEHybridParallelClipGrad:
             y=paddle.maximum(x=global_norm_var_fp32, y=max_global_norm)
             + paddle.full(shape=[], dtype=paddle.float32, fill_value=1.0e-6),
         )
+        if self._reproducible_norm:
+            clip_var = paddle.minimum(
+                max_global_norm / (global_norm_var_fp32 + 1e-6), paddle.ones_like(global_norm_var_fp32)
+            )
         logger.info(f"hybrid-moe-clip, var={clip_var.item()}, global_norm:{global_norm_var_fp32.item()}")
         clip_var_fp16 = paddle.cast(clip_var, paddle.float16)
 

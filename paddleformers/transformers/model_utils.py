@@ -68,6 +68,7 @@ from ..quantization.quantization_utils import (
 )
 from ..quantization.unified_checkpoint_quantization import dequant_unified_optimizer
 from ..trainer.argparser import strtobool
+from ..trainer.checkpoint_export import hf_export_provenance
 from ..utils import device_guard
 from ..utils.download import DownloadSource, resolve_file_path
 from ..utils.env import (
@@ -3266,8 +3267,10 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         model_to_save = unwrap_model(self)
 
         if save_checkpoint_format == "flex_checkpoint":
-            # autoregressive mtp training
-            autoregressive_mtp_training = model_to_save.config.mtp_num_layers > 0
+            # autoregressive mtp training. GLM MoE DSA drops mtp_num_layers
+            # (Fleet renamed it to num_nextn_predict_layers); getattr keeps
+            # last_fc_to_hf export from crashing after train().
+            autoregressive_mtp_training = int(getattr(model_to_save.config, "mtp_num_layers", 0) or 0) > 0
             if autoregressive_mtp_training:
                 tmp = model_to_save.config.mtp_num_layers
                 model_to_save.config.mtp_num_layers = model_to_save.config.num_nextn_predict_layers
@@ -3289,6 +3292,17 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     )
             else:
                 aoa_config = self._gen_inv_aoa_config(model_to_save.config)
+
+            if is_main_process:
+                logger.info(
+                    "HF_EXPORT_PROVENANCE "
+                    + json.dumps(
+                        hf_export_provenance(
+                            model_to_save.config, aoa_config, save_dir, kwargs.get("export_global_step")
+                        ),
+                        sort_keys=True,
+                    ),
+                )
 
             clean_unrelated_safetensors(save_dir)
 

@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import logging
+from dataclasses import dataclass
 
 from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ..aoa_config_base import MoEAOAConfigGenerator
@@ -21,6 +23,19 @@ from ..model_utils import PretrainedModel
 from .configuration import GlmMoeDsaConfig
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GlmMoeDsaModelProvider(GLMMoEModelProvider):
+    """GLM-5.2 DSA provider. Do not put DSA-only HF maps on GLM-4 MoE."""
+
+    moe_router_use_fp32_master: bool = True
+    defer_token_normalization: bool = True
+
+    transform_rules = {
+        **GLMMoEModelProvider.transform_rules,
+        "expert_tensor_model_parallel_size": "expert_tensor_parallel_size",
+    }
 
 
 class GlmMoeDsaPreTrainedModel(PretrainedModel):
@@ -57,7 +72,28 @@ class GlmMoeDsaPreTrainedModel(PretrainedModel):
         Returns:
             Dictionary with 'aoa_statements' key containing inverse conversion statements
         """
-        return MoEAOAConfigGenerator.gen_inv_aoa_config(config)
+        # Native providers store the DSA fields under dsa_* names; HF configs
+        # use index_*. Normalize a copy so export cannot alter the live model.
+        export_config = copy.copy(config)
+        for field, provider_field in (
+            ("index_n_heads", "dsa_index_n_heads"),
+            ("indexer_types", "dsa_indexer_types"),
+        ):
+            if not hasattr(export_config, field) and hasattr(config, provider_field):
+                setattr(export_config, field, getattr(config, provider_field))
+        aoa_config = MoEAOAConfigGenerator.gen_inv_aoa_config(export_config)
+
+        # The AOA lexer expands wildcards from original input keys. Grouped
+        # experts become per-expert intermediates only after the first split,
+        # so their later split/transpose rules need concrete expert IDs.
+        num_experts = getattr(config, "n_routed_experts", getattr(config, "num_experts", 0)) or 0
+        statements = []
+        for statement in aoa_config["aoa_statements"]:
+            if "$EXPERT_ID" in statement:
+                statements.extend(statement.replace("$EXPERT_ID", str(i)) for i in range(num_experts))
+            else:
+                statements.append(statement)
+        return {**aoa_config, "aoa_statements": statements}
 
     @classmethod
     def _build_muon_slice_config(cls, model, config) -> dict:
@@ -337,7 +373,7 @@ class GlmMoeDsaForCausalLM(GlmMoeDsaPreTrainedModel):
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
         config.fuse_rms_norm = True
         config.multi_latent_attention = True
-        model_provider_class = GLMMoEModelProvider
+        model_provider_class = GlmMoeDsaModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
         if getattr(config, "dpo_config", None):
@@ -363,7 +399,7 @@ class GlmMoeDsaForCausalLMPipe(GlmMoeDsaPreTrainedModel, GeneralModelForCausalLM
         config.expert_model_parallel_size = max(config.expert_model_parallel_size, 1)
         config.fuse_rms_norm = True
         config.multi_latent_attention = True
-        model_provider_class = GLMMoEModelProvider
+        model_provider_class = GlmMoeDsaModelProvider
         model_provider = model_provider_class.from_config(config)
         loss_fn = None
         if getattr(config, "dpo_config", None):

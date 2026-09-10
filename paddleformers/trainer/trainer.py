@@ -278,6 +278,100 @@ DIST_CKPT_PATH = "dist_ckpt"
 DIST_MODEL_PATH = "dist_model"
 
 
+def restore_fused_expert_3d_layout(model, model_sharded_state_dict):
+    """Restore 3-D grouped-GEMM expert weights for FlexCheckpoint at sharding=1."""
+    named_params = dict(model.named_parameters())
+    for key, sharded_weight in model_sharded_state_dict.items():
+        if not isinstance(sharded_weight, ShardedWeight):
+            continue
+        if "grouped_gemm_experts.weight" not in key:
+            continue
+        param = named_params.get(key)
+        if param is None or getattr(param, "ndim", 0) != 3:
+            continue
+        local = sharded_weight.local_tensor
+        if tuple(local.shape) == tuple(param.shape):
+            continue
+        if int(local.numel()) != int(param.numel()):
+            continue
+        restored = local.reshape(list(param.shape))
+        restored.name = getattr(local, "name", "") or getattr(param, "name", "")
+        sharded_weight.local_tensor = restored
+        sharded_weight.local_shape = tuple(param.shape)
+        sharded_weight.global_shape = tuple(param.shape)
+        sharded_weight.global_offset = (0,) * len(param.shape)
+
+    return model_sharded_state_dict
+
+
+@contextlib.contextmanager
+def _fused_expert_optimizer_save_views(model, model_sharded_state_dict, optimizer):
+    """Expose flat saving views without reshaping live optimizer tensors.
+
+    Only grouped-expert states need the 2-D layout advertised by their model
+    shards. Keep the original accumulator/master-weight objects and restore
+    their dictionary entries even when sharded-state construction fails.
+    Returned ShardedWeights retain the views through synchronous serialization.
+    """
+    named_params = dict(model.named_parameters())
+    parameter_shapes = {
+        named_params[key].name: tuple(shard.local_shape)
+        for key, shard in model_sharded_state_dict.items()
+        if isinstance(shard, ShardedWeight)
+        and "grouped_gemm_experts.weight" in key
+        and key in named_params
+        and named_params[key].ndim == 3
+        and len(shard.local_shape) == 2
+    }
+    if not parameter_shapes:
+        yield
+        return
+
+    inner = optimizer
+    seen = {id(inner)}
+    while True:
+        wrapped = next(
+            (
+                getattr(inner, attr)
+                for attr in ("_inner_opt", "inner_opt", "_optimizer")
+                if getattr(inner, attr, None) is not None
+            ),
+            None,
+        )
+        if wrapped is None:
+            break
+        if id(wrapped) in seen:
+            raise ValueError("Cyclic optimizer wrapper while preparing fused-expert checkpoint views.")
+        seen.add(id(wrapped))
+        inner = wrapped
+
+    masters = getattr(inner, "_master_weights", {})
+    accumulator_shapes = dict(parameter_shapes)
+    for name, shape in parameter_shapes.items():
+        master = masters.get(name)
+        if master is not None:
+            accumulator_shapes[master.name] = shape
+    mappings = [(mapping, accumulator_shapes) for mapping in getattr(inner, "_accumulators", {}).values()]
+    mappings.append((masters, parameter_shapes))
+    replacements = []
+    try:
+        for mapping, shapes in mappings:
+            if not isinstance(mapping, dict):
+                continue
+            for name, shape in shapes.items():
+                tensor = mapping.get(name)
+                if not isinstance(tensor, paddle.Tensor) or tensor.ndim != 3:
+                    continue
+                view = tensor.reshape(shape)
+                view.name = tensor.name
+                replacements.append((mapping, name, tensor))
+                mapping[name] = view
+        yield
+    finally:
+        for mapping, name, tensor in reversed(replacements):
+            mapping[name] = tensor
+
+
 class Trainer:
     """
     Trainer is a simple but feature-complete training and eval loop for PaddlePaddle, optimized for PaddleFormers.
@@ -367,14 +461,9 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
-        # NOTE(bugfix): ``use_accuracy_compatible`` used to force
-        # ``max_grad_norm = 0.0`` here, silently discarding a clipping threshold
-        # the user had explicitly configured. Gradient clipping is orthogonal to
-        # which reference the accuracy mode targets, so the threshold is now
-        # honored and the recipe is chosen in ``_build_grad_clip()``. If a mode
-        # really needs clipping off by default it should warn rather than
-        # overwrite the argument.
-        # Apply the reshard broadcast toggle once here: Trainer.__init__ is the
+        # Honor the configured clipping threshold; _build_grad_clip selects
+        # the recipe for the requested accuracy target.
+        # Apply the reshard broadcast chunk cap once here: Trainer.__init__ is the
         # single point every reshard/EMA path runs after, so all_gather_state_dict
         # need not thread the value and no construction site is missed (incl. the
         # non-ZCC EMA assembler that bypasses create_ema_state_assembler).
@@ -835,7 +924,6 @@ class Trainer:
 
         if self.args.enable_auto_parallel:
             if resume_from_checkpoint is not None:
-
                 logger.info(f"Loading model from {resume_from_checkpoint} .")
 
                 if not self.args.ignore_load_lr_and_optim:
@@ -942,7 +1030,6 @@ class Trainer:
                 if resume_from_checkpoint is not None and (
                     self.args.dataset_rank == 0 or self.args.use_expert_parallel
                 ):
-
                     weights_file = os.path.join(
                         resume_from_checkpoint, _add_variant(weight_name, self.args.weight_name_suffix)
                     )
@@ -1182,6 +1269,7 @@ class Trainer:
 
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
+        restore_fused_expert_3d_layout(self.model, model_sharded_state_dict)
         for key, sharded_weight in model_sharded_state_dict.items():
             # NOTE(Waynezee): Only Tensor in Parameter will be used in FlexCheckpoint Save Scenario.
             if isinstance(sharded_weight, ShardedWeight):
@@ -1199,7 +1287,8 @@ class Trainer:
         optimizer_states = {}
         master_weights = {}
         model_sharded_state_dict = self.model.sharded_state_dict()
-        optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+        with _fused_expert_optimizer_save_views(self.model, model_sharded_state_dict, self.optimizer):
+            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
         for k, v in optimizer_sharded_state_dict.items():
             if k.endswith(".w_0"):
                 master_weights[k] = v
@@ -2198,6 +2287,228 @@ class Trainer:
                 raise ValueError(f"unsupported type: {type(dtensors)}")
         return global_micro_batchs
 
+    def _deferred_token_replica_group(self):
+        """Return the constructed group holding the leftover data replicas."""
+        hcg = getattr(self, "hcg", None)
+        if hcg is None:
+            return getattr(self, "dp_group", None)
+        try:
+            group = hcg.get_sharding_parallel_group()
+            if group is not None and getattr(group, "nranks", 1) > 1:
+                return group
+        except Exception:
+            pass
+        try:
+            from paddlefleet.parallel_state import get_data_parallel_group
+
+            group = get_data_parallel_group(check_initialized=False)
+            if group is not None and getattr(group, "nranks", 1) > 1:
+                return group
+        except Exception:
+            pass
+        return getattr(self, "dp_group", None)
+
+    def _requires_native_token_weighted_logging(self):
+        config = getattr(self.model, "config", None)
+        if not (
+            getattr(config, "use_accuracy_compatible", False) and getattr(config, "defer_token_normalization", False)
+        ):
+            return False
+        # Pipeline accumulation buffers several calls before computing MAIN.
+        # The single-microbatch receipt is valid only without that buffering.
+        if self.args.gradient_accumulation_steps != 1:
+            return False
+        group = self._deferred_token_replica_group()
+        return group is not None and getattr(group, "nranks", 1) > 1
+
+    def _note_native_microbatch_loss(self):
+        """Carry the MAIN numerator once from its actual PP owner to each stage."""
+        from paddlefleet.models.common.language_loss.language_loss import (
+            consume_main_reporting_microbatch,
+            get_local_main_valid_tokens,
+        )
+        from paddlefleet.parallel_state import get_pipeline_model_parallel_group
+
+        local_count = get_local_main_valid_tokens()
+        count = paddle.full([], 0.0 if local_count is None else float(local_count), dtype="float32")
+        pp_group = get_pipeline_model_parallel_group(check_initialized=False)
+        if pp_group is not None and getattr(pp_group, "nranks", 1) > 1:
+            paddle.distributed.all_reduce(count, op=paddle.distributed.ReduceOp.MAX, group=pp_group)
+        count_value = float(count.item())
+        step = self.state.global_step + 1
+        microbatch = self._reporting_microbatch
+        receipt = consume_main_reporting_microbatch(step, microbatch)
+        rank = paddle.distributed.get_rank()
+        owner = pp_group.ranks[-1] if pp_group is not None else rank
+        if (receipt is not None) != (rank == owner):
+            raise RuntimeError("MAIN numerator must exist only on the actual PP loss owner")
+        if count_value <= 0:
+            raise RuntimeError("MAIN reporting requires a positive valid-token count")
+        if receipt is not None:
+            if receipt["step"] != step or receipt["microbatch"] != microbatch or receipt["count"] != count_value:
+                raise RuntimeError("MAIN numerator step/microbatch/count mismatch")
+            numerator = receipt["sum"]
+        else:
+            numerator = paddle.full([], 0.0, dtype="float32")
+        if pp_group is not None and getattr(pp_group, "nranks", 1) > 1:
+            paddle.distributed.broadcast(numerator, src=owner, group=pp_group)
+        if getattr(self, "_native_log_numerator", None) is None:
+            self._native_log_numerator = numerator
+            self._native_log_count = count
+        else:
+            self._native_log_numerator = self._native_log_numerator + numerator
+            self._native_log_count = self._native_log_count + count
+
+    def _native_token_weighted_log_loss(self):
+        """Reduce native numerators and MAIN counts over the actual data replicas."""
+        group = self._deferred_token_replica_group()
+        numerator = getattr(self, "_native_log_numerator", None)
+        count = getattr(self, "_native_log_count", None)
+        if numerator is None or count is None:
+            numerator = paddle.full([], 0.0, dtype="float32")
+            count = paddle.full([], 0.0, dtype="float32")
+        paddle.distributed.all_reduce(numerator, op=paddle.distributed.ReduceOp.SUM, group=group)
+        paddle.distributed.all_reduce(count, op=paddle.distributed.ReduceOp.SUM, group=group)
+        self._native_log_numerator = None
+        self._native_log_count = None
+        count_value = float(count.item())
+        if count_value <= 0:
+            raise RuntimeError("Native token-weighted reporting has no valid MAIN tokens")
+        return numerator.cast("float32") / paddle.full([], count_value, dtype="float32")
+
+    def _resolve_deferred_token_normalization(self):
+        """Resolve MAIN tokens with PP MAX, then leftover-replica SUM.
+
+        The last PP stage registers its replica's MAIN count. Broadcast that
+        count to the other PP stages before summing over data replicas; TP,
+        EP and PP ranks must not be counted as additional data replicas.
+        Keep the compatibility guard and the device allocation: ordinary
+        losses do not publish a deferred divisor, and NCCL needs GPU storage.
+        """
+        try:
+            from paddlefleet.models.common.language_loss.language_loss import (
+                get_pending_gradient_divisor,
+                set_pending_gradient_divisor,
+            )
+        except ImportError:
+            return
+
+        if not getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False):
+            return
+
+        divisor = get_pending_gradient_divisor()
+        if not paddle.distributed.is_initialized():
+            return
+
+        from paddlefleet.parallel_state import (
+            get_data_parallel_group,
+            get_pipeline_model_parallel_group,
+        )
+
+        pp_group = get_pipeline_model_parallel_group(check_initialized=False)
+        replica_group = self._deferred_token_replica_group()
+        if replica_group is None:
+            replica_group = get_data_parallel_group(check_initialized=False)
+        pp_collective = pp_group is not None and getattr(pp_group, "nranks", 1) > 1
+        replica_collective = replica_group is not None and getattr(replica_group, "nranks", 1) > 1
+        if not pp_collective and not replica_collective:
+            return
+
+        holder = paddle.full([1], 0.0 if divisor is None else float(divisor), dtype="float64")
+        if pp_collective:
+            paddle.distributed.all_reduce(holder, op=paddle.distributed.ReduceOp.MAX, group=pp_group)
+        if replica_collective:
+            paddle.distributed.all_reduce(holder, op=paddle.distributed.ReduceOp.SUM, group=replica_group)
+        value = float(holder.numpy()[0])
+        if value > 0:
+            set_pending_gradient_divisor(value)
+
+    def _apply_deferred_token_normalization(self, model):
+        """Divide fp32 gradient buffers by the deferred valid-token count.
+
+        Must run AFTER on_optimizer_begin (SPGradSync all-reduce) so the
+        order is sum-then-scale, matching Megatron finalize_model_grads.
+        """
+        try:
+            from paddlefleet.models.common.language_loss.language_loss import (
+                clear_pending_gradient_divisor,
+                get_pending_gradient_divisor,
+            )
+        except ImportError:
+            return
+
+        divisor = get_pending_gradient_divisor()
+        clear_pending_gradient_divisor()
+        if not divisor or divisor <= 0:
+            return
+
+        parameters = model._layers.parameters() if hasattr(model, "_layers") else model.parameters()
+
+        from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.dygraph_sharding_optimizer import (
+            DygraphShardingOptimizerV2,
+        )
+
+        candidates, queue, seen = [], [self.optimizer], set()
+        while queue:
+            opt = queue.pop()
+            if opt is None or id(opt) in seen:
+                continue
+            seen.add(id(opt))
+            if isinstance(opt, DygraphShardingOptimizerV2):
+                candidates.append(opt)
+            try:
+                fields = vars(opt)
+            except TypeError:
+                continue
+            for key in ("_inner_opt", "_opt", "inner_opt", "_optimizer"):
+                child = fields.get(key)
+                if child is not None:
+                    queue.append(child)
+        if len(candidates) > 1:
+            raise RuntimeError("multiple native sharding optimizers in deferred normalization")
+        inner = candidates[0] if candidates else None
+        native_v2 = inner is not None
+        # Native fused buffers average through AVG or SUM followed by 1/R.
+        # Restore the per-parameter sum before the deferred token division.
+        # Validate every mapping before changing any gradient.
+        pending = []
+        if native_v2:
+            param2bucket = vars(inner).get("param2bucket")
+            if not param2bucket:
+                raise RuntimeError("native DygraphShardingOptimizerV2 missing param2bucket")
+            for p in parameters:
+                grad = getattr(p, "main_grad", None)
+                if grad is None:
+                    grad = p.grad
+                if grad is None:
+                    continue
+                buckets = param2bucket.get(getattr(p, "name", None))
+                if not buckets:
+                    raise RuntimeError("grad-bearing param missing FusedCommBuffer mapping")
+                r = 1
+                for buf in buckets:
+                    g = getattr(buf, "_comm_group", None)
+                    if g is None:
+                        raise RuntimeError("invalid comm group on fused buffer")
+                    n = int(getattr(g, "nranks", 0) or 0)
+                    if n < 1:
+                        raise RuntimeError("invalid comm group nranks on fused buffer")
+                    r = max(r, n)
+                pending.append((grad, float(r) / float(divisor)))
+        else:
+            scale = float(1) / float(divisor)
+            for p in parameters:
+                grad = getattr(p, "main_grad", None)
+                if grad is None:
+                    grad = p.grad
+                if grad is None:
+                    continue
+                pending.append((grad, scale))
+
+        with paddle.no_grad():
+            for grad, scale in pending:
+                grad.scale_(scale)
+
     def optimizer_step(self, args, model, parameters_list=None):
         # When freeze_training is enabled, skip optimizer step and lr scheduler step
         # to keep both model parameters and optimizer state unchanged
@@ -2576,6 +2887,14 @@ class Trainer:
                             self.trained_effective_tokens += (inputs["input_ids"] != self.args.pad_token_id).sum()
                             self.trained_tokens += inputs["input_ids"].numel()
 
+                    native_reporting = self._requires_native_token_weighted_logging()
+                    if native_reporting:
+                        from paddlefleet.models.common.language_loss.language_loss import (
+                            begin_main_reporting_microbatch,
+                        )
+
+                        self._reporting_microbatch = step_control + 1
+                        begin_main_reporting_microbatch(self.state.global_step + 1, self._reporting_microbatch)
                     if not self.args.enable_auto_parallel:
                         with sync_context:
                             if "step_control" in inspect.signature(self.training_step).parameters:
@@ -2590,6 +2909,9 @@ class Trainer:
                             tr_loss += tr_loss_step
                     else:
                         tr_loss += tr_loss_step
+
+                    if native_reporting:
+                        self._note_native_microbatch_loss()
 
                     def fused_allreduce_gradients_no_sync(paramlist, hcg):
                         paramlist = list(paramlist)
@@ -2697,9 +3019,14 @@ class Trainer:
                                     elif p.grad is not None:
                                         p.grad.scale_(1.0 / self.args.gradient_accumulation_steps)
                         # Optimizer step
+                        # E-233/E-234: resolve BEFORE callbacks so every PP rank
+                        # sees the divisor; apply AFTER on_optimizer_begin so
+                        # SPGradSync all-reduces first (sum-then-scale).
+                        self._resolve_deferred_token_normalization()
                         self.callback_handler.on_optimizer_begin(
                             args, self.state, self.control, scaler=self.scaler if self.do_grad_scaling else None
                         )
+                        self._apply_deferred_token_normalization(model)
                         self.optimizer_step(args, model=model, parameters_list=parameters_list)
 
                         if not args.enable_auto_parallel:
@@ -2968,21 +3295,20 @@ class Trainer:
     def _maybe_log_save_evaluate(self, tr_loss, model, epoch, ignore_keys_for_eval, **kwargs):
         flag_log = self.control.should_log
         if self.control.should_log:
-
             logs: Dict[str, float] = {}
             num_steps = self.state.global_step - self._globalstep_last_logged - self._skip_steps_since_last_logged
             self._skip_steps_since_last_logged = 0
-            # all_gather + mean() to get average loss over all processes
-            avg_loss = self._nested_gather(tr_loss).mean()
-            tr_loss_scalar = self._get_item_from_loss(avg_loss)
-
-            # reset tr_loss to zero
-            tr_loss.subtract_(tr_loss)
-            # set loss to zero if all steps are skipped since last log
-            if num_steps == 0:
-                logs["loss"] = 0.0
+            if self._requires_native_token_weighted_logging():
+                avg_loss = self._native_token_weighted_log_loss()
+                raw_loss = 0.0 if num_steps == 0 else self._get_item_from_loss(avg_loss)
+                # Preserve the existing accumulated-loss sum contract.
+                tr_loss_scalar = raw_loss * num_steps
             else:
-                logs["loss"] = round(tr_loss_scalar / num_steps, 8)
+                avg_loss = self._nested_gather(tr_loss).mean()
+                tr_loss_scalar = self._get_item_from_loss(avg_loss)
+                raw_loss = 0.0 if num_steps == 0 else tr_loss_scalar / num_steps
+            tr_loss.subtract_(tr_loss)
+            logs["loss"] = round(raw_loss, 8)
 
             logs["learning_rate"] = float("{0:.3e}".format(self._get_learning_rate()))
             logs["global_step"] = int(self.state.global_step)
@@ -3151,7 +3477,7 @@ class Trainer:
                             "gpu_max_memory_reserved": paddle_device.max_memory_reserved() >> 20,
                         }
                     )
-            self.log(logs, **kwargs)
+            self.log(logs, raw_loss=raw_loss, **kwargs)
 
         metrics = None
         if self.control.should_evaluate:
@@ -3183,9 +3509,7 @@ class Trainer:
         if self.control.should_save_hf:
             if self.args.save_checkpoint_format == "flex_checkpoint":
                 is_main_process = paddle.distributed.get_rank() == 0
-                run_dir = self.args.output_dir
-                checkpoint_folder = f"{PREFIX_HF_CHECKPOINT_DIR}-{self.state.global_step}"
-                ckpt_path = os.path.join(run_dir, checkpoint_folder)
+                run_dir, ckpt_path = self._hf_cadence_paths()
                 # Convert user-configured GB value to bytes for HFFormatFullParamSaver
                 memory_growth_threshold_bytes = self.args.save_hf_memory_growth_threshold * (2**30)
                 if isinstance(self.model, LoRAModel):
@@ -3230,7 +3554,6 @@ class Trainer:
                     tensors = paddle.cat(output_tensors).sum().reshape([1])
                 token_list.append(tensors.item())
             if self.is_local_process_zero():
-
                 logger.info(
                     f"Update to now, trained_effective_tokens: {token_list[0]}, trained_tokens: {token_list[1]}."
                 )
@@ -3757,8 +4080,8 @@ class Trainer:
         ``config.use_accuracy_compatible="hf"`` selects the clip that reproduces
         torch's ``clip_grad_norm_`` recipe (BF16 per-tensor norms, BF16 global
         norm, BF16 coefficient, BF16-rounded scaling) and records the pre-clip
-        global norm. Every other run -- default or Megatron-aligned -- keeps
-        paddle's stock ``ClipGradByGlobalNorm``.
+        global norm. Megatron accuracy compatibility uses a partition-independent FP32 norm;
+        ordinary runs keep paddle's stock ``ClipGradByGlobalNorm``.
         """
         if self.args.max_grad_norm <= 0:
             return None
@@ -3778,6 +4101,10 @@ class Trainer:
                 f"reference's {reference}-tensor partition of {fused} parameters"
             )
             return HFBitexactClipGradByGlobalNorm(self.args.max_grad_norm, trainer=self)
+        if accuracy_target:
+            from ..utils.reproducible_norm import ReproducibleClipGradByGlobalNorm
+
+            return ReproducibleClipGradByGlobalNorm(self.args.max_grad_norm)
         return nn.ClipGradByGlobalNorm(self.args.max_grad_norm)
 
     def _load_rng_state(self, checkpoint):
@@ -4003,6 +4330,12 @@ class Trainer:
             from ..utils.hf_bitexact_hybrid_clip import restore_hf_bitexact_clip
 
             restore_hf_bitexact_clip(dist_optimizer)
+            from ..utils.reproducible_norm import (
+                ReproducibleL2Norm,
+                restore_reproducible_clip,
+            )
+
+            restore_reproducible_clip(dist_optimizer)
 
             gradclip = dist_optimizer._inner_opt._grad_clip
             global_norm_func = gradclip._global_norm
@@ -4024,7 +4357,7 @@ class Trainer:
                 if len(args) > 0:
                     global_norm_func(global_norm_var_dist, global_norm_var_not_dist, *args)
                     global_norm_var_dist_moe, global_norm_var_not_dist_moe = args
-                    global_norm_var_fp32 = paddle.sqrt(
+                    total = (
                         global_norm_var_dist
                         + global_norm_var_not_dist
                         + global_norm_var_dist_moe
@@ -4032,7 +4365,12 @@ class Trainer:
                     )
                 else:
                     global_norm_func(global_norm_var_dist, global_norm_var_not_dist)
-                    global_norm_var_fp32 = paddle.sqrt(global_norm_var_dist + global_norm_var_not_dist)
+                    total = global_norm_var_dist + global_norm_var_not_dist
+                global_norm_var_fp32 = (
+                    ReproducibleL2Norm().finish(total)[0]
+                    if getattr(self, "_reproducible_norm", False)
+                    else paddle.sqrt(total)
+                )
                 training_logs["global_norm"] = global_norm_var_fp32.item()
 
             self.optimizer._inner_opt._grad_clip._global_norm = types.MethodType(
@@ -4644,7 +4982,6 @@ class Trainer:
             paddle.save(self.state.global_step, os.path.join(signal_dir, f".model_weight.done.{global_rank}"))
 
     def copy_custom_files(self, output_dir):
-
         resolve_result = resolve_file_path(
             self.args.model_name_or_path,
             [SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME],
@@ -5014,6 +5351,24 @@ class Trainer:
             # ignore_errors for shared disks between train nodes.
             shutil.rmtree(checkpoint, ignore_errors=True)
 
+    def _hf_cadence_paths(self, step=None):
+        """Resolve mid-training HF cadence root and snapshot dir.
+
+        Default layout is ``{output_dir}/hf_checkpoint-{step}`` so
+        ``_rotate_hf_checkpoints``, resume, and latest-discovery keep working.
+        ``save_hf_output_dir`` is opt-in for an oracle that rglob's output_dir.
+        """
+        from .checkpoint_export import resolve_hf_checkpoint_dir
+
+        step = self.state.global_step if step is None else step
+        run_dir = getattr(self.args, "save_hf_output_dir", None) or self.args.output_dir
+        ckpt_path = resolve_hf_checkpoint_dir(
+            self.args.output_dir,
+            step,
+            getattr(self.args, "save_hf_output_dir", None),
+        )
+        return run_dir, ckpt_path
+
     def _rotate_hf_checkpoints(self, use_mtime=False, output_dir=None) -> None:
         if self.args.save_hf_total_limit is None or self.args.save_hf_total_limit <= 0:
             return
@@ -5149,6 +5504,7 @@ class Trainer:
                             is_main_process,
                             save_checkpoint_format=self.args.save_checkpoint_format,
                             memory_growth_threshold=memory_growth_threshold_bytes,
+                            export_global_step=self.state.global_step,
                         )
                 else:
                     self._save_flex_model_state(output_dir)

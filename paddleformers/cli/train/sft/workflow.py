@@ -15,12 +15,18 @@
 """Training Ernie Model."""
 
 import gc
+import hashlib
+import importlib.metadata
+import json
 import math
 import os
+import platform
 import re
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import fields
 from functools import partial
+from pathlib import Path
 
 import numpy as np
 import paddle
@@ -47,6 +53,7 @@ from paddleformers.trainer import (
     MoEGateSpGradSyncCallBack,
     MoEQuantileBalancingCallback,
     RuntimeTimer,
+    TrainerCallback,
     get_last_checkpoint,
     set_random_seed,
     set_seed,
@@ -66,10 +73,566 @@ from paddleformers.transformers.configuration_utils import (
     LlmMetaConfig,
     QuantizationConfig,
 )
+from paddleformers.utils.accuracy_target import normalize_accuracy_target
 from paddleformers.utils.log import logger
 
 from .make_data_utils import DataGenerator
 from .sft_trainer import SFTTrainer
+
+
+def project_owning_loader_semantics(input_values, model_label_values, position_values=None):
+    """Normalize padded Paddle carrier tensors back to the dataset semantic row."""
+    if position_values:
+        semantic_length = max(int(position) for position in position_values) + 1
+    else:
+        semantic_length = len(input_values)
+    if semantic_length <= 0 or semantic_length > len(input_values) or semantic_length > len(model_label_values):
+        raise ValueError(
+            f"invalid owning-loader semantic length {semantic_length} for carrier lengths "
+            f"{len(input_values)}/{len(model_label_values)}"
+        )
+    semantic_input_values = input_values[:semantic_length]
+    semantic_model_label_values = model_label_values[:semantic_length]
+    # BaseSFTDataset rolls causal-LM labels left by one before collation. Reverse
+    # that roll so both framework receipts describe the same dataset row.
+    semantic_label_values = semantic_model_label_values[-1:] + semantic_model_label_values[:-1]
+    semantic_mask_values = [label != -100 for label in semantic_label_values]
+    return semantic_input_values, semantic_label_values, semantic_mask_values
+
+
+class ModelReproObservationCallback(TrainerCallback):
+    """Opt-in rank-zero artifacts for formal model-reproduction runs."""
+
+    _LAYER0_FINE_FORWARD_MODULES = {
+        "1.input_layernorm": "layer0_input_rmsnorm_output",
+        "1.self_attn.q_a_proj": "layer0_q_down_projection_output",
+        "1.self_attn.q_a_layernorm": "layer0_q_rmsnorm_output",
+        "1.self_attn.q_b_proj": "layer0_q_up_projection_output",
+        "1.self_attn.kv_a_proj_with_mqa": "layer0_kv_down_projection_output",
+        "1.self_attn.kv_a_layernorm": "layer0_kv_rmsnorm_output",
+        "1.self_attn.kv_b_proj": "layer0_kv_up_projection_output",
+        "1.self_attn.o_proj": "layer0_attention_output_projection",
+        "1.self_attn": "layer0_self_attention_output",
+        "1.mlp.up_gate_proj": "layer0_dense_fc1_output",
+        "1.mlp.down_proj": "layer0_dense_fc2_output",
+        "1.mlp": "layer0_dense_mlp_output",
+        "1": "base_transformer_layer_0_output",
+    }
+
+    @classmethod
+    def _forward_contract_specs(cls, boundary_set):
+        if boundary_set == "coarse":
+            return None
+        if boundary_set == "layer0_fine":
+            return dict(cls._LAYER0_FINE_FORWARD_MODULES)
+        raise ValueError(f"unsupported MODEL_REPRO_FORWARD_BOUNDARY_SET: {boundary_set}")
+
+    def __init__(
+        self,
+        raw_loss_path=None,
+        input_receipt_path=None,
+        parameter_receipt_dir=None,
+        model_source=None,
+        weights_loaded=False,
+        model_config=None,
+    ):
+        self.raw_loss_path = raw_loss_path
+        self.input_receipt_path = input_receipt_path
+        self.parameter_receipt_dir = parameter_receipt_dir
+        self.env_path = os.environ.get("MODEL_REPRO_ENV_PATH")
+        self.loss_path = os.environ.get("MODEL_REPRO_LOSS_PATH")
+        self._loss_events = []
+        self.model_source = model_source
+        self.weights_loaded = weights_loaded
+        self.model_config = model_config
+        self._input_written = False
+        self._parameters_written = False
+
+    @staticmethod
+    def _sha256_file(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    @staticmethod
+    def _write_json(path, payload):
+        path = Path(path).expanduser().resolve()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, allow_nan=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+    @staticmethod
+    def _normalized_device():
+        """Return the device class the benchmark checker expects, not the GPU model name."""
+        return "cuda" if paddle.device.get_device().split(":")[0] in ("gpu", "cuda") else "cpu"
+
+    @staticmethod
+    def _normalized_dtype(args):
+        return "bfloat16" if getattr(args, "bf16", False) else "float32"
+
+    @staticmethod
+    def _machine_loss_payload(events, raw_path=None, source_sha256=None):
+        """Return the machine loss artifact.
+
+        ``losses`` is the benchmark gate field: an unrounded main-loss series with
+        one entry per recorded step. ``events`` keeps per-step diagnostic detail.
+        """
+        return {
+            "schema": "glm52-machine-loss/v1",
+            "framework": "paddle",
+            "raw": True,
+            "stage": "training_callback_complete",
+            "losses": [event["loss"] for event in events if "loss" in event],
+            "event_count": len(events),
+            "steps": [event["step"] for event in events],
+            "events": events,
+            "source": str(raw_path) if raw_path else None,
+            "source_sha256": source_sha256,
+        }
+
+    def _environment_payload(self, args):
+        config_path = os.environ.get("MODEL_REPRO_MODEL_CONFIG_PATH")
+        return {
+            "schema": "glm52-environment/v1",
+            "framework": "paddle",
+            "framework_version": paddle.__version__,
+            "python_version": platform.python_version(),
+            "device": self._normalized_device(),
+            "device_name": paddle.device.cuda.get_device_name(0),
+            "dtype": self._normalized_dtype(args),
+            "cuda": paddle.version.cuda(),
+            "cudnn": paddle.version.cudnn(),
+            "nccl_package": importlib.metadata.version("nvidia-nccl-cu12"),
+            "model_id": os.environ.get("MODEL_REPRO_MODEL_ID"),
+            "revision": os.environ.get("MODEL_REPRO_MODEL_REVISION"),
+            "model_config_sha256": self._sha256_file(config_path) if config_path else None,
+            "weights_loaded": self.weights_loaded,
+            "model_source": self.model_source,
+            "topology": self._topology(args),
+            "source_modules": self._source_modules(),
+            "invocation_id": os.environ.get("MRK_INVOCATION_ID"),
+            "world_size": paddle.distributed.get_world_size() if paddle.distributed.is_initialized() else 1,
+        }
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        if not self._is_writer(state):
+            return
+        self._loss_events = []
+        if self.loss_path:
+            Path(self.loss_path).expanduser().resolve().unlink(missing_ok=True)
+        if self.raw_loss_path:
+            raw_path = Path(self.raw_loss_path).expanduser().resolve()
+            raw_path.parent.mkdir(parents=True, exist_ok=True)
+            raw_path.unlink(missing_ok=True)
+        if self.env_path:
+            self._write_json(self.env_path, self._environment_payload(args))
+
+    def on_train_end(self, args, state, control, **kwargs):
+        if not self.loss_path or not self._is_writer(state):
+            return
+        raw_path = Path(self.raw_loss_path).expanduser().resolve() if self.raw_loss_path else None
+        payload = self._machine_loss_payload(
+            self._loss_events,
+            raw_path=raw_path,
+            source_sha256=self._sha256_file(raw_path) if raw_path and raw_path.is_file() else None,
+        )
+        self._write_json(self.loss_path, payload)
+
+    @staticmethod
+    def _source_modules():
+        names = (
+            "paddleformers.cli.train.sft.workflow",
+            "paddleformers.trainer.trainer",
+            "paddlefleet.transformer.moe.moe_utils",
+            "paddlefleet.transformer.moe.moe_router",
+            "paddlefleet.transformer.moe.fp8_utils",
+            "paddlefleet.transformer.moe.moe_layer",
+            "paddlefleet.models.common.language_loss.language_loss",
+        )
+        records = {}
+        for name in names:
+            path = getattr(sys.modules.get(name), "__file__", None)
+            records[name] = {
+                "path": str(Path(path).resolve()) if path else None,
+                "sha256": hashlib.sha256(Path(path).read_bytes()).hexdigest()
+                if path and Path(path).is_file()
+                else None,
+            }
+        return records
+
+    def _topology(self, args):
+        from paddlefleet import parallel_state
+
+        fields = (
+            "tensor_model_parallel_size",
+            "pipeline_model_parallel_size",
+            "expert_model_parallel_size",
+            "expert_tensor_parallel_size",
+            "context_parallel_size",
+            "sequence_parallel",
+        )
+        record = {
+            "configured": {name: getattr(self.model_config, name, None) for name in fields},
+            "world_size": paddle.distributed.get_world_size(),
+            "rank": paddle.distributed.get_rank(),
+            "global_batch_size": args.global_batch_size,
+            "micro_batch_size": args.per_device_train_batch_size,
+            "groups": {},
+        }
+        getters = {
+            "tp": "get_tensor_model_parallel_group",
+            "pp": "get_pipeline_model_parallel_group",
+            "ep": "get_expert_model_parallel_group",
+            "etp": "get_expert_tensor_parallel_group",
+            "cp": "get_context_parallel_group",
+            "data": "get_data_parallel_group",
+        }
+        for name, getter in getters.items():
+            group = getattr(parallel_state, getter)(check_initialized=False)
+            record["groups"][name] = (
+                None
+                if group is None
+                else {
+                    "size": group.nranks,
+                    "ranks": list(group.ranks),
+                }
+            )
+        return record
+
+    @staticmethod
+    def _is_writer(state):
+        return bool(getattr(state, "is_world_process_zero", False))
+
+    @staticmethod
+    def _values(tensor):
+        if hasattr(tensor, "is_dist") and tensor.is_dist():
+            tensor = tensor._local_value()
+        return tensor.detach().cast("int64").reshape([-1]).numpy().tolist()
+
+    @staticmethod
+    def _digest(values):
+        return hashlib.sha256(json.dumps(values, separators=(",", ":")).encode()).hexdigest()
+
+    @staticmethod
+    def _parameter_record(param):
+        if hasattr(param, "is_dist") and param.is_dist():
+            param = param._local_value()
+        tensor = param.detach().contiguous().cpu()
+        array = np.ascontiguousarray(tensor.numpy())
+        dtype = str(tensor.dtype)
+        positive_zero_count = 0
+        negative_zero_count = 0
+        bit_dtypes = {
+            "paddle.bfloat16": np.uint16,
+            "paddle.float16": np.uint16,
+            "paddle.float32": np.uint32,
+            "paddle.float64": np.uint64,
+        }
+        bit_dtype = bit_dtypes.get(dtype)
+        if bit_dtype is not None:
+            bits = array.view(bit_dtype)
+            sign_bit = np.array(1 << (np.dtype(bit_dtype).itemsize * 8 - 1), dtype=bit_dtype)
+            positive_zero_count = int(np.count_nonzero(bits == 0))
+            negative_zero_count = int(np.count_nonzero(bits == sign_bit))
+        record = {
+            "shape": list(tensor.shape),
+            "dtype": dtype,
+            "numel": int(tensor.numel()),
+            "sha256": hashlib.sha256(array.tobytes()).hexdigest(),
+            "positive_zero_count": positive_zero_count,
+            "negative_zero_count": negative_zero_count,
+        }
+        if tensor.ndim == 2:
+            record["transpose_sha256"] = hashlib.sha256(np.ascontiguousarray(array.T).tobytes()).hexdigest()
+        return record
+
+    @staticmethod
+    def _first_tensor(value):
+        if isinstance(value, paddle.Tensor):
+            return value
+        if isinstance(value, dict):
+            for item in value.values():
+                tensor = ModelReproObservationCallback._first_tensor(item)
+                if tensor is not None:
+                    return tensor
+        if isinstance(value, (tuple, list)):
+            for item in value:
+                tensor = ModelReproObservationCallback._first_tensor(item)
+                if tensor is not None:
+                    return tensor
+        return None
+
+    def _write_forward_record(self, boundary, value):
+        tensor = self._first_tensor(value)
+        if tensor is None:
+            return
+        if hasattr(tensor, "is_dist") and tensor.is_dist():
+            tensor = tensor._local_value()
+        output_dir = os.environ.get("MODEL_REPRO_FORWARD_RECEIPT_DIR")
+        rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
+        rank_dir = os.path.join(output_dir, f"rank{rank}")
+        os.makedirs(rank_dir, exist_ok=True)
+        records = getattr(self, "_forward_contract_records", {})
+        call_index = sum(name == boundary or name.startswith(f"{boundary}_call") for name in records)
+        name = boundary if call_index == 0 else f"{boundary}_call{call_index}"
+        tensor = tensor.detach().contiguous().cpu()
+        array = np.ascontiguousarray(tensor.numpy())
+        raw = array.tobytes()
+        file_name = "".join(character if character.isalnum() or character in "-_" else "_" for character in name)
+        raw_path = os.path.join(rank_dir, f"{file_name}.bin")
+        with open(raw_path, "wb") as stream:
+            stream.write(raw)
+        dtype = str(tensor.dtype)
+        positive_zero_count = 0
+        negative_zero_count = 0
+        bit_dtypes = {
+            "paddle.bfloat16": np.uint16,
+            "paddle.float16": np.uint16,
+            "paddle.float32": np.uint32,
+            "paddle.float64": np.uint64,
+        }
+        bit_dtype = bit_dtypes.get(dtype)
+        if bit_dtype is not None:
+            bits = array.view(bit_dtype)
+            sign_bit = np.array(1 << (np.dtype(bit_dtype).itemsize * 8 - 1), dtype=bit_dtype)
+            positive_zero_count = int(np.count_nonzero(bits == 0))
+            negative_zero_count = int(np.count_nonzero(bits == sign_bit))
+        records[name] = {
+            "boundary": boundary,
+            "shape": list(tensor.shape),
+            "dtype": dtype,
+            "numel": int(tensor.numel()),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "positive_zero_count": positive_zero_count,
+            "negative_zero_count": negative_zero_count,
+            "raw_path": raw_path,
+        }
+        self._forward_contract_records = records
+        payload = {
+            "schema": "glm52-local-forward-boundaries/v1",
+            "framework": "paddle",
+            "rank": rank,
+            "world_size": paddle.distributed.get_world_size() if paddle.distributed.is_initialized() else 1,
+            "boundary_set": getattr(self, "_forward_contract_boundary_set", "coarse"),
+            "selectors": getattr(self, "_forward_contract_selector_receipt", []),
+            "records": records,
+        }
+        with open(os.path.join(rank_dir, "metadata.json"), "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, indent=2, sort_keys=True)
+            stream.write("\n")
+
+    def _install_forward_contract_once(self, model):
+        output_dir = os.environ.get("MODEL_REPRO_FORWARD_RECEIPT_DIR")
+        if not output_dir or getattr(self, "_forward_contract_installed", False) or model is None:
+            return
+        rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
+        boundary_set = os.environ.get("MODEL_REPRO_FORWARD_BOUNDARY_SET", "coarse")
+        fine_specs = self._forward_contract_specs(boundary_set)
+        self._forward_contract_boundary_set = boundary_set
+        handles = []
+        if fine_specs is not None:
+            selected = []
+            if rank < 2:
+                module_hits = {name: [] for name in fine_specs}
+                for module_name, module in model.named_sublayers():
+                    if module_name in module_hits:
+                        module_hits[module_name].append(module)
+                invalid = {name: len(hits) for name, hits in module_hits.items() if len(hits) != 1}
+                if invalid:
+                    raise RuntimeError(
+                        f"layer0 fine forward selectors must match exactly once on rank {rank}: {invalid}"
+                    )
+                for module_name, boundary in fine_specs.items():
+                    module = module_hits[module_name][0]
+                    handles.append(
+                        module.register_forward_post_hook(
+                            lambda _module, _inputs, output, name=boundary: self._write_forward_record(name, output)
+                        )
+                    )
+                    selected.append({"module": module_name, "boundary": boundary})
+            self._forward_contract_selector_receipt = selected
+            rank_dir = os.path.join(output_dir, f"rank{rank}")
+            os.makedirs(rank_dir, exist_ok=True)
+            with open(os.path.join(rank_dir, "metadata.json"), "w", encoding="utf-8") as stream:
+                json.dump(
+                    {
+                        "schema": "glm52-local-forward-boundaries/v1",
+                        "framework": "paddle",
+                        "rank": rank,
+                        "world_size": paddle.distributed.get_world_size()
+                        if paddle.distributed.is_initialized()
+                        else 1,
+                        "boundary_set": boundary_set,
+                        "selectors": selected,
+                        "records": {},
+                    },
+                    stream,
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                )
+                stream.write("\n")
+            self._forward_contract_handles = handles
+            self._forward_contract_installed = True
+            return
+        base_layers = {"1": 0, "2": 1, "3": 2, "4": 3}
+        for module_name, module in model.named_sublayers():
+            boundary = None
+            if module_name == "0.embedding":
+                boundary = "embedding_output"
+            elif module_name in base_layers:
+                global_layer = base_layers[module_name]
+                input_boundary = f"base_layer_{global_layer}_input"
+                handles.append(
+                    module.register_forward_pre_hook(
+                        lambda _module, inputs, name=input_boundary: self._write_forward_record(name, inputs)
+                    )
+                )
+                boundary = f"base_layer_{global_layer}_output"
+            elif module_name == "5":
+                boundary = "final_norm_output"
+            elif module_name == "7":
+                handles.append(
+                    module.register_forward_pre_hook(
+                        lambda _module, inputs, name="output_head_input": self._write_forward_record(name, inputs)
+                    )
+                )
+                boundary = "output_head_output"
+            elif module_name == "6":
+                boundary = "mtp_layer_output"
+            elif module_name.startswith("6.") and module_name.rsplit(".", 1)[-1] in {
+                "enorm",
+                "hnorm",
+                "eh_proj",
+                "transformer_layer",
+                "final_layernorm",
+            }:
+                boundary = f"mtp_{module_name.removeprefix('6.').replace('.', '_')}_output"
+            if boundary is not None:
+                handles.append(
+                    module.register_forward_post_hook(
+                        lambda _module, _inputs, output, name=boundary: self._write_forward_record(name, output)
+                    )
+                )
+        self._forward_contract_handles = handles
+        self._forward_contract_installed = True
+
+    def _write_parameter_contract_once(self, model):
+        if not self.parameter_receipt_dir or self._parameters_written or model is None:
+            return
+        rank = paddle.distributed.get_rank() if paddle.distributed.is_initialized() else 0
+        parameters = [{"name": name, **self._parameter_record(param)} for name, param in model.named_parameters()]
+        payload = {
+            "schema": "glm52-loaded-parameter-inventory/v1",
+            "framework": "paddle",
+            "rank": rank,
+            "world_size": paddle.distributed.get_world_size() if paddle.distributed.is_initialized() else 1,
+            "parameters": parameters,
+            "parameter_count": len(parameters),
+            "local_numel": sum(item["numel"] for item in parameters),
+        }
+        os.makedirs(self.parameter_receipt_dir, exist_ok=True)
+        path = os.path.join(self.parameter_receipt_dir, f"rank{rank}.json")
+        with open(path, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, indent=2, sort_keys=True)
+            stream.write("\n")
+        self._parameters_written = True
+
+    def on_load_data_end(self, args, state, control, inputs=None, **kwargs):
+        model = kwargs.get("model")
+        self._write_parameter_contract_once(model)
+        self._install_forward_contract_once(model)
+        if not self.input_receipt_path or self._input_written or not self._is_writer(state):
+            return
+        inputs = inputs or {}
+        input_ids = inputs.get("input_ids")
+        labels = inputs.get("labels")
+        position_ids = inputs.get("position_ids")
+        if input_ids is None or labels is None:
+            return
+        input_values = self._values(input_ids)
+        label_values = self._values(labels)
+        position_values = self._values(position_ids) if position_ids is not None else None
+        mask_values = [label != -100 for label in label_values]
+        semantic_input_values, semantic_label_values, semantic_mask_values = project_owning_loader_semantics(
+            input_values, label_values, position_values
+        )
+        mtp_depth = int(getattr(args, "num_nextn_predict_layers", 0) or 0)
+        has_mtp_sentinel = (
+            mtp_depth > 0
+            and len(input_values) - len(semantic_input_values) >= mtp_depth
+            and label_values[-mtp_depth:] == [-100] * mtp_depth
+            and (position_values is None or position_values[-mtp_depth:] == [0] * mtp_depth)
+        )
+        payload = {
+            "schema": "glm52-owning-loader-input/v1",
+            "framework": "paddle",
+            "rank": paddle.distributed.get_rank(),
+            "step": int(state.global_step) + 1,
+            "input_ids": {
+                "shape": list(input_ids.shape),
+                "dtype": str(input_ids.dtype),
+                "count": len(input_values),
+                "sha256": self._digest(input_values),
+            },
+            "labels": {
+                "shape": list(labels.shape),
+                "dtype": str(labels.dtype),
+                "count": len(label_values),
+                "supervised_count": sum(mask_values),
+                "sha256": self._digest(label_values),
+            },
+            "loss_mask": {
+                "shape": list(labels.shape),
+                "dtype": "bool",
+                "count": len(mask_values),
+                "supervised_count": sum(mask_values),
+                "sha256": self._digest(mask_values),
+            },
+            "semantic": {
+                "input_token_count": len(semantic_input_values),
+                "supervised_target_count": sum(semantic_mask_values),
+                "input_ids_sha256": self._digest(semantic_input_values),
+                "labels_sha256": self._digest(semantic_label_values),
+                "loss_mask_sha256": self._digest(semantic_mask_values),
+                "projection": "dataset_row_before_paddle_padding_and_label_roll",
+            },
+            "carrier_padding": {
+                "count": len(input_values) - len(semantic_input_values),
+                "input_ids_sha256": self._digest(input_values[len(semantic_input_values) :]),
+                "labels_sha256": self._digest(label_values[len(semantic_input_values) :]),
+            },
+            "mtp_sentinel": {
+                "expected_depth": mtp_depth,
+                "present": has_mtp_sentinel,
+                "carrier_token_count": len(input_values),
+            },
+            "ignore_index": -100,
+            "dataset": os.environ.get("MODEL_REPRO_INPUT_DATASET_PATH"),
+        }
+        path = os.path.abspath(os.path.expanduser(self.input_receipt_path))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, indent=2, sort_keys=True)
+            stream.write("\n")
+        self._input_written = True
+
+    def on_log(self, args, state, control, logs=None, raw_loss=None, **kwargs):
+        if raw_loss is None or not self._is_writer(state) or not (self.raw_loss_path or self.loss_path):
+            return
+        event = {"step": int(state.global_step), "loss": float(raw_loss)}
+        for key, value in (logs or {}).items():
+            normalized_key = key.replace(" ", "_")
+            if normalized_key.startswith("mtp_") and normalized_key.endswith("_loss"):
+                event[normalized_key] = float(value)
+        if self.raw_loss_path:
+            path = os.path.abspath(os.path.expanduser(self.raw_loss_path))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a", encoding="utf-8") as stream:
+                stream.write(json.dumps(event, ensure_ascii=False, allow_nan=False) + "\n")
+        if self.loss_path:
+            self._loss_events.append(event)
+
 
 # Fine-tune Environment Variables to support sharding stage1 overlap optimization.
 os.environ["USE_CASUAL_MASK"] = "False"
@@ -91,6 +654,144 @@ from paddleformers.cli.utils import (
 )
 
 
+def load_tokenizer_and_processor(model_args, data_args):
+    tokenizer_path = model_args.tokenizer_name_or_path or model_args.model_name_or_path
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    logger.info(f"Loading tokenizer from {tokenizer_path}")
+    # Keep develop's AutoProcessor load for every stage. Routing processor=
+    # tokenizer on text SFT moved GLM4 CI first-train/resume loss off the
+    # published GT (12.635027885 vs 12.63612175). GLM-5.2 still needs an
+    # independent tokenizer path; processor stays on the model weights path.
+    try:
+        processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
+    except (OSError, ValueError):
+        # Extracted GLM-5.2 weights keep an independent tokenizer path and
+        # have no processor files. Published GLM-4 SFT still needs
+        # AutoProcessor; swallowing that failure moved first-train/resume
+        # loss off the published GT (12.635027885 vs 12.63612175).
+        independent_tokenizer = (
+            model_args.tokenizer_name_or_path and model_args.tokenizer_name_or_path != model_args.model_name_or_path
+        )
+        if not independent_tokenizer:
+            raise
+        logger.info(f"No AutoProcessor at {model_args.model_name_or_path}; using tokenizer as processor")
+        processor = tokenizer
+    return tokenizer, processor
+
+
+def save_final_hf_model_if_requested(trainer, training_args):
+    """Write a HuggingFace-layout checkpoint after train().
+
+    Mid-training HF cadence is gated by save_to_hf / save_hf_steps. The
+    final export is independent: GLM-4 model-unittest generate and
+    integration SFT-from-PT both load output_dir via from_pretrained and
+    need config.json. Skipping this when save_to_hf=false left flex
+    weights only and failed those jobs.
+    """
+    trainer.save_model(
+        merge_tensor_parallel=training_args.tensor_model_parallel_size > 1,
+        last_fc_to_hf=True,
+    )
+    return True
+
+
+def validate_pretokenized_offline_dataset(dataset, expected_length):
+    if dataset is None or len(dataset) == 0:
+        raise ValueError("pretokenized offline dataset must contain at least one row")
+    for row in dataset:
+        if not isinstance(row, list) or len(row) != 1:
+            raise ValueError("pretokenized offline rows must contain exactly one TextSequence")
+        sequence = row[0]
+        fields = {
+            "token_ids": sequence.token_ids,
+            "labels": sequence.labels,
+            "position_ids": sequence.position_ids,
+        }
+        for name, values in fields.items():
+            if len(values) != expected_length:
+                raise ValueError(f"pretokenized {name} length {len(values)} != {expected_length}")
+            if any(not isinstance(value, int) for value in values):
+                raise TypeError(f"pretokenized {name} must contain integer values")
+
+
+def apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args):
+    """Propagate CLI training semantics into the Fleet provider used by GLM MoE DSA."""
+    if getattr(model_config, "model_type", None) != "glm_moe_dsa":
+        return
+
+    model_config.use_accuracy_compatible = normalize_accuracy_target(
+        getattr(training_args, "use_accuracy_compatible", False)
+    )
+    requested_mtp = int(getattr(training_args, "num_nextn_predict_layers", 0) or 0)
+    explicit_mtp = int(getattr(training_args, "mtp_num_layers", 0) or 0)
+    if requested_mtp and explicit_mtp and requested_mtp != explicit_mtp:
+        raise ValueError(
+            f"GLM MoE DSA MTP depth mismatch: num_nextn_predict_layers={requested_mtp}, "
+            f"mtp_num_layers={explicit_mtp}"
+        )
+    mtp_depth = explicit_mtp or requested_mtp
+    model_config.num_nextn_predict_layers = mtp_depth
+    training_args.num_nextn_predict_layers = mtp_depth
+    # Fleet TransformerConfig rejects a non-zero mtp_num_layers (renamed to
+    # num_nextn_predict_layers). Keep the old CLI field at 0 so register_attributes
+    # does not fail-closed on GLM MoE DSA.
+    if hasattr(training_args, "mtp_num_layers"):
+        training_args.mtp_num_layers = 0
+    if hasattr(model_config, "mtp_num_layers"):
+        delattr(model_config, "mtp_num_layers")
+    model_config.mtp_enabled = mtp_depth > 0
+
+    requested_mtp_loss_scaling_factor = getattr(training_args, "mtp_loss_scaling_factor", None)
+    if requested_mtp_loss_scaling_factor is not None:
+        model_config.mtp_loss_scaling_factor = float(requested_mtp_loss_scaling_factor)
+    logger.info(
+        "GLM MoE DSA MTP loss weight: mtp_loss_scaling_factor="
+        f"{getattr(model_config, 'mtp_loss_scaling_factor', None)} "
+        f"(cli={requested_mtp_loss_scaling_factor!r}, mtp_depth={mtp_depth})"
+    )
+
+    if getattr(data_args, "pretokenized_dataset", False) and mtp_depth > 0 and not model_args.mtp_attention_flexible:
+        raise ValueError("pretokenized GLM MoE DSA MTP requires mtp_attention_flexible=true")
+
+    model_config.fp32_residual_connection = training_args.fp32_residual_connection
+    model_config.moe_token_dispatcher_type = getattr(training_args, "moe_token_dispatcher_type", "alltoall")
+    model_config.moe_router_bias_update_rate = float(getattr(training_args, "moe_router_bias_update_rate", 0.001))
+    moe_expert_fusion = getattr(training_args, "moe_expert_fusion", None)
+    if moe_expert_fusion is not None:
+        model_config.moe_expert_fusion = bool(moe_expert_fusion)
+    # Apply parsed CLI/YAML values after the provider has received model defaults.
+    for field_name in (
+        "bias_activation_fusion",
+        "overlap_p2p_comm",
+        "batch_p2p_comm",
+        "variable_seq_lengths",
+    ):
+        value = getattr(training_args, field_name, None)
+        if value is not None:
+            setattr(model_config, field_name, value)
+    for parallel_field in (
+        "tensor_model_parallel_size",
+        "pipeline_model_parallel_size",
+        "context_parallel_size",
+        "expert_model_parallel_size",
+    ):
+        configured_size = int(getattr(training_args, parallel_field, -1))
+        setattr(model_config, parallel_field, max(configured_size, 1))
+    model_config.sequence_parallel = bool(getattr(training_args, "sequence_parallel", False))
+    configured_expert_tensor_parallel_size = int(getattr(training_args, "expert_tensor_model_parallel_size", -1))
+    expert_tensor_parallel_size = (
+        1 if configured_expert_tensor_parallel_size == -1 else configured_expert_tensor_parallel_size
+    )
+    if expert_tensor_parallel_size < 1:
+        raise ValueError(
+            "GLM MoE DSA expert_tensor_model_parallel_size must be -1 or at least 1, "
+            f"got {configured_expert_tensor_parallel_size}"
+        )
+    model_config.expert_tensor_parallel_size = expert_tensor_parallel_size
+    if model_args.persist_layer_norm is not None:
+        model_config.persist_layer_norm = model_args.persist_layer_norm
+
+
 def freeze_param_except_mtp(model, config):
     logger.info("freeze_param_except_mtp.")
 
@@ -105,7 +806,8 @@ def freeze_param_except_mtp(model, config):
         return None
 
     # not sure can work on all model
-    jackpot = set(range(config.num_hidden_layers, config.num_hidden_layers + config.mtp_num_layers))
+    mtp_depth = int(getattr(config, "num_nextn_predict_layers", 0) or getattr(config, "mtp_num_layers", 0) or 0)
+    jackpot = set(range(config.num_hidden_layers, config.num_hidden_layers + mtp_depth))
     for name, param in model.state_dict().items():
         layer_idx = extract_layer_idx(name)
         is_mtp = layer_idx in jackpot
@@ -304,10 +1006,15 @@ def run_sft(
         training_args.prediction_loss_only = True
 
     LlmMetaConfig.set_llm_config(model_config, training_args)
+    apply_glm_moe_dsa_training_contract(model_config, training_args, model_args, data_args)
+    if getattr(model_config, "model_type", None) == "glm_moe_dsa":
+        paddle.set_flags({"FLAGS_use_accuracy_compatible_kernel": bool(model_config.use_accuracy_compatible)})
     model_config.use_fast_layer_norm = model_args.use_fast_layer_norm
 
-    # autoregressive mtp training
-    if model_config.mtp_num_layers > 1:
+    # autoregressive mtp training (non GLM MoE DSA). GLM MoE DSA already mapped
+    # depth onto num_nextn_predict_layers and dropped mtp_num_layers so Fleet
+    # TransformerConfig does not fail-closed on the renamed key.
+    if getattr(model_config, "model_type", None) != "glm_moe_dsa" and getattr(model_config, "mtp_num_layers", 0) > 1:
         tmp = model_config.mtp_num_layers
         model_config.mtp_num_layers = model_config.num_nextn_predict_layers
         model_config.num_nextn_predict_layers = tmp
@@ -420,7 +1127,7 @@ def run_sft(
     runtime_timer = RuntimeTimer("Creating SFT MapDataset")
 
     # Load tokenizer & processor & dataset
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    tokenizer, processor = load_tokenizer_and_processor(model_args, data_args)
     add_new_special_tokens(tokenizer, data_args.new_special_tokens_path)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -432,7 +1139,6 @@ def run_sft(
     if isinstance(tokenizer, LlamaTokenizer) or isinstance(tokenizer, Llama3Tokenizer):
         tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    processor = AutoProcessor.from_pretrained(model_args.model_name_or_path, use_fast=data_args.processor_use_fast)
     # The multimodal plugins read the resolution bounds off the processor
     # (falling back to a hardcoded 768*768 / 32*32), so without wiring these the
     # --max_pixels / --min_pixels arguments have no way to reach image
@@ -478,6 +1184,12 @@ def run_sft(
         "truncation_strategy": data_args.truncation_strategy,
         "skip_warmup": data_args.skip_warmup,
     }
+    # GeneratingArguments.enable_thinking defaults to False for VL generate.
+    # Copying that onto every SFT template overwrites qwen3_vl's registered
+    # True and shifts the Qwen3-VL CI GT by ~6e-4. Only glm5_2 needs the
+    # YAML/CLI value; other templates keep register_template defaults.
+    if data_args.template == "glm5_2":
+        dataset_config["enable_thinking"] = getattr(generating_args, "enable_thinking", None)
 
     if dataset_config["template_backend"] == "custom":
         template_instance = get_template_and_fix_tokenizer(dataset_config)
@@ -612,6 +1324,11 @@ def run_sft(
             skip_warmup=data_args.skip_warmup,
             warmup_only_rank0=data_args.warmup_only_rank0,
         )
+        if data_args.pretokenized_dataset:
+            validate_pretokenized_offline_dataset(train_dataset, data_args.max_seq_len)
+            if training_args.num_nextn_predict_layers > 0 and data_args.pretokenized_pad_token_id is None:
+                raise ValueError("pretokenized_pad_token_id is required when MTP padding is enabled")
+            logger.info("Using validated pretokenized offline dataset without text tokenization.")
         if training_args.do_eval:
             eval_file_path = os.path.join(data_args.input_dir, "eval")
             eval_dataset = create_indexed_dataset(
@@ -679,6 +1396,7 @@ def run_sft(
                 model_args=model_args,
                 max_seq_len=max_seq_len,
                 padding_free=data_args.padding_free,
+                input_pad_token_id=(data_args.pretokenized_pad_token_id if data_args.pretokenized_dataset else None),
             )
 
     if training_args.max_steps == -1:
@@ -730,6 +1448,30 @@ def run_sft(
         training_args.logging_steps = int(training_args.max_steps / training_args.num_train_epochs)
 
     callbacks = []
+    raw_loss_path = os.environ.get("MODEL_REPRO_RAW_LOSS_PATH")
+    input_receipt_path = os.environ.get("MODEL_REPRO_INPUT_RECEIPT_PATH")
+    parameter_receipt_dir = os.environ.get("MODEL_REPRO_PARAMETER_RECEIPT_DIR")
+    if (
+        raw_loss_path
+        or input_receipt_path
+        or parameter_receipt_dir
+        or os.environ.get("MODEL_REPRO_LOSS_PATH")
+        or os.environ.get("MODEL_REPRO_ENV_PATH")
+    ):
+        callbacks.append(
+            ModelReproObservationCallback(
+                raw_loss_path,
+                input_receipt_path,
+                parameter_receipt_dir,
+                model_source=model_args.model_name_or_path,
+                weights_loaded=bool(
+                    model_args.continue_training
+                    and not training_args.autotuner_benchmark
+                    and not data_args.make_offline_data
+                ),
+                model_config=model_config.get_text_config(),
+            )
+        )
     if getattr(model_config.get_text_config(), "topk_method", None) == "noaux_tc":
         callbacks += [MoECorrectionBiasAdjustCallback(lr=training_args.moe_router_bias_update_rate)]
     elif getattr(model_config.get_text_config(), "topk_method", None) == "quantile_balancing":
@@ -790,7 +1532,7 @@ def run_sft(
         )
         logger.info(f"Total_Tokens_per_second_per_gpu: {total_tokens_per_second_per_gpu} ")
         if not training_args.autotuner_benchmark:
-            trainer.save_model(merge_tensor_parallel=training_args.tensor_model_parallel_size > 1, last_fc_to_hf=True)
+            save_final_hf_model_if_requested(trainer, training_args)
             trainer.log_metrics("train", train_result.metrics)
             trainer.save_metrics("train", train_result.metrics)
             trainer.save_state()
