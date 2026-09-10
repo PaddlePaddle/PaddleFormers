@@ -372,8 +372,8 @@ class LlmMetaConfig:
         (
             "moe_dequant_input",
             bool,
-            False,
-            "Whether to dequantize inputs to MoE experts (only applicable if inputs are quantized). Defaults to False (enable only for quantized inference/training pipelines).",
+            True,
+            "Whether to dequantize inputs to MoE experts (only applicable if inputs are quantized). Defaults to True to keep the fp8-dispatch fusion path consistent with FusionMoePyLayer's historical default.",
         ),
         (
             "moe_expert_fusion",
