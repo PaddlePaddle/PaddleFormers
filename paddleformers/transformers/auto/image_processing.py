@@ -57,6 +57,7 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "kimi_k3": ("KimiK3VisionProcessor"),
         "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
         "gemma3": ("Gemma3ImageProcessor", "Gemma3ImageProcessorFast"),
+        "florence2": ("Florence2ImageProcessor"),
         "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),

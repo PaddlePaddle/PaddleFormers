@@ -393,6 +393,34 @@ class BasePlugin(MMPluginMixin):
 
 
 @dataclass
+class Florence2Plugin(BasePlugin):
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        if videos or audios:
+            raise ValueError("Florence-2 only supports image inputs.")
+        if len(images) != 1:
+            raise ValueError("Florence-2 supports exactly one image per prompt.")
+
+        messages = deepcopy(messages)
+        for message in messages:
+            content = message["content"].replace(IMAGE_PLACEHOLDER, "").strip()
+            if message["role"] == "user" and hasattr(processor, "_construct_prompts"):
+                content = processor._construct_prompts([content])[0]
+            message["content"] = content
+        return messages
+
+
+@dataclass
 class PaddleOCRVLPlugin(BasePlugin):
     image_bos_token: str = "<|IMAGE_START|>"
     image_eos_token: str = "<|IMAGE_END|>"
@@ -1602,6 +1630,7 @@ class KimiK3Plugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "florence2": Florence2Plugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,

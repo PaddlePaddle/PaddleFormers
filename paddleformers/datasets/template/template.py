@@ -648,6 +648,16 @@ register_template(
     mm_plugin=get_mm_plugin(name="paddleocr_vl", image_token="<|IMAGE_PLACEHOLDER|>"),
 )
 
+register_template(
+    name="florence2",
+    format_user=StringFormatter(slots=["{{content}}"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["{{content}}"]),
+    format_prefix=EmptyFormatter(slots=[]),
+    suffix=["</s>"],
+    mm_plugin=get_mm_plugin(name="florence2", image_token="<image>"),
+)
+
 # copied from chatml template
 register_template(
     name="qwen",

@@ -31,6 +31,7 @@ on:
           - 'qwen2'
           - 'gemma3_text'
           - 'paddleocr_vl'
+          - 'florence2'
       FLAGS_enable_CE:
         required: false
         default: 'CE_Release_cu129_py312_nightly'
