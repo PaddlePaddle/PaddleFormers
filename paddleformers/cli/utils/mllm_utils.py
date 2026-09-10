@@ -32,6 +32,7 @@ class MLLMModelMapping:
     paddleocr_vl = "paddleocr_vl"
     ernie4_5_moe_vl = "ernie4_5_moe_vl"
     glm4v_moe = "glm4v_moe"
+    deepseek_ocr2 = "deepseek_ocr2"
 
 
 @dataclass
@@ -256,5 +257,14 @@ register_multimodel_keys(
         aligner="model.visual.merger",
         llm=["model.language_model", "lm_head"],
         vision="model.visual",
+    )
+)
+
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.deepseek_ocr2,
+        aligner="projector",
+        llm=["model", "lm_head"],
+        vision=["sam_model", "qwen2_model"],
     )
 )

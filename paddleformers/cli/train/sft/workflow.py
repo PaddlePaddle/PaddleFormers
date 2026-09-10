@@ -31,7 +31,11 @@ from paddleformers.data.causal_dataset import (
     check_data_split,
 )
 from paddleformers.data.indexed_dataset import SFTMMapIndexedDatasetBuilder
-from paddleformers.datasets.collate import collate_fn, mm_collate_fn
+from paddleformers.datasets.collate import (
+    collate_fn,
+    mm_collate_fn,
+    mm_collate_fn_ds_ocr2,
+)
 from paddleformers.datasets.data_utils import estimate_training
 from paddleformers.datasets.loader import create_dataset as create_dataset_sft
 from paddleformers.datasets.loader import create_indexed_dataset
@@ -660,8 +664,11 @@ def run_sft(
         logger.info(f"Setting max_seq_len to {max_seq_len} using PaddleFormers Model.")
     if data_args.dataset_type != "pretrain":
         if "VL" in model_args.stage:
+            cur_mm_collate_fn = mm_collate_fn
+            if model_config.model_type == "deepseek_ocr2":
+                cur_mm_collate_fn = mm_collate_fn_ds_ocr2
             data_collator = partial(
-                mm_collate_fn,
+                cur_mm_collate_fn,
                 template=template_instance,
                 processor=processor,
                 tokenizer=tokenizer,

@@ -1,0 +1,5 @@
+### model
+fine_tuning: LoRA
+model_name_or_path: deepseek-ai/DeepSeek-OCR-2
+output_dir: ./Deepseek-OCR2-SFT-Bengali-lora
+copy_custom_file_list: "configuration_deepseek_v2.py conversation.py deepencoderv2.py modeling_deepseekocr2.py modeling_deepseekv2.py"

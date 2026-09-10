@@ -34,7 +34,7 @@ import librosa
 import numpy as np
 import paddle
 import requests
-from PIL import Image
+from PIL import Image, ImageOps
 from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
 from typing_extensions import override
@@ -390,6 +390,246 @@ class BasePlugin(MMPluginMixin):
 
         self._validate_input(processor, images, videos, audios)
         return self._get_mm_inputs(images, videos, audios, processor, **kwargs)
+
+
+@dataclass
+class DeepseekOCR2Plugin(BasePlugin):
+    def __init__(self, image_token, video_token, audio_token, **kwargs):
+        super().__init__(image_token, video_token, audio_token, **kwargs)
+        self.crop_mode = True
+        self.base_size = 1024
+        self.image_size = 768
+        self.crop_threshold = self.image_size
+        self.patch_size = 16
+        self.downsample_ratio = 4
+        self.image_mean = [0.5, 0.5, 0.5]
+        self.image_std = [0.5, 0.5, 0.5]
+        self.image_transform = transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize(mean=self.image_mean, std=self.image_std)]
+        )
+
+    @override
+    def _validate_input(
+        self,
+        processor,
+        images,
+        videos,
+        audios,
+    ) -> None:
+        r"""Validate if this model accepts the input modalities."""
+        if len(images) != 0 and self.image_token is None:
+            raise ValueError(
+                "This model does not support image input. Please check whether the correct `template` is used."
+            )
+
+        if len(videos) != 0 and self.video_token is None:
+            raise ValueError(
+                "This model does not support video input. Please check whether the correct `template` is used."
+            )
+
+        if len(audios) != 0 and self.audio_token is None:
+            raise ValueError(
+                "This model does not support audio input. Please check whether the correct `template` is used."
+            )
+
+    def find_closest_aspect_ratio(self, aspect_ratio, target_ratios, width, height, image_size):
+        best_ratio_diff = float("inf")
+        best_ratio = (1, 1)
+        area = width * height
+        for ratio in target_ratios:
+            target_aspect_ratio = ratio[0] / ratio[1]
+            ratio_diff = abs(aspect_ratio - target_aspect_ratio)
+            if ratio_diff < best_ratio_diff:
+                best_ratio_diff = ratio_diff
+                best_ratio = ratio
+            elif ratio_diff == best_ratio_diff:
+                if area > 0.5 * image_size * image_size * ratio[0] * ratio[1]:
+                    best_ratio = ratio
+        # print(f'width: {width}, height: {height}, best_ratio: {best_ratio}')
+        return best_ratio
+
+    def dynamic_preprocess(self, image, min_num=2, max_num=6, image_size=768, use_thumbnail=False):
+        orig_width, orig_height = image.size
+        aspect_ratio = orig_width / orig_height
+
+        # calculate the existing image aspect ratio
+        target_ratios = set(
+            (i, j)
+            for n in range(min_num, max_num + 1)
+            for i in range(1, n + 1)
+            for j in range(1, n + 1)
+            if i * j <= max_num and i * j >= min_num
+        )
+        # print(target_ratios)
+        target_ratios = sorted(target_ratios, key=lambda x: x[0] * x[1])
+
+        # find the closest aspect ratio to the target
+        target_aspect_ratio = self.find_closest_aspect_ratio(
+            aspect_ratio, target_ratios, orig_width, orig_height, image_size
+        )
+
+        # calculate the target width and height
+        target_width = image_size * target_aspect_ratio[0]
+        target_height = image_size * target_aspect_ratio[1]
+        blocks = target_aspect_ratio[0] * target_aspect_ratio[1]
+
+        # resize the image
+        resized_img = image.resize((target_width, target_height))
+        processed_images = []
+        for i in range(blocks):
+            box = (
+                (i % (target_width // image_size)) * image_size,
+                (i // (target_width // image_size)) * image_size,
+                ((i % (target_width // image_size)) + 1) * image_size,
+                ((i // (target_width // image_size)) + 1) * image_size,
+            )
+            # split the image
+            split_img = resized_img.crop(box)
+            processed_images.append(split_img)
+        assert len(processed_images) == blocks
+        if use_thumbnail and len(processed_images) != 1:
+            thumbnail_img = image.resize((image_size, image_size))
+            processed_images.append(thumbnail_img)
+        return processed_images, target_aspect_ratio
+
+    @override
+    def _regularize_images(self, images, **kwargs):
+
+        images_list, images_crop_list, images_spatial_crop_list = [], [], []
+        for image in images:
+            image = self._img_download(image)
+            image, images_crop, images_spatial_crop = self._preprocess_image(image, **kwargs)
+            if image is not None:
+                images_list.append(image)
+            if len(images_crop) > 0:
+                images_crop_list.extend(images_crop)
+            else:
+                images_crop_list.append(paddle.zeros((3, self.base_size, self.base_size)))
+            if images_spatial_crop is not None:
+                images_spatial_crop_list.append(images_spatial_crop)
+
+        if len(images_list) == 0:
+            images_ori = paddle.zeros((1, 3, self.image_size, self.image_size))
+            images_crop = paddle.zeros((1, 3, self.base_size, self.base_size))
+            # images_spatial_crop = paddle.zeros((1, 2), dtype=paddle.long)
+            images_spatial_crop = np.array([[0, 0]])
+        else:
+            images_ori = paddle.stack(images_list, dim=0)
+            images_crop = paddle.stack(images_crop_list, dim=0)
+            # images_spatial_crop = paddle.tensor(images_spatial_crop_list, dtype=paddle.long)
+            images_spatial_crop = np.array(images_spatial_crop_list)
+
+        return {"images": images_ori, "images_crop": images_crop, "images_spatial_crop": images_spatial_crop}
+
+    @override
+    def _preprocess_image(self, image, **kwargs):
+
+        images_crop_list = []
+
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        if self.crop_mode:
+            if image.size[0] <= self.crop_threshold and image.size[1] <= self.crop_threshold:
+                crop_ratio = [1, 1]
+            else:
+                images_crop_raw, crop_ratio = self.dynamic_preprocess(image)
+
+            """process the global view"""
+            global_view = ImageOps.pad(
+                image, (self.base_size, self.base_size), color=tuple(int(x * 255) for x in self.image_mean)
+            )
+
+            image = self.image_transform(global_view)
+            width_crop_num, height_crop_num = crop_ratio
+            images_spatial_crop = [width_crop_num, height_crop_num]
+
+            if width_crop_num > 1 or height_crop_num > 1:
+                """process the local views"""
+                for i in range(len(images_crop_raw)):
+                    images_crop_list.append(self.image_transform(images_crop_raw[i]))
+        else:
+            """process the global view"""
+            if image.size[0] <= self.crop_threshold and image.size[1] <= self.crop_threshold:
+                image = image.resize((self.image_size, self.image_size))
+            global_view = ImageOps.pad(
+                image, (self.image_size, self.image_size), color=tuple(int(x * 255) for x in self.image_mean)
+            )
+            image = self.image_transform(global_view)
+
+            width_crop_num, height_crop_num = 1, 1
+            images_spatial_crop = [width_crop_num, height_crop_num]
+
+        return image, images_crop_list, images_spatial_crop
+
+    @override
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        mm_inputs = {}
+        if len(images) != 0:
+            image_results = self._regularize_images(
+                images,
+            )
+
+            mm_inputs.update(image_results)
+
+        return mm_inputs
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+        images_spatial_crop = mm_inputs.get("images_spatial_crop", None)
+
+        if self.expand_mm_tokens:
+            if self.crop_mode:
+                num_queries = math.ceil((self.image_size // self.patch_size) / self.downsample_ratio)
+                num_queries_base = math.ceil((self.base_size // self.patch_size) / self.downsample_ratio)
+            else:
+                num_queries = math.ceil((self.image_size // self.patch_size) / self.downsample_ratio)
+
+        for message in messages:
+            content = message["content"]
+            while num_image_tokens < len(images) and IMAGE_PLACEHOLDER in content:
+                if self.expand_mm_tokens:
+                    if self.crop_mode:
+                        image_seqlen = num_queries_base * num_queries_base
+                        image_seqlen += 1
+                        width_crop_num, height_crop_num = images_spatial_crop[num_image_tokens]
+                        if width_crop_num > 1 or height_crop_num > 1:
+                            image_seqlen += (num_queries * width_crop_num) * (num_queries * height_crop_num)
+                    else:
+                        image_seqlen = num_queries_base * num_queries_base
+                        image_seqlen += 1
+
+                content = content.replace(
+                    IMAGE_PLACEHOLDER,
+                    f"{self.image_token * image_seqlen}\n",
+                    1,
+                )
+                num_image_tokens += 1
+
+            message["content"] = content
+
+        self.masked_tokens = [self.image_token]
+
+        return messages
 
 
 @dataclass
@@ -1602,6 +1842,7 @@ class KimiK3Plugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "deepseek_ocr2": DeepseekOCR2Plugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,

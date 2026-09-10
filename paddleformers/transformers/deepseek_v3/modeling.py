@@ -203,6 +203,22 @@ def rotate_half(x):
     return paddle.cat([-x2, x1], axis=-1)  # shape is the same as x
 
 
+def apply_rotary_pos_emb_gqa(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    """Applies standard rotary positional embedding for GQA mode.
+
+    Args:
+        q (paddle.Tensor): Query tensor with shape [B, N_q, S, D_h].
+        k (paddle.Tensor): Key tensor with shape [B, N_kv, S, D_h].
+        cos (paddle.Tensor): Cosine values with shape [B, S, D_h], already cast to q/k dtype by rotary_emb.forward.
+        sin (paddle.Tensor): Sine values with shape [B, S, D_h], already cast to q/k dtype by rotary_emb.forward.
+    """
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
+
+
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids, apply_rope_fusion=False):
     """Applies Rotary Position Embedding to the query and key tensors.
 
@@ -345,6 +361,8 @@ class DeepseekV3TopkRouter(nn.Layer):
         self.top_k = config.num_experts_per_tok
         self.n_routed_experts = config.n_routed_experts
         self.routed_scaling_factor = config.routed_scaling_factor
+        self.scoring_func = config.scoring_func
+        self.topk_method = config.topk_method
         self.n_group = config.n_group
         self.topk_group = config.topk_group
         self.norm_topk_prob = config.norm_topk_prob
@@ -353,27 +371,48 @@ class DeepseekV3TopkRouter(nn.Layer):
             dtype=paddle.float32,
             is_bias=False,
         )
-        self.register_buffer("e_score_correction_bias", paddle.zeros((self.n_routed_experts,), dtype=paddle.float32))
+        if self.topk_method == "noaux_tc":
+            self.register_buffer(
+                "e_score_correction_bias", paddle.zeros((self.n_routed_experts,), dtype=paddle.float32)
+            )
         self._cast_to_low_precision = False
 
     @paddle.no_grad()
     def get_topk_indices(self, scores):
-        scores_for_choice = scores.view(-1, self.n_routed_experts) + self.e_score_correction_bias.unsqueeze(0)
-        group_scores = (
-            scores_for_choice.view(-1, self.n_group, self.n_routed_experts // self.n_group)
-            .topk(2, dim=-1)[0]
-            .sum(dim=-1)
-        )
-        group_idx = paddle.topk(group_scores, k=self.topk_group, dim=-1, sorted=False)[1]
-        group_mask = paddle.zeros_like(group_scores)
-        group_mask = paddle.put_along_axis(group_mask, group_idx, 1, axis=1, broadcast=False)
-        score_mask = (
-            group_mask.unsqueeze(-1)
-            .expand(-1, self.n_group, self.n_routed_experts // self.n_group)
-            .reshape(-1, self.n_routed_experts)
-        )
-        scores_for_choice = scores_for_choice.masked_fill(~score_mask.bool(), 0.0)
-        topk_indices = paddle.topk(scores_for_choice, k=self.top_k, dim=-1, sorted=False)[1]
+        if self.topk_method == "greedy" or self.topk_method == "gready":
+            topk_indices = paddle.topk(scores, k=self.top_k, dim=-1, sorted=False)[1]
+        elif self.topk_method == "group_limited_greedy":
+            scores = scores.view(-1, self.n_routed_experts)
+            group_scores = scores.view(-1, self.n_group, self.n_routed_experts // self.n_group).max(dim=-1)
+            group_idx = paddle.topk(group_scores, k=self.topk_group, dim=-1, sorted=False)[1]
+            group_mask = paddle.zeros_like(group_scores)
+            group_mask = paddle.put_along_axis(group_mask, group_idx, 1, axis=1, broadcast=False)
+            score_mask = (
+                group_mask.unsqueeze(-1)
+                .expand(-1, self.n_group, self.n_routed_experts // self.n_group)
+                .reshape(-1, self.n_routed_experts)
+            )
+            scores_for_choice = scores.masked_fill(~score_mask.bool(), 0.0)
+            topk_indices = paddle.topk(scores_for_choice, k=self.top_k, dim=-1, sorted=False)[1]
+        elif self.topk_method == "noaux_tc":
+            scores_for_choice = scores.view(-1, self.n_routed_experts) + self.e_score_correction_bias.unsqueeze(0)
+            group_scores = (
+                scores_for_choice.view(-1, self.n_group, self.n_routed_experts // self.n_group)
+                .topk(2, dim=-1)[0]
+                .sum(dim=-1)
+            )
+            group_idx = paddle.topk(group_scores, k=self.topk_group, dim=-1, sorted=False)[1]
+            group_mask = paddle.zeros_like(group_scores)
+            group_mask = paddle.put_along_axis(group_mask, group_idx, 1, axis=1, broadcast=False)
+            score_mask = (
+                group_mask.unsqueeze(-1)
+                .expand(-1, self.n_group, self.n_routed_experts // self.n_group)
+                .reshape(-1, self.n_routed_experts)
+            )
+            scores_for_choice = scores_for_choice.masked_fill(~score_mask.bool(), 0.0)
+            topk_indices = paddle.topk(scores_for_choice, k=self.top_k, dim=-1, sorted=False)[1]
+        else:
+            raise ValueError(f"Unsupported topk_method: {self.topk_method}")
         return topk_indices
 
     def forward(self, hidden_states):
@@ -381,10 +420,15 @@ class DeepseekV3TopkRouter(nn.Layer):
             hidden_states = hidden_states.view(-1, self.config.hidden_size)
             router_logits = F.linear(hidden_states.astype(paddle.float32), self.weight.astype(paddle.float32))
 
-            scores = router_logits.sigmoid().cast(paddle.float32)
+            if self.scoring_func == "softmax":
+                scores = F.softmax(router_logits, axis=-1, dtype=paddle.float32)
+            elif self.scoring_func == "sigmoid":
+                scores = router_logits.sigmoid().cast(paddle.float32)
+            else:
+                raise ValueError(f"Unsupported scoring_func: {self.scoring_func}")
         topk_indices = self.get_topk_indices(scores)
         topk_weights = scores.gather(1, topk_indices)
-        if self.norm_topk_prob:
+        if self.top_k > 1 and self.norm_topk_prob:
             denominator = topk_weights.sum(dim=-1, keepdim=True) + 1e-20
             topk_weights /= denominator
         topk_weights = topk_weights * self.routed_scaling_factor
@@ -468,6 +512,7 @@ class DeepseekV3MoE(nn.Layer):
         residuals = hidden_states
         orig_shape = hidden_states.shape
         topk_indices, topk_weights = self.gate(hidden_states)
+
         hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
         if self.fd_fallback:
             hidden_states = self.experts(hidden_states, topk_indices, topk_weights)
@@ -565,6 +610,9 @@ class DeepseekV3Attention(nn.Layer):
         self.qk_nope_head_dim = config.qk_nope_head_dim
         self.q_head_dim = config.qk_nope_head_dim + config.qk_rope_head_dim
 
+        # Determine whether to use MLA or GQA mode
+        self.use_mla = config.kv_lora_rank is not None and config.kv_lora_rank > 0
+
         self.is_causal = True
         self.apply_rope_fusion = config.apply_rope_fusion
 
@@ -575,9 +623,18 @@ class DeepseekV3Attention(nn.Layer):
         # Enable_recompute defaults to False and is controlled by Trainer
         self.enable_recompute = False
 
+        if self.use_mla:
+            self._init_mla(config)
+        else:
+            self._init_gqa(config)
+
+        self.attn_func = scaled_dot_product_attention
+
+    def _init_mla(self, config: DeepseekV3Config):
+        """Initialize MLA (Multi-head Latent Attention) projections."""
         # Note (@DrownFish19): For tensor parallel we consider that q_a_proj and kv_a_proj_with_mqa
         # are the small weight and cannot achieve performance gain. So we use the original
-        # linear layers. We use the tensor parallel linear layers for q_proj，q_b_proj and kv_b_proj
+        # linear layers. We use the tensor parallel linear layers for q_proj, q_b_proj and kv_b_proj
         # for which are the large weight and can achieve performance gain.
 
         if self.q_lora_rank is None:
@@ -658,12 +715,72 @@ class DeepseekV3Attention(nn.Layer):
         self.softmax_scale = self.q_head_dim ** (-0.5)
         if self.config.rope_parameters is not None:
             mscale_all_dim = self.config.rope_parameters.get("mscale_all_dim", 0)
-            scaling_factor = self.config.rope_parameters["factor"]
             if mscale_all_dim:
+                scaling_factor = self.config.rope_parameters["factor"]
                 mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
                 self.softmax_scale = self.softmax_scale * mscale * mscale
 
-        self.attn_func = scaled_dot_product_attention
+    def _init_gqa(self, config: DeepseekV3Config):
+        """Initialize GQA (Grouped Query Attention) projections."""
+        self.head_dim = config.hidden_size // config.num_attention_heads
+        self.num_key_value_heads = config.num_key_value_heads
+
+        self.num_local_kv_heads = self.num_key_value_heads
+        if config.tensor_model_parallel_size > 1:
+            assert (
+                self.num_key_value_heads % config.tensor_model_parallel_size == 0
+            ), f"KV head num ({self.num_key_value_heads}) is not divisible by tensor_model_parallel_size ({config.tensor_model_parallel_size})."
+            self.num_local_kv_heads = self.num_key_value_heads // config.tensor_model_parallel_size
+
+        self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
+        # Override v_head_dim and q_head_dim for GQA
+        self.v_head_dim = self.head_dim
+        self.q_head_dim = self.head_dim
+
+        q_hidden_size = self.head_dim * config.num_attention_heads
+        kv_hidden_size = self.head_dim * config.num_key_value_heads
+
+        self.q_proj = GeneralLinear.create(
+            self.hidden_size,
+            q_hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
+            gather_output=False,
+        )
+        self.k_proj = GeneralLinear.create(
+            self.hidden_size,
+            kv_hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
+            gather_output=False,
+        )
+        self.v_proj = GeneralLinear.create(
+            self.hidden_size,
+            kv_hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
+            gather_output=False,
+        )
+        self.o_proj = GeneralLinear.create(
+            q_hidden_size,
+            self.hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="rowwise",
+            gather_output=False,
+            input_is_parallel=True,
+        )
+
+        self.softmax_scale = self.head_dim ** (-0.5)
+        if self.config.rope_parameters is not None:
+            mscale_all_dim = self.config.rope_parameters.get("mscale_all_dim", 0)
+            if mscale_all_dim:
+                scaling_factor = self.config.rope_parameters["factor"]
+                mscale = yarn_get_mscale(scaling_factor, mscale_all_dim)
+                self.softmax_scale = self.softmax_scale * mscale * mscale
 
     def _shape(self, tensor: paddle.Tensor, seq_len: int, bsz: int):
         return tensor.reshape([bsz, seq_len, self.num_heads, self.v_head_dim]).transpose([1, 0, 2, 3])
@@ -684,6 +801,44 @@ class DeepseekV3Attention(nn.Layer):
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
+
+        if self.use_mla:
+            return self._forward_mla(
+                hidden_states,
+                position_ids,
+                past_key_values,
+                attention_mask,
+                output_attentions,
+                use_cache,
+                attn_mask_startend_row_indices,
+                position_embeddings,
+                **kwargs,
+            )
+        else:
+            return self._forward_gqa(
+                hidden_states,
+                position_ids,
+                past_key_values,
+                attention_mask,
+                output_attentions,
+                use_cache,
+                attn_mask_startend_row_indices,
+                position_embeddings,
+                **kwargs,
+            )
+
+    def _forward_mla(
+        self,
+        hidden_states: paddle.Tensor,
+        position_ids: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        output_attentions: bool = False,
+        use_cache: bool = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
+        **kwargs,
+    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
         ori_shape = hidden_states.shape
         seq_len = position_ids.shape[-1]
         # DeepSeekV3 q_lora_rank=1536
@@ -739,6 +894,75 @@ class DeepseekV3Attention(nn.Layer):
         key_states = key_states.transpose(1, 2)
         value_states = value_states.transpose(1, 2)
 
+        return self._compute_attention(
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            output_attentions,
+            use_cache,
+            past_key_values,
+            attn_mask_startend_row_indices,
+            ori_shape,
+        )
+
+    def _forward_gqa(
+        self,
+        hidden_states: paddle.Tensor,
+        position_ids: Optional[Tuple[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
+        attention_mask: Optional[paddle.Tensor] = None,
+        output_attentions: bool = False,
+        use_cache: bool = False,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
+        position_embeddings: Optional[Tuple[paddle.Tensor]] = None,
+        **kwargs,
+    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
+        ori_shape = hidden_states.shape
+        bsz, seq_len = hidden_states.shape[:2]
+
+        query_states = self.q_proj(hidden_states)
+        key_states = self.k_proj(hidden_states)
+        value_states = self.v_proj(hidden_states)
+
+        # Reshape to [bsz, seq_len, num_heads, head_dim] then transpose to [bsz, num_heads, seq_len, head_dim]
+        query_states = query_states.reshape([bsz, seq_len, -1, self.head_dim]).transpose(1, 2)
+        key_states = key_states.reshape([bsz, seq_len, -1, self.head_dim]).transpose(1, 2)
+        value_states = value_states.reshape([bsz, seq_len, -1, self.head_dim]).transpose(1, 2)
+
+        # Apply rotary embeddings (standard GQA style)
+        cos, sin = position_embeddings[0], position_embeddings[1]
+        query_states, key_states = apply_rotary_pos_emb_gqa(query_states, key_states, cos, sin)
+
+        # KV cache update
+        if past_key_values is not None:
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
+
+        return self._compute_attention(
+            query_states,
+            key_states,
+            value_states,
+            attention_mask,
+            output_attentions,
+            use_cache,
+            past_key_values,
+            attn_mask_startend_row_indices,
+            ori_shape,
+        )
+
+    def _compute_attention(
+        self,
+        query_states,
+        key_states,
+        value_states,
+        attention_mask,
+        output_attentions,
+        use_cache,
+        past_key_values,
+        attn_mask_startend_row_indices,
+        ori_shape,
+    ):
+        """Common attention computation shared by MLA and GQA."""
         has_gradient = not (query_states.stop_gradient and key_states.stop_gradient and value_states.stop_gradient)
         if (
             self.config.recompute_granularity == "selective"
@@ -1159,7 +1383,6 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 f"model.norm.weight -> {model_prefix}norm.weight",
                 f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
                 f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
-                f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias, dtype='float32'",
                 f"model.layers.$LAYER_ID.mlp.gate.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.gate.weight, dtype='float32'",
                 f"model.layers.$LAYER_ID.mlp.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.down_proj.weight",
                 f"model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.o_proj.weight",
@@ -1167,6 +1390,10 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
             ]
         }
+        if config.topk_method == "noaux_tc":
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias, dtype='float32'",
+            ]
         if config.q_lora_rank:
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.q_{x}_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.q_{x}_proj.weight"
@@ -1253,8 +1480,11 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             f"{model_prefix}norm.weight -> model.norm.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
-            f"{model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
         ]
+        if config.topk_method == "noaux_tc":
+            aoa_statements += [
+                f"{model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
+            ]
         if config.q_lora_rank:
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.q_{x}_proj.weight^T -> model.layers.$LAYER_ID.self_attn.q_{x}_proj.weight"

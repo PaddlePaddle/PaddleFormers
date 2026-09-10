@@ -132,7 +132,12 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     </tr>
     <!-- VLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="4" style="vertical-align: top;">VLM</td>
+      <td rowspan="5" style="vertical-align: top;">VLM</td>
+      <td>DeepSeek-OCR-2</td>
+      <td>deepseek-ai/DeepSeek-OCR-2</td>
+      <td>deepseek_ocr2</td>
+    </tr>
+    <tr>
       <td>🏛️ERNIE-4.5-VL</td>
       <td>baidu/ERNIE-4.5-VL-28B-A3B-Base-PT、baidu/ERNIE-4.5-VL-28B-A3B-PT、baidu/ERNIE-4.5-VL-424B-A47B-Base-PT、baidu/ERNIE-4.5-VL-424B-A47B-PT、baidu/ERNIE-4.5-VL-28B-A3B-Thinking</td>
       <td>ernie_vl、ernie_vl_nothink</td>
