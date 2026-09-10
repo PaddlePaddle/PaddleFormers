@@ -4080,8 +4080,8 @@ class Trainer:
         ``config.use_accuracy_compatible="hf"`` selects the clip that reproduces
         torch's ``clip_grad_norm_`` recipe (BF16 per-tensor norms, BF16 global
         norm, BF16 coefficient, BF16-rounded scaling) and records the pre-clip
-        global norm. Every other run -- default or Megatron-aligned -- keeps
-        paddle's stock ``ClipGradByGlobalNorm``.
+        global norm. Megatron accuracy compatibility uses a partition-independent FP32 norm;
+        ordinary runs keep paddle's stock ``ClipGradByGlobalNorm``.
         """
         if self.args.max_grad_norm <= 0:
             return None
@@ -4101,6 +4101,10 @@ class Trainer:
                 f"reference's {reference}-tensor partition of {fused} parameters"
             )
             return HFBitexactClipGradByGlobalNorm(self.args.max_grad_norm, trainer=self)
+        if accuracy_target:
+            from ..utils.reproducible_norm import ReproducibleClipGradByGlobalNorm
+
+            return ReproducibleClipGradByGlobalNorm(self.args.max_grad_norm)
         return nn.ClipGradByGlobalNorm(self.args.max_grad_norm)
 
     def _load_rng_state(self, checkpoint):
