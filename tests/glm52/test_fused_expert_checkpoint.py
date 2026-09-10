@@ -5,7 +5,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from paddleformers.trainer.trainer import Trainer, maybe_zero_max_grad_norm_for_uac
+from paddleformers.trainer.trainer import Trainer
 from paddleformers.trainer.trainer_callback import (
     DefaultFlowCallback,
     TrainerControl,
@@ -181,20 +181,6 @@ class TestFusedExpertOptimizerSave(unittest.TestCase):
                         trainer._save_flex_optimizer_state(directory)
                 self.assert_unchanged(snapshot)
                 self.step(trainer)
-
-
-class TestUacMaxGradNormOverride(unittest.TestCase):
-    def test_trainer_init_zeros_max_grad_norm_under_uac(self):
-        args = SimpleNamespace(max_grad_norm=1.0)
-        model = SimpleNamespace(config=SimpleNamespace(use_accuracy_compatible=True))
-        maybe_zero_max_grad_norm_for_uac(args, model)
-        self.assertEqual(args.max_grad_norm, 0.0)
-
-    def test_non_uac_keeps_configured_max_grad_norm(self):
-        args = SimpleNamespace(max_grad_norm=1.0)
-        model = SimpleNamespace(config=SimpleNamespace(use_accuracy_compatible=False))
-        maybe_zero_max_grad_norm_for_uac(args, model)
-        self.assertEqual(args.max_grad_norm, 1.0)
 
 
 class TestDefaultFlowCallbackSaveHf(unittest.TestCase):

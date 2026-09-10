@@ -372,18 +372,6 @@ def _fused_expert_optimizer_save_views(model, model_sharded_state_dict, optimize
             mapping[name] = tensor
 
 
-def maybe_zero_max_grad_norm_for_uac(args, model):
-    """Keep UAC jobs on the develop clip-off path.
-
-    GLM-4 SFT CI constructs ``use_accuracy_compatible=True`` with a non-zero
-    ``max_grad_norm``. Zeroing it here matches develop and avoids the
-    first-train/resume GT drift (12.635027885 vs 12.63612175).
-    """
-    model_config = getattr(model, "config", None)
-    if getattr(model_config, "use_accuracy_compatible", False) and getattr(args, "max_grad_norm", 0) > 0:
-        args.max_grad_norm = 0.0
-    return args
-
 
 class Trainer:
     """
@@ -474,7 +462,8 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
-        maybe_zero_max_grad_norm_for_uac(self.args, model)
+        # Honor the configured clipping threshold; _build_grad_clip selects
+        # the recipe for the requested accuracy target.
         # Apply the reshard broadcast chunk cap once here: Trainer.__init__ is the
         # single point every reshard/EMA path runs after, so all_gather_state_dict
         # need not thread the value and no construction site is missed (incl. the
@@ -3971,7 +3960,8 @@ class Trainer:
 
                 return apply_decay_param_fun
 
-            if getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False):
+            use_accuracy_compatible = getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False)
+            if use_accuracy_compatible:
                 if self.optimizer_grouped_parameters is not None:
                     params = self.optimizer_grouped_parameters
                 else:
@@ -3985,6 +3975,34 @@ class Trainer:
                 # params is already a dict list with weight_decay groups (the groups carry their own wd config).
                 if isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict):
                     apply_decay_param_fun = None
+                elif use_accuracy_compatible == "hf":
+                    # The Megatron rule and HF's disagree on 1-D non-norm tensors:
+                    # transformers excludes by *name* (bias / any spelling of norm),
+                    # so e.g. Qwen3.5's ``linear_attn.A_log`` (shape (32,)) IS
+                    # weight-decayed there but is excluded by the shape rule.
+                    # Follow the reference when bit-exact alignment is requested.
+                    forbidden = [
+                        re.compile(pattern)
+                        for pattern in (
+                            r"bias",
+                            r"layernorm",
+                            r"rmsnorm",
+                            r"(?:^|\.)norm(?:$|\.)",
+                            r"_norm(?:$|\.)",
+                        )
+                    ]
+                    optimizer_param_ids = {id(p) for p in params}
+                    decay_parameters = {
+                        p.name
+                        for n, p in self.model.named_parameters()
+                        if id(p) in optimizer_param_ids
+                        and not p.stop_gradient
+                        and not any(pattern.search(n.lower()) for pattern in forbidden)
+                    }
+
+                    def apply_decay_param_fun(x):
+                        return x in decay_parameters
+
                 else:
                     optimizer_param_ids = {id(p) for p in params}
                     decay_parameters = {
@@ -4011,6 +4029,16 @@ class Trainer:
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
                 optimizer_kwargs["quantization_config"] = self.model.config.quantization_config
                 optimizer_kwargs["tensorwise_offload_optimizer"] = self.args.tensorwise_offload_optimizer
+                # The AdamW step itself has a reference-specific recipe, so hand
+                # the optimizer the model's accuracy target instead of letting it
+                # read a separate env flag. Injected here rather than in
+                # ``get_optimizer_cls_and_kwargs``, which is a staticmethod and
+                # has no access to the model.
+                optimizer_kwargs["accuracy_target"] = getattr(
+                    getattr(self.model, "config", None),
+                    "use_accuracy_compatible",
+                    False,
+                )
             optimizer_kwargs["use_lowprecision_moment"] = self.args.use_lowprecision_moment
             bf16_master = optimizer_kwargs.get("use_lowprecision_moment", False)
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
@@ -4035,7 +4063,7 @@ class Trainer:
                 apply_decay_param_fun=apply_decay_param_fun,
                 parameters=params,
                 weight_decay=self.args.weight_decay,
-                grad_clip=nn.ClipGradByGlobalNorm(self.args.max_grad_norm) if self.args.max_grad_norm > 0 else None,
+                grad_clip=self._build_grad_clip(),
                 **optimizer_kwargs,
             )
 
@@ -4043,6 +4071,35 @@ class Trainer:
                 mock_offload_optimizer()
 
         return self.optimizer
+
+    def _build_grad_clip(self):
+        """Construct the gradient clip for this run.
+
+        ``config.use_accuracy_compatible="hf"`` selects the clip that reproduces
+        torch's ``clip_grad_norm_`` recipe (BF16 per-tensor norms, BF16 global
+        norm, BF16 coefficient, BF16-rounded scaling) and records the pre-clip
+        global norm. Every other run -- default or Megatron-aligned -- keeps
+        paddle's stock ``ClipGradByGlobalNorm``.
+        """
+        if self.args.max_grad_norm <= 0:
+            return None
+        from ..utils import hf_bitexact_clip_enabled
+
+        accuracy_target = getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False)
+        if hf_bitexact_clip_enabled(accuracy_target):
+            from ..utils import (
+                HFBitexactClipGradByGlobalNorm,
+                verify_hf_norm_groups_registered,
+            )
+
+            fused, reference = verify_hf_norm_groups_registered(self.model)
+            logger.info(
+                "Using HF bit-exact gradient clipping "
+                f"(max_grad_norm={self.args.max_grad_norm}); global norm taken over the "
+                f"reference's {reference}-tensor partition of {fused} parameters"
+            )
+            return HFBitexactClipGradByGlobalNorm(self.args.max_grad_norm, trainer=self)
+        return nn.ClipGradByGlobalNorm(self.args.max_grad_norm)
 
     def _load_rng_state(self, checkpoint):
         # Load RNG states from `checkpoint`
@@ -4259,6 +4316,15 @@ class Trainer:
         else:
             dist_optimizer = fleet.distributed_optimizer(optimizer)
         if isinstance(dist_optimizer, HybridParallelOptimizer) and self.args.max_grad_norm > 0:
+            # ``HybridParallelOptimizer.__init__`` has just replaced ``_grad_clip``
+            # with paddle's wrapper, which recomputes the global norm with paddle's
+            # formula. Put the HF recipe back before anything else reads the clip,
+            # so the ``_global_norm`` instrumentation below and the optimizer step
+            # both see the same object. No-op for every other accuracy target.
+            from ..utils.hf_bitexact_hybrid_clip import restore_hf_bitexact_clip
+
+            restore_hf_bitexact_clip(dist_optimizer)
+
             gradclip = dist_optimizer._inner_opt._grad_clip
             global_norm_func = gradclip._global_norm
             training_logs = self.global_training_logs
