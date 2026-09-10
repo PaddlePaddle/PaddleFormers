@@ -57,6 +57,7 @@ MAPPING_NAMES = OrderedDict(
         ("DeepseekV3", "deepseek_v3"),
         ("DeepseekV32", "deepseek_v32"),
         ("PaliGemma2", "paligemma2"),
+        ("FastVLM", "fastvlm"),
         ("DiffTransformer", "diff_transformer"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
@@ -214,6 +215,9 @@ class _BaseAutoModelClass:
         if init_class == "PaliGemmaForConditionalGeneration":
             import_class = importlib.import_module("paddleformers.transformers.paligemma2.modeling")
             return getattr(import_class, "PaliGemma2ForConditionalGeneration")
+        if init_class == "LlavaQwen2ForCausalLM":
+            import_class = importlib.import_module("paddleformers.transformers.fastvlm.modeling")
+            return getattr(import_class, "FastVLMForConditionalGeneration")
         if model_name is None:
             # Try to get model class from config class
             if not isinstance(config, PretrainedConfig) and pretrained_model_name_or_path is not None:

@@ -61,6 +61,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("glm4v_moe", "Glm4vProcessor"),
         ("glm_ocr", "Glm46VProcessor"),
         ("paligemma2", "PaliGemmaProcessor"),
+        ("llava_qwen2", "FastVLMProcessor"),
     ]
 )
 
@@ -192,6 +193,13 @@ class AutoProcessor:
             processor_class = getattr(config, "processor_class", None)
             if hasattr(config, "auto_map") and "AutoProcessor" in config.auto_map:
                 processor_auto_map = config.auto_map["AutoProcessor"]
+
+            # Some upstream multimodal checkpoints only declare a model type and
+            # do not ship a processor_class or preprocessor_config.json. Resolve
+            # PaddleFormers-native processor registrations by model type before
+            # falling back to the Transformers config-class mapping.
+            if processor_class is None:
+                processor_class = PROCESSOR_MAPPING_NAMES.get(getattr(config, "model_type", None))
 
         if processor_class is not None:
             processor_class = processor_class_from_name(processor_class)
