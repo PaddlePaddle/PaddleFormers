@@ -4330,6 +4330,12 @@ class Trainer:
             from ..utils.hf_bitexact_hybrid_clip import restore_hf_bitexact_clip
 
             restore_hf_bitexact_clip(dist_optimizer)
+            from ..utils.reproducible_norm import (
+                ReproducibleL2Norm,
+                restore_reproducible_clip,
+            )
+
+            restore_reproducible_clip(dist_optimizer)
 
             gradclip = dist_optimizer._inner_opt._grad_clip
             global_norm_func = gradclip._global_norm
@@ -4351,7 +4357,7 @@ class Trainer:
                 if len(args) > 0:
                     global_norm_func(global_norm_var_dist, global_norm_var_not_dist, *args)
                     global_norm_var_dist_moe, global_norm_var_not_dist_moe = args
-                    global_norm_var_fp32 = paddle.sqrt(
+                    total = (
                         global_norm_var_dist
                         + global_norm_var_not_dist
                         + global_norm_var_dist_moe
@@ -4359,7 +4365,12 @@ class Trainer:
                     )
                 else:
                     global_norm_func(global_norm_var_dist, global_norm_var_not_dist)
-                    global_norm_var_fp32 = paddle.sqrt(global_norm_var_dist + global_norm_var_not_dist)
+                    total = global_norm_var_dist + global_norm_var_not_dist
+                global_norm_var_fp32 = (
+                    ReproducibleL2Norm().finish(total)[0]
+                    if getattr(self, "_reproducible_norm", False)
+                    else paddle.sqrt(total)
+                )
                 training_logs["global_norm"] = global_norm_var_fp32.item()
 
             self.optimizer._inner_opt._grad_clip._global_norm = types.MethodType(

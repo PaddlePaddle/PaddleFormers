@@ -108,3 +108,38 @@ def test_trainer_clip_selection(accuracy, limit, expected):
     assert isinstance(clip, ReproducibleClipGradByGlobalNorm) is expected
     if limit == 0:
         assert clip is None
+
+
+@pytest.mark.parametrize("moe", [False, True])
+def test_trainer_norm_logging_keeps_the_clipping_recipe(monkeypatch, moe):
+    from paddle.distributed import fleet
+    from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
+        HybridParallelClipGrad,
+        HybridParallelOptimizer,
+    )
+
+    from paddleformers.utils.reproducible_norm import ReproducibleHybridParallelClipGrad
+
+    inner_clip = ReproducibleClipGradByGlobalNorm(1.0)
+    if moe:
+        clip = MoEHybridParallelClipGrad(inner_clip, hcg=None)
+    else:
+        clip = HybridParallelClipGrad(HybridParallelClipGrad(inner_clip, hcg=None), hcg=None)
+    # A real Trainer instrumentation wrapper surrounds the norm collective. Only
+    # communication is omitted; these tests use one complete owner partition.
+    monkeypatch.setattr(ReproducibleHybridParallelClipGrad, "_global_norm", lambda *args: None)
+    if moe:
+        clip._global_norm = lambda *args: None
+    optimizer = HybridParallelOptimizer.__new__(HybridParallelOptimizer)
+    optimizer._inner_opt = SimpleNamespace(_grad_clip=clip, _param_groups=None)
+    monkeypatch.setattr(fleet, "distributed_optimizer", lambda _: optimizer)
+    trainer = Trainer.__new__(Trainer)
+    trainer.args = SimpleNamespace(use_expert_parallel=False, max_grad_norm=1.0, train_mtp_only=False)
+    trainer.optimizer = optimizer
+    trainer.global_training_logs = {}
+    actual_optimizer = trainer._wrap_distributed_optimizer(optimizer._inner_opt)
+    gradient = paddle.to_tensor([3.0, 4.0])
+    actual_optimizer._inner_opt._grad_clip._dygraph_clip([(_parameter("w"), gradient)])
+    assert trainer.global_training_logs["global_norm"] == 5.0
+    expected = paddle.to_tensor([3.0, 4.0]) * (1.0 / (paddle.to_tensor([5.0]) + 1e-6))
+    assert paddle.equal_all(gradient, expected).item()

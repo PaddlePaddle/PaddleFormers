@@ -29,6 +29,9 @@ and is intended only for explicitly enabled accuracy compatibility.
 from __future__ import annotations
 
 import paddle
+from paddle.distributed.fleet.meta_optimizers.dygraph_optimizer.hybrid_parallel_optimizer import (
+    HybridParallelClipGrad,
+)
 
 
 class ReproducibleL2Norm:
@@ -146,9 +149,72 @@ class ReproducibleClipGradByGlobalNorm(paddle.nn.ClipGradByGlobalNorm):
             if gradient is not None and getattr(parameter, "need_clip", True):
                 bins = accumulator.accumulate(bins, gradient)
         norm, _ = accumulator.finish(bins)
+        return self._scale_grads(params_grads, norm)
+
+    def _scale_grads(self, params_grads, norm):
         coefficient = paddle.minimum(self.clip_norm / (norm + 1e-6), paddle.ones_like(norm))
         for parameter, gradient in params_grads:
             if gradient is not None and getattr(parameter, "need_clip", True):
                 gradient.multiply_(coefficient)
                 parameter._reset_grad_inplace_version(True)
         return params_grads
+
+
+class ReproducibleHybridParallelClipGrad(HybridParallelClipGrad):
+    """Keep the FP32 recipe while inheriting Paddle's owner collective schedule."""
+
+    _reproducible_norm = True
+
+    @paddle.no_grad()
+    def _dygraph_clip(self, params_grads):
+        params_grads = list(params_grads)
+        if self._timers:
+            self._timers("dygraph-clip").start()
+        accumulator = ReproducibleL2Norm()
+        distributed, replicated = accumulator.zeros(), accumulator.zeros()
+        for parameter, gradient in params_grads:
+            if gradient is None or not getattr(parameter, "need_clip", True):
+                continue
+            if not getattr(parameter, "is_firstly_shared", True):
+                continue
+            if parameter.is_distributed:
+                distributed = accumulator.accumulate(distributed, gradient)
+            else:
+                replicated = accumulator.accumulate(replicated, gradient)
+        self._global_norm(distributed, replicated)
+        norm, _ = accumulator.finish(distributed + replicated)
+        result = self._clip._scale_grads(params_grads, norm)
+        if self._timers:
+            self._timers("dygraph-clip").stop()
+        return result
+
+
+def restore_reproducible_clip(dist_optimizer) -> bool:
+    """Preserve a requested FP32 recipe through Paddle's stock optimizer wrapping."""
+    from paddle.distributed.fleet.utils.hybrid_parallel_util import unwrap_optimizer
+
+    from .hf_bitexact_hybrid_clip import _WRAPPER_OPTIMIZERS
+
+    def rewrap(wrapper):
+        if type(wrapper) is not HybridParallelClipGrad:
+            return None
+        inner = wrapper
+        while inner is not None and not isinstance(inner, ReproducibleClipGradByGlobalNorm):
+            inner = getattr(inner, "_clip", None)
+        if inner is None:
+            return None
+        return ReproducibleHybridParallelClipGrad(inner, wrapper._hcg, wrapper.split_norm_comm, wrapper._timers)
+
+    inner_opt = unwrap_optimizer(dist_optimizer._inner_opt, _WRAPPER_OPTIMIZERS)
+    replaced = False
+    replacement = rewrap(getattr(inner_opt, "_grad_clip", None))
+    if replacement is not None:
+        inner_opt._grad_clip = replacement
+        replaced = True
+    for group in getattr(inner_opt, "_param_groups", None) or []:
+        if isinstance(group, dict) and "grad_clip" in group:
+            replacement = rewrap(group["grad_clip"])
+            if replacement is not None:
+                group["grad_clip"] = replacement
+                replaced = True
+    return replaced
