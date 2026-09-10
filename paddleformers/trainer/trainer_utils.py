@@ -1519,6 +1519,14 @@ def init_optimizer(optimizer, model_sharded_state_dict, state_dict_metadata):
     """
     optimizer_state_names = [".moment1_0", ".moment2_0", ".beta1_pow_acc_0", ".beta2_pow_acc_0", ".w_0"]
     inner_opt = getattr(optimizer, "_inner_opt", None)
+
+    from paddle.distributed.fsdp._fsdp_context import get_fsdp_context
+
+    fsdp_context = get_fsdp_context()
+    if fsdp_context is not None and fsdp_context.owns_optimizer_params(optimizer):
+        fsdp_context.init_optimizer_state(optimizer)
+        return
+
     static_to_struct_mapping = {}
     model_sharded_state_dict = dict(sorted(model_sharded_state_dict.items()))
     for k, v in model_sharded_state_dict.items():
