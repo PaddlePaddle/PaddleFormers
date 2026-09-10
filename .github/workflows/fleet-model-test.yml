@@ -598,20 +598,34 @@ jobs:
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           rm -rf * .[^.]*
           source /root/proxy
+          retry_cmd() {
+            local max_retry=$1
+            shift
+            local retry=1
+            until "$@"; do
+              if [ "$retry" -ge "$max_retry" ]; then
+                echo "Command failed after ${max_retry} attempts: $*"
+                return 1
+              fi
+              echo "Command failed. Retrying in 5 seconds... (${retry}/${max_retry})"
+              retry=$((retry + 1))
+              sleep 5
+            done
+          }
           mkdir -p /home/.cache/pip
           pip cache dir
           pip install --upgrade pip
-          git clone https://github.com/PaddlePaddle/PaddleFormers.git -b ${BRANCH}
+          retry_cmd 3 git clone https://github.com/PaddlePaddle/PaddleFormers.git -b ${BRANCH}
           cd PaddleFormers
           git status
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git pull --no-edit origin pull/${PR_ID}/head
+          retry_cmd 3 git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          retry_cmd 3 git clone https://github.com/PaddlePaddle/PaddleFleet.git
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
