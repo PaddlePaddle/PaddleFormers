@@ -2309,7 +2309,10 @@ class Trainer:
         return getattr(self, "dp_group", None)
 
     def _requires_native_token_weighted_logging(self):
-        if not getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False):
+        config = getattr(self.model, "config", None)
+        if not (
+            getattr(config, "use_accuracy_compatible", False) and getattr(config, "defer_token_normalization", False)
+        ):
             return False
         # Pipeline accumulation buffers several calls before computing MAIN.
         # The single-microbatch receipt is valid only without that buffering.

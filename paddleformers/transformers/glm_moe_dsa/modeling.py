@@ -30,6 +30,7 @@ class GlmMoeDsaModelProvider(GLMMoEModelProvider):
     """GLM-5.2 DSA provider. Do not put DSA-only HF maps on GLM-4 MoE."""
 
     moe_router_use_fp32_master: bool = True
+    defer_token_normalization: bool = True
 
     transform_rules = {
         **GLMMoEModelProvider.transform_rules,
