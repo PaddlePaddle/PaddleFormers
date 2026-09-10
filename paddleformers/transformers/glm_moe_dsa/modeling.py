@@ -14,6 +14,7 @@
 
 import copy
 import logging
+from dataclasses import dataclass
 
 from ...nn.pp_model import CriterionLayerPipe, GeneralModelForCausalLMPipe
 from ..aoa_config_base import MoEAOAConfigGenerator
@@ -24,8 +25,11 @@ from .configuration import GlmMoeDsaConfig
 logger = logging.getLogger(__name__)
 
 
+@dataclass
 class GlmMoeDsaModelProvider(GLMMoEModelProvider):
     """GLM-5.2 DSA provider. Do not put DSA-only HF maps on GLM-4 MoE."""
+
+    moe_router_use_fp32_master: bool = True
 
     transform_rules = {
         **GLMMoEModelProvider.transform_rules,

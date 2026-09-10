@@ -117,7 +117,11 @@ def test_load_processor_reraises_missing_processor_on_glm4_checkpoint():
             raise AssertionError("GLM-4 AutoProcessor failure must not fall back to tokenizer")
 
 
-def test_glm4_moe_aoa_keeps_gate_weight_float32_under_uac():
+@pytest.mark.parametrize(
+    "enabled,master,expected_dtype",
+    [(True, False, "bfloat16"), (True, True, "float32"), (False, False, "float32")],
+)
+def test_glm4_moe_aoa_matches_router_storage_policy(enabled, master, expected_dtype):
     config = SimpleNamespace(
         using_sonic_moe=False,
         n_routed_experts=4,
@@ -130,14 +134,24 @@ def test_glm4_moe_aoa_keeps_gate_weight_float32_under_uac():
         tie_word_embeddings=False,
         use_qk_norm=False,
         attention_bias=False,
-        use_accuracy_compatible=True,
+        use_accuracy_compatible=enabled,
+        moe_router_use_fp32_master=master,
         moe_expert_fusion=False,
     )
     config.get = lambda key, default=False: default
     statements = Glm4MoePreTrainedModel._gen_aoa_config(config)["aoa_statements"]
     joined = "\n".join(statements)
-    assert "mlp.gate.weight, dtype='float32'" in joined
-    assert "mlp.gate.weight, dtype='bfloat16'" not in joined
+    assert f"mlp.gate.weight, dtype='{expected_dtype}'" in joined
+
+
+def test_glm52_provider_selects_fp32_router_master_without_changing_glm4_default():
+    from paddleformers.transformers.glm4_moe.modeling import GLMMoEModelProvider
+    from paddleformers.transformers.glm_moe_dsa.modeling import GlmMoeDsaModelProvider
+
+    values = dict(num_hidden_layers=1, hidden_size=8, num_attention_heads=1)
+    assert not GLMMoEModelProvider(**values).moe_router_use_fp32_master
+    assert GlmMoeDsaModelProvider(**values).moe_router_use_fp32_master
+    assert not GlmMoeDsaModelProvider(**values, moe_router_use_fp32_master=False).moe_router_use_fp32_master
 
 
 def _base_training_args(**overrides):
