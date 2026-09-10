@@ -62,6 +62,8 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
         "glm_ocr": ("Glm46VImageProcessor"),
         "paligemma": ("PaliGemmaImageProcessor"),
+        "internvl_chat": ("InternVLImageProcessor"),
+        "intern_vit_6b": ("InternVLImageProcessor"),
     }
 )
 
@@ -309,6 +311,12 @@ class AutoImageProcessor(hf.AutoImageProcessor):
             and config_dict.get("processor_class") == "PaliGemmaProcessor"
         ):
             image_processor_type = "PaliGemmaImageProcessor"
+        if (
+            image_processor_type in {"GotOcr2ImageProcessor", "GotOcr2ImageProcessorFast"}
+            and config_dict.get("processor_class") == "InternVLProcessor"
+        ):
+            image_processor_type = "InternVLImageProcessor"
+            use_fast = False
         image_processor_auto_map = None
         if "AutoImageProcessor" in config_dict.get("auto_map", {}):
             image_processor_auto_map = config_dict["auto_map"]["AutoImageProcessor"]
