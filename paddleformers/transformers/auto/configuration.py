@@ -62,6 +62,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("minicpm", "MiniCPMConfig"),
         ("minicpm4_1", "MiniCPM4_1Config"),
         ("deepseek_v4", "DeepseekV4Config"),
+        ("hyperbody_decoder", "HyperBodyDecoderConfig"),
         ("gpt_oss", "GptOssConfig"),
         ("minicpm3", "MiniCPM3Config"),
         ("phi3", "Phi3Config"),
