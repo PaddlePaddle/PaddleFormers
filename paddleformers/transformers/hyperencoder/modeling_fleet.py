@@ -241,18 +241,6 @@ class HyperEncoderModel(FleetLayer):
             head_dim=config.head_dim,
             rotary_percent=config.rotary_percent,
             rotary_base=config.rope_theta,
-            # Must be enabled: the `pow` for `inv_freq` is computed on CPU for
-            # numerical stability. The GPU `pow` differs from the reference by
-            # one fp32 ULP, which after `outer(seq, inv_freq)` gets amplified in
-            # the freqs table and, through `sin` + bf16 cast, flips a few
-            # elements, propagating a per-element difference in q/k all the way
-            # to the backward pass. Computing on CPU and moving to GPU makes the
-            # freqs table bit-identical.
-            #
-            # This switch is an existing parameter of `RotaryEmbedding`, so
-            # enabling it at the call site is enough; the shared
-            # rotary embedding module does not need to change.
-            use_accuracy_compatible=True,
         )
 
         # ---- Output projection ----
@@ -638,7 +626,7 @@ class HyperEncoderModel(FleetLayer):
         long query table directly, rather than being inferred from a token stream.
         """
         embeds = self.build_context_embeds(context_ids, image, audio)
-        if use_packed_decoder():
+        if use_packed_decoder(self.config):
             latents = self.forward_decoder_packed(embeds, use_long_query)
         else:
             latents = self.forward_decoder(embeds, use_long_query)
@@ -716,6 +704,28 @@ class HyperEncoderProvider(GPTConfig, ModelProviderMixin["HyperEncoderModel"]):
     #: Output-projection width for encoder -> LLM. In production this is
     #: determined by the LLM's `hidden_size` and passed in as a constructor arg.
     language_hidden_size: int = 1280
+
+    # ---- Attention backend + packed-decoder path ----
+    #: ``"dp"`` (dense per-layer mask) or ``"triton"`` (packed prefix-LM core).
+    #: Validated in ``__post_init__`` (``"flex"`` and unknown values raise).
+    hyperencoder_attn_backend: str = "dp"
+    #: Run the trunk as a single packed call. Requires the ``triton`` backend
+    #: (the packed segment layout is only read by the triton core).
+    hyperencoder_packed_decoder: bool = False
+
+    # ---- Triton prefix-LM kernel tuning ----
+    #: Kernel block shape. ``block_m`` (and via it the softmax reduction tree)
+    #: affects the numerical result, so it is a declared field rather than a
+    #: free-floating env var.
+    hyperencoder_triton_block_m: int = 64
+    hyperencoder_triton_block_n: int = 64
+    #: Launch configuration for the forward / backward kernels.
+    hyperencoder_triton_fwd_warps: int = 4
+    hyperencoder_triton_fwd_stages: int = 2
+    hyperencoder_triton_bwd_warps: int = 4
+    hyperencoder_triton_bwd_stages: int = 2
+    #: LRU cap for the exec-plan cache (0 disables caching).
+    hyperencoder_triton_plan_cache_size: int = 64
 
     # No `transform_rules`: `HyperEncoderConfig` field names are exactly the same
     # as on the Fleet side (`num_hidden_layers` / `hidden_size` /
@@ -813,6 +823,43 @@ class HyperEncoderProvider(GPTConfig, ModelProviderMixin["HyperEncoderModel"]):
         self.max_sequence_length = ql[1] + 8192
 
         self.head_dim = self.hidden_size // self.num_attention_heads
+
+        # Validate the attention-backend / packed-decoder / Triton-tuning fields
+        # here so a bad config.json fails at construction rather than deep inside
+        # a kernel launch. `use_packed_decoder` also validates the backend
+        # (rejects "flex" / unknown, and packed-without-triton), reusing the same
+        # logic the runtime path reads.
+        from paddlefleet.models.hyperencoder.attn_backend import use_packed_decoder
+
+        use_packed_decoder(self)
+        for _name in (
+            "hyperencoder_triton_block_m",
+            "hyperencoder_triton_block_n",
+            "hyperencoder_triton_fwd_warps",
+            "hyperencoder_triton_fwd_stages",
+            "hyperencoder_triton_bwd_warps",
+            "hyperencoder_triton_bwd_stages",
+        ):
+            _v = int(getattr(self, _name))
+            if _v <= 0:
+                raise ValueError(f"{_name} must be a positive integer, got {_v}")
+            setattr(self, _name, _v)
+        _cache = int(self.hyperencoder_triton_plan_cache_size)
+        if _cache < 0:
+            raise ValueError(f"hyperencoder_triton_plan_cache_size must be >= 0, got {_cache}")
+        self.hyperencoder_triton_plan_cache_size = _cache
+        # block_m and block_n are independent knobs, but only block_m == block_n
+        # is a validated configuration (block_m drives the softmax reduction tree
+        # and the two must partition the same sequence consistently). The
+        # production default is 64/64. Reject asymmetric block shapes rather than
+        # silently producing incorrect gradients.
+        if self.hyperencoder_triton_block_m != self.hyperencoder_triton_block_n:
+            raise ValueError(
+                "hyperencoder_triton_block_m must equal "
+                "hyperencoder_triton_block_n (only symmetric block shapes are "
+                f"supported), got {self.hyperencoder_triton_block_m} vs "
+                f"{self.hyperencoder_triton_block_n}"
+            )
 
         # moe_layer_freq (= [0] + [1]*11) does NOT need to be computed by hand --
         # the parent's post_init derives the same list from `first_k_dense_replace`
