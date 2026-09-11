@@ -578,6 +578,15 @@ register_template(
     format_assistant=StringFormatter(slots=["{{content}}"]),
 )
 
+register_template(
+    name="molmo",
+    format_user=StringFormatter(slots=["{{content}} Assistant:"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    chat_sep="",
+    suffix=["<|endoftext|>"],
+    mm_plugin=get_mm_plugin(name="molmo", image_token="<im_patch>"),
+)
+
 # copied from chatml template
 register_template(
     name="ernie",

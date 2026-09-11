@@ -350,6 +350,14 @@ import_structure = {
         "Qwen3NextForCausalLMPipe",
         "Qwen3NextPretrainingCriterion",
     ],
+    "molmo.configuration": ["MolmoConfig"],
+    "molmo.image_processing": ["MolmoImageProcessor"],
+    "molmo.modeling": [
+        "MolmoModel",
+        "MolmoPretrainedModel",
+        "MolmoForCausalLM",
+    ],
+    "molmo.processing": ["MolmoProcessor"],
     "llama": [],
     "qwen2": [],
     "glm_ocr": [],
@@ -363,6 +371,7 @@ import_structure = {
     "qwen3_vl": [],
     "qwen3_5": [],
     "qwen3_vl_moe": [],
+    "molmo": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -544,6 +553,7 @@ if TYPE_CHECKING:
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .molmo import *
     from .olmo2 import *
     from .intern_lm3 import *
     from .intern_lm2_5 import *
