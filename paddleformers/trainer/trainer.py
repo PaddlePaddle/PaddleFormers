@@ -1180,6 +1180,16 @@ class Trainer:
         if hasattr(self, "_flex_async_saver") and self._flex_async_saver.is_saving:
             self._flex_async_saver.wait_for_completion()
 
+    def _optimizer_sharded_state_dict(self, model_sharded_state_dict):
+        """Build the optimizer sharded state dict; FSDP states are keyed by fused buffer, so the FSDP context splits them per param."""
+        if ShardingOption.FSDP in self.args.sharding:
+            from paddle.distributed.fsdp._fsdp_context import get_fsdp_context
+
+            ctx = get_fsdp_context()
+            if ctx is not None:
+                return ctx.optimizer_sharded_state_dict(self.optimizer)
+        return self.optimizer.sharded_state_dict(model_sharded_state_dict)
+
     def _save_flex_model_state(self, output_dir):
         model_sharded_state_dict = self.model.sharded_state_dict()
         for key, sharded_weight in model_sharded_state_dict.items():
@@ -1199,7 +1209,7 @@ class Trainer:
         optimizer_states = {}
         master_weights = {}
         model_sharded_state_dict = self.model.sharded_state_dict()
-        optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+        optimizer_sharded_state_dict = self._optimizer_sharded_state_dict(model_sharded_state_dict)
         for k, v in optimizer_sharded_state_dict.items():
             if k.endswith(".w_0"):
                 master_weights[k] = v
@@ -1365,7 +1375,7 @@ class Trainer:
                         logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
 
             with _sprof_span("opt_sharded_state_dict"):
-                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+                optimizer_sharded_state_dict = self._optimizer_sharded_state_dict(model_sharded_state_dict)
             opt_states = {}
             master_weights = {}
             for k, v in optimizer_sharded_state_dict.items():
@@ -1426,7 +1436,7 @@ class Trainer:
             not isinstance(self.model, LoRAModel)
             and self.args.bf16
             and (
-                isinstance(self.optimizer._inner_opt, DygraphShardingOptimizerV2)
+                isinstance(getattr(self.optimizer, "_inner_opt", None), DygraphShardingOptimizerV2)
                 or _is_muon_sharding_optimizer(self.optimizer)
             )
         )
@@ -1439,7 +1449,7 @@ class Trainer:
             if self._is_fc_format_ema(ema_path):
                 model_sharded_state_dict = self.model.sharded_state_dict()
                 init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
-                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+                optimizer_sharded_state_dict = self._optimizer_sharded_state_dict(model_sharded_state_dict)
                 ema_state = {}
                 for k, v in model_sharded_state_dict.items():
                     if v.local_tensor.dtype == paddle.float32:
@@ -1662,7 +1672,7 @@ class Trainer:
     def _load_ema_with_reshard(self, ema_state_path, comm_method, worker_groups):
         """Use FlexCheckpoint to reshard EMA state, return shared memory metas for subprocess."""
         model_sharded_state_dict = self.model.sharded_state_dict()
-        opt_sharded = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+        opt_sharded = self._optimizer_sharded_state_dict(model_sharded_state_dict)
         ema_target = {}
 
         # master_weights portion: use .w_0 keys directly (same as optimizer master_weights key format)
