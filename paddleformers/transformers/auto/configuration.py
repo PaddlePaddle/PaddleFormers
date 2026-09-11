@@ -91,6 +91,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
     [
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("hyperbody_decoder", "HyperBodyDecoderForCausalLM"),
         ("paligemma", "PaliGemma2"),
         ("paligemma2", "PaliGemma2"),
         ("diff_transformer", "DiffTransformer"),

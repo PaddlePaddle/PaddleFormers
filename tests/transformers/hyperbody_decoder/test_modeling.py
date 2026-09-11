@@ -27,6 +27,7 @@ import tempfile
 import unittest
 
 from paddleformers.transformers import AutoConfig
+from paddleformers.transformers.auto.modeling import MODEL_MAPPING, AutoModelForCausalLM
 from paddleformers.transformers.hyperbody_decoder.configuration import (
     HyperBodyDecoderConfig,
 )
@@ -99,6 +100,33 @@ class HyperBodyDecoderConfigTest(unittest.TestCase):
         config = tiny_hyperbody_decoder_config(first_k_dense_replace=1)
         with self.assertRaises(ValueError):
             HyperBodyDecoderModelProvider.from_config(config)
+
+
+class HyperBodyDecoderAutoModelTest(unittest.TestCase):
+    """The model is a CausalLM; ``AutoModelForCausalLM`` is the documented entry
+    point, and the base ``AutoModel`` mapping resolves it as well. These checks
+    only resolve the class (they do not instantiate the network, which needs a
+    distributed launcher) so they run single-process."""
+
+    def test_auto_model_base_mapping(self):
+        # Base ``AutoModel`` route: ``MODEL_MAPPING`` is keyed by the config type
+        # and must resolve to the concrete model class even when ``config.json``
+        # carries no ``architectures`` field.
+        config = tiny_hyperbody_decoder_config()
+        self.assertIn(type(config), MODEL_MAPPING.keys())
+        self.assertEqual(MODEL_MAPPING[type(config)].__name__, "HyperBodyDecoderForCausalLM")
+
+    def test_auto_model_for_causal_lm_mapping(self):
+        # Task route: with ``architectures`` present (as in every saved
+        # checkpoint) ``AutoModelForCausalLM`` resolves to the wrapper class.
+        config = tiny_hyperbody_decoder_config(architectures=["HyperBodyDecoderForCausalLM"])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config.save_pretrained(tmpdir)
+            config_path = os.path.join(tmpdir, "config.json")
+            with open(config_path, "r", encoding="utf-8") as f:
+                config_dict = json.load(f)
+            model_class = AutoModelForCausalLM._get_model_class_from_config(tmpdir, config_path, config=config_dict)
+        self.assertEqual(model_class.__name__, "HyperBodyDecoderForCausalLM")
 
 
 class HyperBodyDecoderProviderTest(unittest.TestCase):
