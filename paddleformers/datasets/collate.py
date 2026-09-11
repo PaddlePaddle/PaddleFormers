@@ -291,6 +291,7 @@ def mm_dpo_collate_fn(
         input_dict["grid_thw"] = []
     else:
         input_dict["pixel_values"] = []
+        input_dict["image_sizes"] = []
         input_dict["image_grid_thw"] = []
         input_dict["pixel_values_videos"] = []
         input_dict["video_grid_thw"] = []
@@ -361,6 +362,7 @@ def mm_dpo_collate_fn(
         # 3.4 vl-parameters & vl-position_ids
         original_position_ids = []
         pixel_values = []
+        image_sizes = []
         image_grid_thw = []
         pixel_values_videos = []
         video_grid_thw = []
@@ -368,6 +370,8 @@ def mm_dpo_collate_fn(
             mm_inputs = seq.mm_inputs
             if "pixel_values" in mm_inputs:
                 pixel_values.append(mm_inputs["pixel_values"])
+            if "image_sizes" in mm_inputs:
+                image_sizes.extend(mm_inputs["image_sizes"])
             if "image_grid_thw" in mm_inputs:
                 image_grid_thw.extend(mm_inputs["image_grid_thw"])
             if "pixel_values_videos" in mm_inputs:
@@ -431,6 +435,7 @@ def mm_dpo_collate_fn(
         else:
             input_dict["position_ids"].append(padded_position_ids)
             input_dict["pixel_values"].append(pixel_values)
+            input_dict["image_sizes"].append(image_sizes)
             input_dict["image_grid_thw"].append(image_grid_thw)
             input_dict["pixel_values_videos"].append(pixel_values_videos)
             input_dict["video_grid_thw"].append(video_grid_thw)
@@ -688,6 +693,7 @@ def mm_collate_fn(
         input_keys.append("grid_thw")
     else:
         input_keys.append("pixel_values")
+        input_keys.append("image_sizes")
         input_keys.append("image_grid_thw")
         input_keys.append("pixel_values_videos")
         input_keys.append("video_grid_thw")
@@ -733,6 +739,7 @@ def mm_collate_fn(
         original_token_ids = []
         original_position_ids = []
         pixel_values = []
+        image_sizes = []
         image_grid_thw = []
         pixel_values_videos = []
         video_grid_thw = []
@@ -743,6 +750,8 @@ def mm_collate_fn(
             mm_inputs = seq.mm_inputs
             if "pixel_values" in mm_inputs:
                 pixel_values.append(mm_inputs["pixel_values"])
+            if "image_sizes" in mm_inputs:
+                image_sizes.extend(mm_inputs["image_sizes"])
             if "image_grid_thw" in mm_inputs:
                 image_grid_thw.extend(mm_inputs["image_grid_thw"])
             if "pixel_values_videos" in mm_inputs:
@@ -817,6 +826,7 @@ def mm_collate_fn(
                 [
                     padded_position_ids,
                     pixel_values,
+                    image_sizes,
                     image_grid_thw,
                     pixel_values_videos,
                     video_grid_thw,

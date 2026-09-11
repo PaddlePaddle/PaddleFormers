@@ -120,6 +120,10 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>Qwen/Qwen3-0.6B-Base、Qwen/Qwen3-0.6B、Qwen/Qwen3-1.7B-Base、Qwen/Qwen3-1.7B、Qwen/Qwen3-4B-Base、Qwen/Qwen3-4B、Qwen/Qwen3-4B-Instruct-2507、Qwen/Qwen3-4B-Thinking-2507、Qwen/Qwen3-8B-Base、Qwen/Qwen3-8B、Qwen/Qwen3-14B-Base、Qwen/Qwen3-14B、Qwen/Qwen3-32B、Qwen/Qwen3-30B-A3B-Base、Qwen/Qwen3-30B-A3B、Qwen/Qwen3-30B-A3B-Instruct-2507、Qwen/Qwen3-30B-A3B-Thinking-2507、Qwen/Qwen3-235B-A22B、Qwen/Qwen3-235B-A22B-Instruct-2507、Qwen/Qwen3-235B-A22B-Thinking-2507</td>
       <td>qwen3、qwen3_nothink</td>
     </tr>
+     <tr>
+      <td>Mistral3</td>
+      <td>Mistral-small-3.1-24B-Instruct</td>
+    </tr>
     <tr>
       <td>Qwen3-Next</td>
       <td>Qwen/Qwen3-Next-80B-A3B-Instruct、Qwen/Qwen3-Next-80B-A3B-Thinking</td>
