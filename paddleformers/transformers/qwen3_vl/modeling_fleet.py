@@ -377,7 +377,7 @@ class Qwen3VLTextProvider(GPTModelProvider):
     vocab_size: int = 151936
     share_embeddings_and_output_weights: bool | None = False
     rms_norm_eps: float = 1e-6
-    rotary_base: float = 1000000.0
+    rope_theta: float = 1000000.0
     position_embedding_type: str = "rope"
     bias_activation_fusion: bool = True
     use_qk_norm: bool = True

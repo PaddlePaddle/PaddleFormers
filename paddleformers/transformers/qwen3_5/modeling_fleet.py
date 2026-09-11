@@ -108,7 +108,7 @@ class Qwen3_5TextModelProvider(GPTModelProvider):
     bias_activation_fusion: bool = True
     normalization: str = "RMSNorm"
     position_embedding_type: str = "mrope"
-    rotary_base: float = 10000000.0
+    rope_theta: float = 10000000.0
     rotary_percent: float = 0.25
     mrope_section: list = None
 
@@ -203,7 +203,7 @@ def get_qwen3_5_language_spec(config):
         tail_empty_layers_spec=tail_empty_layers,
         position_embedding_type=config.position_embedding_type,
         rotary_percent=config.rotary_percent,
-        rotary_base=config.rotary_base,
+        rotary_base=config.rope_theta,
         rope_scaling=config.rope_scaling,
         parallel_output=config.parallel_output,
         tie_word_embeddings=config.tie_word_embeddings,
