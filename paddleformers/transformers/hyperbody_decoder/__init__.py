@@ -11,12 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""HyperBody decoder（LLM 主干）。
+"""HyperBody decoder (LLM backbone).
 
-用 ``_LazyModule``（与 ``deepseek_v4/__init__.py`` 同形）而不是直接 import：
-``transformers/__init__.py`` 会把本包登记进 import_structure，
-真正 import ``modeling`` 会连带拉起 ``paddlefleet``，那是几秒级的开销，
-不该在 ``import paddleformers`` 时就付。
+Uses ``_LazyModule`` rather than a direct import: ``transformers/__init__.py``
+registers this package into import_structure, and actually importing ``modeling``
+would drag in ``paddlefleet``, which is a few-seconds cost that should not be paid at
+``import paddleformers`` time.
 """
 import sys
 from typing import TYPE_CHECKING

@@ -103,9 +103,7 @@ class HyperBodyDecoderConfigTest(unittest.TestCase):
 
 class HyperBodyDecoderProviderTest(unittest.TestCase):
     def test_provider_pins(self):
-        provider = HyperBodyDecoderModelProvider.from_config(
-            tiny_hyperbody_decoder_config()
-        )
+        provider = HyperBodyDecoderModelProvider.from_config(tiny_hyperbody_decoder_config())
         self.assertFalse(provider.multi_latent_attention)
         self.assertFalse(provider.use_qk_norm)
         self.assertEqual(provider.normalization, "RMSNorm")
@@ -118,9 +116,7 @@ class HyperBodyDecoderProviderTest(unittest.TestCase):
             get_hyperbody_decoder_layer_specs,
         )
 
-        provider = HyperBodyDecoderModelProvider.from_config(
-            tiny_hyperbody_decoder_config()
-        )
+        provider = HyperBodyDecoderModelProvider.from_config(tiny_hyperbody_decoder_config())
         specs = get_hyperbody_decoder_layer_specs(provider)
         mlp_classes = [s.sublayers_spec.mlp.layer.__name__ for s in specs]
         self.assertEqual(mlp_classes[0], "MLP")
@@ -129,9 +125,7 @@ class HyperBodyDecoderProviderTest(unittest.TestCase):
 
 class HyperBodyDecoderAoAConfigTest(unittest.TestCase):
     def test_gen_aoa_config_produces_statements(self):
-        aoa = HyperBodyDecoderForCausalLM._gen_aoa_config(
-            tiny_hyperbody_decoder_config()
-        )
+        aoa = HyperBodyDecoderForCausalLM._gen_aoa_config(tiny_hyperbody_decoder_config())
         self.assertIn("aoa_statements", aoa)
         self.assertGreater(len(aoa["aoa_statements"]), 0)
 
