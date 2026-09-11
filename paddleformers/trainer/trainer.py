@@ -137,6 +137,7 @@ from ..transformers.segment_parallel_utils import (
     split_inputs_sequence_dim,
 )
 from ..utils import empty_device_cache, perf_utils
+from ..utils.accuracy_target import targets_hf
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.batch_sampler import MappingBatchSampler, MappingDistributedBatchSampler
 from ..utils.download import resolve_file_path
@@ -367,13 +368,28 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
-        # NOTE(bugfix): ``use_accuracy_compatible`` used to force
-        # ``max_grad_norm = 0.0`` here, silently discarding a clipping threshold
-        # the user had explicitly configured. Gradient clipping is orthogonal to
-        # which reference the accuracy mode targets, so the threshold is now
-        # honored and the recipe is chosen in ``_build_grad_clip()``. If a mode
-        # really needs clipping off by default it should warn rather than
-        # overwrite the argument.
+        # An accuracy-aligned run has to reproduce its reference's optimizer
+        # trajectory, and the Megatron alignment suite runs with clipping off.
+        # ``max_grad_norm`` defaults to 1.0, so a config that simply does not
+        # mention it (e.g. PaddleFleet's ``GLM45Air_EP2.yaml``) would clip -- with
+        # a real global norm around 90 that rescales every gradient by ~0.01, the
+        # first update lands elsewhere and the alignment diverges from step 2 on
+        # while step 1 still matches bit-for-bit. Keep forcing clipping off for
+        # that target, but say so instead of overwriting silently.
+        #
+        # The ``"hf"`` target is deliberately exempt: its reference *does* clip,
+        # and ``_build_grad_clip()`` returns the recipe that reproduces
+        # ``torch.nn.utils.clip_grad_norm_`` bit-for-bit, so zeroing the threshold
+        # here would remove the very step being aligned.
+        _accuracy_target = getattr(getattr(model, "config", None), "use_accuracy_compatible", False)
+        if _accuracy_target and not targets_hf(_accuracy_target) and getattr(self.args, "max_grad_norm", 0) > 0:
+            logger.warning(
+                f"use_accuracy_compatible={_accuracy_target!r} aligns with Megatron-LM, which is "
+                f"compared without gradient clipping; overriding max_grad_norm="
+                f"{self.args.max_grad_norm} to 0.0. Use use_accuracy_compatible='hf' if you need a "
+                "clipped run that stays bit-exact against its reference."
+            )
+            self.args.max_grad_norm = 0.0
         # Apply the reshard broadcast toggle once here: Trainer.__init__ is the
         # single point every reshard/EMA path runs after, so all_gather_state_dict
         # need not thread the value and no construction site is missed (incl. the
