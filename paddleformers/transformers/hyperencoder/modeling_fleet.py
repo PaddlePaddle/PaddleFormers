@@ -67,10 +67,8 @@ import paddle
 import paddle.nn.functional as F
 from paddle import Tensor
 from paddlefleet.models.gpt.gpt_config import GPTConfig
-from paddlefleet.models.hyperencoder.attn_backend import use_packed_decoder
 from paddlefleet.packed_seq_params import PackedSeqParams
 from paddlefleet.transformer.layer import FleetLayer
-from paddlefleet.transformer.prefix_lm_triton_core import PREFIX_LM_LAYOUT_ATTR
 from paddlefleet.transformer.transformer_block import TransformerBlock
 
 from ..model_provider import ModelProviderMixin
@@ -99,6 +97,8 @@ class HyperEncoderBlock(TransformerBlock):
             attn_mask_startend_row_indices: path (2), FlashMask 4-column indices `[1,1,T',4]` int32.
             packed_seq_params: path (3) attaches `prefix_lm_layout` to it.
         """
+        from paddlefleet.transformer.prefix_lm_triton_core import PREFIX_LM_LAYOUT_ATTR
+
         if attention_mask is not None and attn_mask_startend_row_indices is not None:
             raise ValueError(
                 "attention_mask (dense) and attn_mask_startend_row_indices (FlashMask "
@@ -437,6 +437,7 @@ class HyperEncoderModel(FleetLayer):
         and Q=8192 segments into the same sequence.
         """
         from paddlefleet.transformer.prefix_lm_mask import prefix_lm_pad_len
+        from paddlefleet.transformer.prefix_lm_triton_core import PREFIX_LM_LAYOUT_ATTR
 
         # ``use_long_query`` may be a single **bool** (homogeneous pack, returns
         # ``[B,Q,H]``) or a **list[bool]** per segment (mixed short/long query
@@ -625,6 +626,8 @@ class HyperEncoderModel(FleetLayer):
         `use_long_query` is an explicit argument here. It selects the short vs
         long query table directly, rather than being inferred from a token stream.
         """
+        from paddlefleet.models.hyperencoder.attn_backend import use_packed_decoder
+
         embeds = self.build_context_embeds(context_ids, image, audio)
         if use_packed_decoder(self.config):
             latents = self.forward_decoder_packed(embeds, use_long_query)
