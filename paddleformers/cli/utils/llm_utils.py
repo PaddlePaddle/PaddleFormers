@@ -387,6 +387,26 @@ def get_lora_target_modules(model):
             ".*resampler_model.*temporal_linear.0.*",
             ".*resampler_model.*temporal_linear.2.*",
         ]
+    elif model.config.model_type == "idefics3":
+        target_modules = [
+            # Language Model
+            "model.text_model.*q_proj.*",
+            "model.text_model.*k_proj.*",
+            "model.text_model.*v_proj.*",
+            "model.text_model.*o_proj.*",
+            "model.text_model.*gate_proj.*",
+            "model.text_model.*up_proj.*",
+            "model.text_model.*down_proj.*",
+            # Vision Encoder
+            "model.vision_model.*q_proj.*",
+            "model.vision_model.*k_proj.*",
+            "model.vision_model.*v_proj.*",
+            "model.vision_model.*out_proj.*",
+            "model.vision_model.*fc1.*",
+            "model.vision_model.*fc2.*",
+            # Projector
+            "model.connector.*proj.*",
+        ]
     elif model.config.model_type == "paddleocr_vl":
         target_modules = [
             # Language Model

@@ -421,6 +421,16 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "idefics3.configuration": ["Idefics3Config", "Idefics3VisionConfig"],
+    "idefics3.modeling": [
+        "Idefics3ForConditionalGeneration",
+        "Idefics3Model",
+        "Idefics3PreTrainedModel",
+        "Idefics3VisionTransformer",
+    ],
+    "idefics3.processor": ["Idefics3Processor"],
+    "idefics3.image_processor": ["Idefics3ImageProcessor"],
+    "idefics3": [],
     "olmo2.configuration": ["Olmo2Config"],
     "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
     "olmo2": [],
@@ -551,6 +561,7 @@ if TYPE_CHECKING:
     from .intern_lm2 import InternLM2Tokenizer
     from .gemma4_moe import *
     from .phi4 import *
+    from .idefics3 import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
