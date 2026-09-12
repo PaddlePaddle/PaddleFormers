@@ -693,7 +693,7 @@ class BaseSFTDataset:
         videos = example.get("videos", [])
         audios = example.get("audios", [])
         objects = example.get("objects", {})
-        mm_inputs = None
+        mm_inputs = {}
 
         if self.use_template:
             if self.template_backend == "jinja":

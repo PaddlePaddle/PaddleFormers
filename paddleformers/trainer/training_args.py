@@ -756,6 +756,22 @@ class TrainingArguments:
         },
     )
 
+    reshard_master_weight_device_gather: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "When rebuilding bf16 parameters from fp32 master weights on checkpoint resume, gather the "
+                "2D (whole-parameter-per-rank) Muon master weights entirely in device memory and write them "
+                "straight into their bf16 parameters, instead of staging every byte through host memory. "
+                "Only the 2D branch qualifies: each 2D parameter is owned whole by one rank, so a broadcast "
+                "bucket slice is already a complete parameter. 1D master weights are element-wise slices "
+                "that ShardingV2 must redistribute and concatenate on host first, so they keep the host "
+                "path regardless of this flag. Costs a little device memory (this rank's own contribution "
+                "stays resident until it is packed). Default False (host path)."
+            )
+        },
+    )
+
     tensor_model_parallel_size: int = field(
         default=-1,
         metadata={
@@ -1699,6 +1715,18 @@ class TrainingArguments:
                 "Each element is a list/tuple of [a, b, c]. "
                 "Example: [[3.4445, -4.7750, 2.0315], [2.5, -2.0, 0.8]]. "
                 "Default: None. Only used when optim=muon, muon_ns_coeff_type='custom'."
+            )
+        },
+    )
+    muon_use_symmetric_gemm: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to compute the two symmetric matmuls of each Newton-Schulz step with "
+                "quack's SYRK-style gemm_symmetric kernel, which only evaluates the lower triangle "
+                "and mirrors it back. Requires bfloat16/float16 Newton-Schulz matmuls, an importable "
+                "quack, and compute capability 9.x/10.x/11.x. "
+                "Default: False. Only used when optim=muon."
             )
         },
     )
