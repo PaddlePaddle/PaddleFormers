@@ -98,6 +98,14 @@ MAPPING_NAMES = OrderedDict(
 )
 
 MAPPING_SPACIAL_KEY = OrderedDict([("Gemma3", "Gemma3"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")])
+MAPPING_TASK_SPECIFIC_KEY = OrderedDict(
+    [
+        (("Gemma3Text", "ForCausalLM"), "Gemma3ForCausalLM"),
+        (("Gemma3Text", "ForCausalLMPipe"), "Gemma3ForCausalLMPipe"),
+    ]
+)
+# Text checkpoints use Gemma3ForCausalLM, whose prefix otherwise selects the multimodal Gemma3 module.
+MODEL_TYPE_TO_MODEL_NAME = OrderedDict([("gemma3_text", "Gemma3TextModel")])
 CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3ForConditionalGeneration")])
 
 MAPPING_TASKS = OrderedDict(
@@ -137,7 +145,9 @@ def get_name_mapping(task="Model"):
     """
     NAME_MAPPING = OrderedDict()
     for key, value in MAPPING_NAMES.items():
-        if key in MAPPING_SPACIAL_KEY and task == "Model":
+        if (key, task) in MAPPING_TASK_SPECIFIC_KEY:
+            import_class = MAPPING_TASK_SPECIFIC_KEY[(key, task)]
+        elif key in MAPPING_SPACIAL_KEY and task == "Model":
             import_class = MAPPING_SPACIAL_KEY[key] + task
         else:
             import_class = key + task
@@ -196,7 +206,9 @@ class _BaseAutoModelClass:
         # Sort the MAPPING_NAMES to reorder the model class names with longest-first rule
         # thus the names with same prefix can be correctly inferred
         # such as QWen and QWen2MOE, QWen2MOE is the longest prefix of QWen2MOEModel
-        model_name = "MiniCPM4_1Model" if resolved_model_type == "minicpm4_1" else None
+        model_name = MODEL_TYPE_TO_MODEL_NAME.get(config.get("model_type"))
+        if model_name is None and resolved_model_type == "minicpm4_1":
+            model_name = "MiniCPM4_1Model"
         SORTED_MAPPING_NAMES = dict(sorted(MAPPING_NAMES.items(), key=lambda x: len(x[0]), reverse=True))
         if model_name is None and init_class:
             for model_flag, name in SORTED_MAPPING_NAMES.items():
