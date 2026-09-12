@@ -55,7 +55,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   <tbody>
     <!-- LLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="15" style="vertical-align: top;">LLM</td>
+      <td rowspan="16" style="vertical-align: top;">LLM</td>
       <td>DeepSeekv3</td>
       <td>deepseek-ai/DeepSeek-V3-Base、deepseek-ai/DeepSeek-V3、deepseek-ai/DeepSeek-V3-0324</td>
       <td>deepseek3</td>
@@ -78,6 +78,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     <tr>
       <td>gemma3</td>
       <td>google/gemma-3-270m、google/gemma-3-270m-it、google/gemma-3-1b-pt、google/gemma-3-1b-it、google/gemma-3-4b-pt、google/gemma-3-4b-it、google/gemma-3-12b-pt、google/gemma-3-12b-it、google/gemma-3-27b-pt、google/gemma-3-27b-it</td>
+      <td>gemma</td>
+    </tr>
+    <tr>
+      <td>T5Gemma</td>
+      <td>google/t5gemma-2b-2b-prefixlm、google/t5gemma-2b-2b-prefixlm-it、google/t5gemma-2b-2b-ul2、google/t5gemma-2b-2b-ul2-it、google/t5gemma-9b-9b-prefixlm、google/t5gemma-9b-9b-prefixlm-it、google/t5gemma-9b-9b-ul2、google/t5gemma-9b-9b-ul2-it</td>
       <td>gemma</td>
     </tr>
     <tr>
