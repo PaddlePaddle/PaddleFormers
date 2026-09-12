@@ -648,6 +648,29 @@ register_template(
     mm_plugin=get_mm_plugin(name="paddleocr_vl", image_token="<|IMAGE_PLACEHOLDER|>"),
 )
 
+register_template(
+    name="granite_vision",
+    format_user=StringFormatter(slots=["<|user|>\n {{content}}\n<|assistant|>\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|system|>\n{{content}}\n"]),
+    format_function=FunctionFormatter(
+        slots=["<|start_of_role|>assistant<|end_of_role|><|tool_call|>{{content}}<|end_of_text|>\n"],
+        tool_format="default",
+    ),
+    format_observation=StringFormatter(
+        slots=["<|start_of_role|>tool_response<|end_of_role|>{{content}}<|end_of_text|>\n"]
+    ),
+    format_tools=ToolFormatter(tool_format="default"),
+    format_prefix=EmptyFormatter(),
+    default_system=(
+        "A chat between a curious user and an artificial intelligence assistant. "
+        "The assistant gives helpful, detailed, and polite answers to the user's questions."
+    ),
+    chat_sep="<|end_of_text|>",
+    suffix=["<|end_of_text|>"],
+    mm_plugin=get_mm_plugin(name="llava_next", image_token="<image>", image_token_suffix="\n"),
+)
+
 # copied from chatml template
 register_template(
     name="qwen",

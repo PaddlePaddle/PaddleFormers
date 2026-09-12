@@ -62,6 +62,8 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
+        ("SiglipVision", "siglip_vision_model"),
+        ("LlavaNext", "llava_next"),
         ("Llama", "llama"),
         ("KimiK2", "kimi_k2"),
         ("KimiK3", "kimi_k3"),

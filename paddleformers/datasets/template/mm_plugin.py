@@ -393,6 +393,93 @@ class BasePlugin(MMPluginMixin):
 
 
 @dataclass
+class LlavaNextPlugin(BasePlugin):
+    image_token_suffix: str = ""
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        if len(images) == 0:
+            return messages
+
+        image_sizes = mm_inputs.get("image_sizes", None)
+        if image_sizes is None:
+            raise ValueError("LlavaNext requires image_sizes in mm_inputs to expand image tokens.")
+        if hasattr(image_sizes, "tolist"):
+            image_sizes = image_sizes.tolist()
+
+        if not hasattr(processor, "_get_num_multimodal_tokens"):
+            raise ValueError("LlavaNext processor does not provide _get_num_multimodal_tokens.")
+        mm_token_data = processor._get_num_multimodal_tokens(image_sizes=image_sizes)
+        num_image_tokens = getattr(mm_token_data, "num_image_tokens", None)
+        if num_image_tokens is None:
+            raise ValueError("LlavaNext processor did not return num_image_tokens.")
+
+        messages = deepcopy(messages)
+        image_idx = 0
+        for message in messages:
+            content = message["content"]
+            placeholder_count = content.count(IMAGE_PLACEHOLDER)
+            if placeholder_count == 0:
+                continue
+            if image_idx + placeholder_count > len(num_image_tokens):
+                raise ValueError(
+                    f"Found more {IMAGE_PLACEHOLDER} placeholders than provided images: "
+                    f"placeholders_so_far={image_idx + placeholder_count}, len(images)={len(num_image_tokens)}"
+                )
+            parts = content.split(IMAGE_PLACEHOLDER)
+            expanded_tokens = [
+                self.image_token * int(num_image_tokens[image_idx + offset]) + self.image_token_suffix
+                for offset in range(placeholder_count)
+            ]
+            content = parts[0] + "".join(expanded + part for expanded, part in zip(expanded_tokens, parts[1:]))
+            image_idx += placeholder_count
+            message["content"] = content
+
+        if image_idx != len(num_image_tokens):
+            raise ValueError(
+                f"Found fewer {IMAGE_PLACEHOLDER} placeholders than provided images: "
+                f"placeholders={image_idx}, len(images)={len(num_image_tokens)}"
+            )
+        return messages
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        if len(videos) != 0 or len(audios) != 0:
+            raise ValueError("LlavaNext currently supports image input only.")
+
+        image_processor = getattr(processor, "image_processor", None)
+        regularized_images = []
+        for image in images:
+            image = self._img_download(image)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            regularized_images.append(image)
+
+        # LlavaNext must receive original image sizes. The generic BasePlugin
+        # pre-resizes images to image_max_pixels before calling the processor,
+        # which changes image_sizes and breaks anyres unpadding/token expansion.
+        return image_processor(regularized_images, return_tensors="pd")
+
+
+@dataclass
 class PaddleOCRVLPlugin(BasePlugin):
     image_bos_token: str = "<|IMAGE_START|>"
     image_eos_token: str = "<|IMAGE_END|>"
@@ -1602,6 +1689,7 @@ class KimiK3Plugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "llava_next": LlavaNextPlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,
