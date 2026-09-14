@@ -519,9 +519,7 @@ class Mistral3Model(Mistral3PreTrainedModel):
         if (input_ids is None) == (inputs_embeds is None):
             raise ValueError("Specify exactly one of input_ids or inputs_embeds")
         if pixel_values is not None or image_sizes is not None:
-            raise NotImplementedError(
-                "Mistral3 vision tower is not implemented; only text inputs are supported."
-            )
+            raise NotImplementedError("Mistral3 vision tower is not implemented; only text inputs are supported.")
         if inputs_embeds is None:
             inputs_embeds = self.language_model.embed_tokens(input_ids)
 
