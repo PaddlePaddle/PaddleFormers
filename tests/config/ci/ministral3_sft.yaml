@@ -16,7 +16,7 @@ model_name_or_path: mistralai/Ministral-3-3B-Instruct-2512
 _attn_implementation: eager
 
 ### finetuning
-stage: VL-SFT
+stage: SFT
 fine_tuning: full
 seed: 23
 do_train: true

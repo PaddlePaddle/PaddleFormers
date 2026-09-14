@@ -492,7 +492,6 @@ class Mistral3Model(Mistral3PreTrainedModel):
             self._text_cfg = text_cfg_raw
         self.language_model = Ministral3TextDecoder(self._text_cfg)
         self.multi_modal_projector = Mistral3MultiModalProjector(config)
-        self.vision_tower = None
 
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()
@@ -519,11 +518,12 @@ class Mistral3Model(Mistral3PreTrainedModel):
     ) -> Union[Tuple, Mistral3ModelOutputWithPast]:
         if (input_ids is None) == (inputs_embeds is None):
             raise ValueError("Specify exactly one of input_ids or inputs_embeds")
+        if pixel_values is not None or image_sizes is not None:
+            raise NotImplementedError(
+                "Mistral3 vision tower is not implemented; only text inputs are supported."
+            )
         if inputs_embeds is None:
             inputs_embeds = self.language_model.embed_tokens(input_ids)
-
-        if pixel_values is not None and self.vision_tower is not None:
-            raise NotImplementedError("Vision branch requires a full vision tower implementation")
 
         outputs = self.language_model(
             inputs_embeds=inputs_embeds,
