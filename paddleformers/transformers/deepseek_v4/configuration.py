@@ -68,6 +68,14 @@ class DeepseekV4Config(PretrainedConfig):
             num_hidden_layers. Values in {0, 4, 128}.
         csa_compress_rotary_base (`float`, *optional*, defaults to 160000.0):
             RoPE base for compressed KV positions.
+        index_topk_pattern (`str`, *optional*):
+            IndexCache F/S pattern over the ratio=4 CSA layers, one character per
+            C4 layer. `F` runs that layer's own learned Indexer, `S` reuses the
+            nearest preceding `F` layer's top-k. Must start with `F`. `None`
+            disables IndexCache.
+        indexcache_multi_layer_distill (`bool`, *optional*, defaults to `False`):
+            Distill each `S` layer's attention target onto the producer `F`
+            layer's top-k probabilities. Requires `index_topk_pattern`.
         enable_hyper_connections (`bool`, *optional*, defaults to `True`):
             Enable mHC multi-stream residual connections.
         num_residual_streams (`int`, *optional*, defaults to 4):
@@ -146,6 +154,9 @@ class DeepseekV4Config(PretrainedConfig):
         csa_compress_ratios=None,
         csa_compress_rotary_base=160000.0,
         csa_dense_mode=False,
+        # === IndexCache (CSA F/S top-k reuse) ===
+        index_topk_pattern=None,
+        indexcache_multi_layer_distill=False,
         # === DSA Indexer ===
         dsa_index_n_heads=64,
         dsa_index_head_dim=128,
@@ -245,6 +256,10 @@ class DeepseekV4Config(PretrainedConfig):
             self.csa_compress_ratios = csa_compress_ratios
         self.csa_compress_rotary_base = csa_compress_rotary_base
         self.csa_dense_mode = csa_dense_mode
+
+        # IndexCache (CSA F/S top-k reuse)
+        self.index_topk_pattern = index_topk_pattern
+        self.indexcache_multi_layer_distill = indexcache_multi_layer_distill
 
         # DSA Indexer
         self.dsa_index_n_heads = dsa_index_n_heads
