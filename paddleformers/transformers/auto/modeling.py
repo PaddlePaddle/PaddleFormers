@@ -81,6 +81,7 @@ MAPPING_NAMES = OrderedDict(
         ("MiniCPM", "minicpm"),
         ("MiniCPM4_1", "minicpm4_1"),
         ("DeepseekV4", "deepseek_v4"),
+        ("HyperBodyDecoder", "hyperbody_decoder"),
         ("GptOss", "gpt_oss"),
         ("MiniCPM3", "minicpm3"),
         ("Granite", "granite"),
