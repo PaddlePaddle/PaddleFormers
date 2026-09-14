@@ -54,6 +54,8 @@ jobs:
     steps:
       - name: Cleanup
         run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
           rm -rf * .[^.]*
       - name: Checkout repository
         uses: actions/checkout@v4
