@@ -18,12 +18,7 @@ __all__ = ["Mistral3Config", "Mistral3TextConfig", "Mistral3VisionConfig", "Mini
 
 
 class Ministral3TextConfig:
-    """
-    Simple wrapper around the text_config dict for Ministral3 language model.
-    Provides attribute-style access to text config keys, compatible with RoPE utilities.
-
-    original source: transformers.models.ministral3.configuration_ministral3.Ministral3Config
-    """
+    """Attribute-style wrapper around the text_config dict, compatible with the RoPE utilities."""
 
     def __init__(self, cfg_dict: dict):
         self.attention_dropout = cfg_dict.get("attention_dropout", 0.0)

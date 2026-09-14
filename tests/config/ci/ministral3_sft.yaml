@@ -1,5 +1,3 @@
-### Ministral-3-3B-Instruct-2512 SFT 训练配置
-
 ### data
 train_dataset_type: erniekit
 eval_dataset_type: erniekit
@@ -11,7 +9,7 @@ max_seq_len: 2048
 packing: false
 mix_strategy: concat
 template_backend: custom
-# template 不指定，让系统从 tokenizer 的 chat_template 自动解析
+# template unset: resolved from the tokenizer chat_template
 
 ### model
 model_name_or_path: mistralai/Ministral-3-3B-Instruct-2512
@@ -20,8 +18,6 @@ _attn_implementation: eager
 ### finetuning
 stage: VL-SFT
 fine_tuning: full
-# lora_rank: 8
-# lora_alpha: 16
 seed: 23
 do_train: true
 do_eval: false

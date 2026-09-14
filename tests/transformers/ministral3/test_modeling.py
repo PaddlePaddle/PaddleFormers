@@ -198,12 +198,7 @@ SMALL_YARN_CFG = {
 
 
 class TestMinistral3KVCache(unittest.TestCase):
-    """R3: use_cache=True path must match use_cache=False numerically.
-
-    Exercises the past_key_values.update branch (modeling.py:179-185) and the
-    prepare_inputs_for_generation input_ids[:, -1:] slicing (modeling.py via
-    GenerationMixin base), which were previously uncovered.
-    """
+    """use_cache=True must match use_cache=False numerically (KV-cache path)."""
 
     BATCH = 2
     SEQ = 12
@@ -231,12 +226,7 @@ class TestMinistral3KVCache(unittest.TestCase):
         )
 
     def test_incremental_cache_stepwise(self):
-        """Step-by-step decode with KV cache must equal full-sequence forward.
-
-        This mirrors the generate loop: feed first token, then append one token
-        at a time reusing past_key_values, and compare against a single forward
-        over the whole sequence.
-        """
+        """Step-by-step decode with KV cache must equal full-sequence forward."""
         from paddleformers.transformers.cache_utils import DynamicCache
 
         seq_len = self.SEQ
@@ -278,11 +268,7 @@ class TestMinistral3KVCache(unittest.TestCase):
 
 
 class TestMinistral3YarnRoPE(unittest.TestCase):
-    """R3: yarn RoPE path (the real Ministral-3 scaling) must be covered.
-
-    Exercises ROPE_INIT_FUNCTIONS['yarn'] + dynamic_rope_update +
-    _get_llama4_attn_scale, which the default-rope SMALL_TEXT_CFG does not.
-    """
+    """yarn RoPE path (the real Ministral-3 scaling) must be covered."""
 
     def setUp(self):
         from paddleformers.transformers import (
@@ -330,11 +316,7 @@ class TestMinistral3YarnRoPE(unittest.TestCase):
 
 
 class TestMinistral3GQAPadding(unittest.TestCase):
-    """R3: GQA + padding mask (attention_mask with 0s) must be covered.
-
-    Exercises repeat_kv (groups=2) and the causal_mask + pad_mask branch
-    (modeling.py:299-301), previously only hit with all-ones mask.
-    """
+    """GQA (groups > 1) combined with a padding mask must be handled correctly."""
 
     BATCH = 3
     SEQ = 10
@@ -389,11 +371,7 @@ class TestMinistral3GQAPadding(unittest.TestCase):
 
 
 class TestMinistral3DefaultRoPEInit(unittest.TestCase):
-    """Default config (no rope_scaling/rope_parameters) must initialize without crash.
-
-    Guards against the yarn-fallback-without-factor AssertionError: when no scaling
-    is provided the fallback must use rope_type="default", since yarn requires factor.
-    """
+    """Default config (no rope_scaling) must initialize and run without crashing."""
 
     BASE = {
         "attention_dropout": 0.0,
