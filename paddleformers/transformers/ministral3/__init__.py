@@ -11,41 +11,42 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Package"""
+import sys
+from typing import TYPE_CHECKING
 
-from .configuration import (
-    Ministral3TextConfig,
-    Mistral3Config,
-    Mistral3TextConfig,
-    Mistral3VisionConfig,
-)
-from .modeling import (
-    Ministral3Attention,
-    Ministral3DecoderLayer,
-    Ministral3MLP,
-    Ministral3TextDecoder,
-    Mistral3ForConditionalGeneration,
-    Mistral3Model,
-    Mistral3MultiModalProjector,
-    Mistral3PatchMerger,
-    Mistral3PreTrainedModel,
-    Mistral3RMSNorm,
-)
-from .tokenizer import Mistral3Tokenizer
+from ...utils.lazy_import import _LazyModule
 
-__all__ = [
-    "Mistral3Config",
-    "Mistral3TextConfig",
-    "Mistral3VisionConfig",
-    "Ministral3TextConfig",
-    "Mistral3ForConditionalGeneration",
-    "Mistral3Model",
-    "Mistral3MultiModalProjector",
-    "Mistral3PatchMerger",
-    "Mistral3PreTrainedModel",
-    "Mistral3RMSNorm",
-    "Ministral3TextDecoder",
-    "Ministral3DecoderLayer",
-    "Ministral3Attention",
-    "Ministral3MLP",
-    "Mistral3Tokenizer",
-]
+import_structure = {
+    "configuration": [
+        "Mistral3Config",
+        "Mistral3TextConfig",
+        "Mistral3VisionConfig",
+        "Ministral3TextConfig",
+    ],
+    "modeling": [
+        "Mistral3ForConditionalGeneration",
+        "Mistral3Model",
+        "Mistral3MultiModalProjector",
+        "Mistral3PatchMerger",
+        "Mistral3PreTrainedModel",
+        "Mistral3RMSNorm",
+        "Ministral3TextDecoder",
+        "Ministral3DecoderLayer",
+        "Ministral3Attention",
+        "Ministral3MLP",
+    ],
+    "tokenizer": ["Mistral3Tokenizer"],
+}
+
+if TYPE_CHECKING:
+    from .configuration import *
+    from .modeling import *
+    from .tokenizer import *
+else:
+    sys.modules[__name__] = _LazyModule(
+        __name__,
+        globals()["__file__"],
+        import_structure,
+        module_spec=__spec__,
+    )

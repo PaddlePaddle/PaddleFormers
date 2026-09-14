@@ -29,7 +29,7 @@ from ..modeling_rope_utils import (
     dynamic_rope_update,
     standardize_rope_params,
 )
-from .configuration import Ministral3TextConfig, Mistral3Config
+from .configuration import Ministral3TextConfig, Mistral3Config, Mistral3TextConfig
 
 __all__ = [
     "Mistral3PreTrainedModel",
@@ -231,9 +231,10 @@ class Ministral3DecoderLayer(nn.Layer):
         cache_position: Tensor,
         past_key_values: Optional[Cache] = None,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
-    ) -> Tensor:
+        output_attentions: Optional[bool] = False,
+    ) -> Tuple[Tensor, Optional[Tensor]]:
         residual = hidden_states
-        hidden_states, _ = self.self_attn(
+        hidden_states, attn_weights = self.self_attn(
             hidden_states=self.input_layernorm(hidden_states),
             cos=cos,
             sin=sin,
@@ -245,7 +246,8 @@ class Ministral3DecoderLayer(nn.Layer):
         hidden_states = residual + hidden_states
 
         residual = hidden_states
-        return residual + self.mlp(self.post_attention_layernorm(hidden_states))
+        hidden_states = residual + self.mlp(self.post_attention_layernorm(hidden_states))
+        return hidden_states, attn_weights if output_attentions else None
 
 
 class Ministral3TextDecoder(nn.Layer):
@@ -273,6 +275,8 @@ class Ministral3TextDecoder(nn.Layer):
         position_ids: Optional[Tensor] = None,
         past_key_values: Optional[Cache] = None,
         use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
         cache_position: Optional[Tensor] = None,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
     ) -> BaseModelOutputWithPast:
@@ -302,9 +306,14 @@ class Ministral3TextDecoder(nn.Layer):
 
         cos, sin = self.rotary_emb(inputs_embeds, position_ids=position_ids)
 
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attns = () if output_attentions else None
+
         hidden_states = inputs_embeds
         for layer in self.layers:
-            hidden_states = layer(
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
+            hidden_states, attn_weights = layer(
                 hidden_states=hidden_states,
                 cos=cos,
                 sin=sin,
@@ -312,11 +321,20 @@ class Ministral3TextDecoder(nn.Layer):
                 cache_position=cache_position,
                 past_key_values=past_key_values,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                output_attentions=output_attentions,
             )
+            if output_attentions:
+                all_self_attns += (attn_weights,)
+
+        hidden_states = self.norm(hidden_states)
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
 
         return BaseModelOutputWithPast(
-            last_hidden_state=self.norm(hidden_states),
+            last_hidden_state=hidden_states,
             past_key_values=past_key_values if use_cache else None,
+            hidden_states=all_hidden_states,
+            attentions=all_self_attns,
         )
 
 
@@ -464,43 +482,14 @@ class Mistral3Model(Mistral3PreTrainedModel):
     def __init__(self, config: Mistral3Config):
         super().__init__(config)
         text_cfg_raw = config.text_config
-        if isinstance(text_cfg_raw, dict):
-            self._text_cfg = Ministral3TextConfig.from_dict(text_cfg_raw)
-        elif isinstance(text_cfg_raw, Ministral3TextConfig):
+        if isinstance(text_cfg_raw, Ministral3TextConfig):
             self._text_cfg = text_cfg_raw
+        elif isinstance(text_cfg_raw, Mistral3TextConfig):
+            self._text_cfg = Ministral3TextConfig.from_dict(text_cfg_raw.to_dict())
+        elif isinstance(text_cfg_raw, dict):
+            self._text_cfg = Ministral3TextConfig.from_dict(text_cfg_raw)
         else:
-            # Mistral3TextConfig (PretrainedConfig) or other objects -> convert to dict then wrap
-            from .configuration import Mistral3TextConfig as _PretrainedTextCfg
-
-            if isinstance(text_cfg_raw, _PretrainedTextCfg):
-                self._text_cfg = Ministral3TextConfig(
-                    {
-                        "attention_dropout": text_cfg_raw.attention_dropout,
-                        "head_dim": text_cfg_raw.head_dim,
-                        "hidden_act": text_cfg_raw.hidden_act,
-                        "hidden_size": text_cfg_raw.hidden_size,
-                        "initializer_range": text_cfg_raw.initializer_range,
-                        "intermediate_size": text_cfg_raw.intermediate_size,
-                        "max_position_embeddings": text_cfg_raw.max_position_embeddings,
-                        "num_attention_heads": text_cfg_raw.num_attention_heads,
-                        "num_hidden_layers": text_cfg_raw.num_hidden_layers,
-                        "num_key_value_heads": text_cfg_raw.num_key_value_heads,
-                        "rms_norm_eps": text_cfg_raw.rms_norm_eps,
-                        "rope_parameters": getattr(
-                            text_cfg_raw,
-                            "rope_parameters",
-                            {
-                                "rope_type": "default",
-                                "rope_theta": getattr(text_cfg_raw, "rope_theta", 1000000.0),
-                            },
-                        ),
-                        "sliding_window": text_cfg_raw.sliding_window,
-                        "use_cache": text_cfg_raw.use_cache,
-                        "vocab_size": text_cfg_raw.vocab_size,
-                    }
-                )
-            else:
-                self._text_cfg = text_cfg_raw
+            self._text_cfg = text_cfg_raw
         self.language_model = Ministral3TextDecoder(self._text_cfg)
         self.multi_modal_projector = Mistral3MultiModalProjector(config)
         self.vision_tower = None
@@ -542,12 +531,16 @@ class Mistral3Model(Mistral3PreTrainedModel):
             position_ids=position_ids,
             past_key_values=past_key_values,
             use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
             cache_position=cache_position,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
         return Mistral3ModelOutputWithPast(
             last_hidden_state=outputs.last_hidden_state,
             past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
             image_hidden_states=None,
         )
 
@@ -560,7 +553,6 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         r"^multi_modal_projector\.": "model.multi_modal_projector.",
     }
     _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
-    _use_converted_weights = None
 
     @classmethod
     def _detect_converted_weights(cls, model_path):
@@ -614,12 +606,27 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
         )
         return {"aoa_statements": aoa_statements}
 
-    _HF_NAME_MAPPING = [
-        (r"^language_model\.model\.", "model.language_model."),
-        (r"^language_model\.lm_head\.", "lm_head."),
-        (r"^vision_tower\.", "model.vision_tower."),
-        (r"^multi_modal_projector\.", "model.multi_modal_projector."),
-    ]
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: Mistral3Config):
+        aoa_statements = [
+            "model.language_model.embed_tokens.weight -> language_model.model.embed_tokens.weight",
+            "model.language_model.norm.weight -> language_model.model.norm.weight",
+            "model.language_model.layers.$LAYER_ID.input_layernorm.weight -> language_model.model.layers.$LAYER_ID.input_layernorm.weight",
+            "model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight -> language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight",
+        ]
+        aoa_statements.extend(
+            [
+                f"model.language_model.layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.{proj_name}.weight"
+                for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]
+            ]
+        )
+        aoa_statements.extend(
+            [
+                f"model.language_model.layers.$LAYER_ID.mlp.{proj_name}.weight^T -> language_model.model.layers.$LAYER_ID.mlp.{proj_name}.weight"
+                for proj_name in ["gate_proj", "up_proj", "down_proj"]
+            ]
+        )
+        return {"aoa_statements": aoa_statements}
 
     _HF_TRANSPOSE_SUFFIXES = (
         "self_attn.q_proj.weight",
@@ -697,7 +704,7 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
                         np_arr = np_arr.astype(np.float32)
 
                     paddle_name = hf_name
-                    for pattern, replacement in cls._HF_NAME_MAPPING:
+                    for pattern, replacement in cls._checkpoint_conversion_mapping.items():
                         paddle_name = re.sub(pattern, replacement, paddle_name)
 
                     if (
@@ -728,6 +735,9 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
                 cache_candidate = os.path.join(get_model_cache_root(), model_path)
                 if os.path.isdir(cache_candidate):
                     return cache_candidate, "aistudio"
+                cache_candidate = cls._ensure_hub_cache(model_path, "aistudio")
+                if cache_candidate is not None:
+                    return cache_candidate, "aistudio"
             except ImportError:
                 pass
 
@@ -735,6 +745,9 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
             cache_root = os.path.join(os.path.expanduser("~"), ".cache", "modelscope", "hub", "models")
             cache_candidate = os.path.join(cache_root, model_path)
             if os.path.isdir(cache_candidate):
+                return cache_candidate, "modelscope"
+            cache_candidate = cls._ensure_hub_cache(model_path, "modelscope")
+            if cache_candidate is not None:
                 return cache_candidate, "modelscope"
 
         if hub_str in ("huggingface", ""):
@@ -751,6 +764,75 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
                 pass
 
         return model_path, None
+
+    @classmethod
+    def _ensure_hub_cache(cls, model_path, source):
+        """Download config.json and all safetensors shards to build a local Hub cache directory."""
+        import json
+        import os
+
+        def _list_shards(cache_dir):
+            idx = os.path.join(cache_dir, "model.safetensors.index.json")
+            if os.path.exists(idx):
+                try:
+                    with open(idx) as f:
+                        wm = json.load(f).get("weight_map", {})
+                    shards = sorted(set(wm.values()))
+                    if shards:
+                        return shards
+                except Exception:
+                    pass
+            return None
+
+        try:
+            if source == "aistudio":
+                from aistudio_sdk.file_download import (
+                    get_model_cache_root,
+                    model_file_download,
+                )
+
+                model_file_download(model_path, "config.json")
+                cache_candidate = os.path.join(get_model_cache_root(), model_path)
+                if not os.path.isdir(cache_candidate):
+                    return None
+                model_file_download(model_path, "model.safetensors.index.json")
+                shards = _list_shards(cache_candidate)
+                if shards:
+                    for shard in shards:
+                        if not os.path.exists(os.path.join(cache_candidate, shard)):
+                            model_file_download(model_path, shard)
+                else:
+                    try:
+                        model_file_download(model_path, "model.safetensors")
+                    except Exception:
+                        pass
+                return cache_candidate
+            elif source == "modelscope":
+                from modelscope.hub.file_download import (
+                    model_file_download as ms_download,
+                )
+                from modelscope.utils.constant import DEFAULT_MODEL_REVISION
+
+                ms_download(model_path, "config.json", revision=DEFAULT_MODEL_REVISION)
+                cache_root = os.path.join(os.path.expanduser("~"), ".cache", "modelscope", "hub", "models")
+                cache_candidate = os.path.join(cache_root, model_path)
+                if not os.path.isdir(cache_candidate):
+                    return None
+                ms_download(model_path, "model.safetensors.index.json", revision=DEFAULT_MODEL_REVISION)
+                shards = _list_shards(cache_candidate)
+                if shards:
+                    for shard in shards:
+                        if not os.path.exists(os.path.join(cache_candidate, shard)):
+                            ms_download(model_path, shard, revision=DEFAULT_MODEL_REVISION)
+                else:
+                    try:
+                        ms_download(model_path, "model.safetensors", revision=DEFAULT_MODEL_REVISION)
+                    except Exception:
+                        pass
+                return cache_candidate
+        except Exception:
+            pass
+        return None
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
@@ -787,13 +869,11 @@ class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
                 kwargs["use_safetensors"] = False
             kwargs["convert_from_hf"] = False
             kwargs.setdefault("ignore_mismatched_sizes", True)
-            cls._use_converted_weights = True
 
         elif has_safetensors:
             resolved_converted = use_converted_weights
             if resolved_converted is None:
                 resolved_converted = cls._detect_converted_weights(check_path)
-            cls._use_converted_weights = resolved_converted
 
             if not resolved_converted:
                 state_dict = cls._load_hf_safetensors_to_paddle(check_path)

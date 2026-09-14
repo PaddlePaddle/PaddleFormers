@@ -452,6 +452,102 @@ class TestMinistral3DefaultRoPEInit(unittest.TestCase):
         self.assertTrue(paddle.allclose(out_no, out_cache, atol=1e-5))
 
 
+class TestMinistral3OutputFlags(unittest.TestCase):
+    """output_hidden_states / output_attentions must populate the declared outputs."""
+
+    BATCH = 2
+    SEQ = 8
+
+    def setUp(self):
+        from paddleformers.transformers import Mistral3Config, Mistral3Model
+
+        self.config = Mistral3Config(
+            text_config=SMALL_GQA_CFG,
+            vision_config=SMALL_VISION_CFG,
+        )
+        self.model = Mistral3Model(self.config)
+        self.model.eval()
+
+    def _input_ids(self):
+        return paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [self.BATCH, self.SEQ])
+
+    def test_defaults_return_none(self):
+        with paddle.no_grad():
+            out = self.model(input_ids=self._input_ids())
+        self.assertIsNone(out.hidden_states)
+        self.assertIsNone(out.attentions)
+
+    def test_output_hidden_states(self):
+        n_layers = SMALL_GQA_CFG["num_hidden_layers"]
+        with paddle.no_grad():
+            out = self.model(input_ids=self._input_ids(), output_hidden_states=True)
+        self.assertIsNotNone(out.hidden_states)
+        self.assertEqual(len(out.hidden_states), n_layers + 1)
+        for state in out.hidden_states:
+            self.assertEqual(list(state.shape), [self.BATCH, self.SEQ, SMALL_GQA_CFG["hidden_size"]])
+
+    def test_output_attentions(self):
+        n_layers = SMALL_GQA_CFG["num_hidden_layers"]
+        n_heads = SMALL_GQA_CFG["num_attention_heads"]
+        with paddle.no_grad():
+            out = self.model(input_ids=self._input_ids(), output_attentions=True)
+        self.assertIsNotNone(out.attentions)
+        self.assertEqual(len(out.attentions), n_layers)
+        for attn in out.attentions:
+            self.assertEqual(list(attn.shape), [self.BATCH, n_heads, self.SEQ, self.SEQ])
+
+
+class TestMistral3ConditionalGenerationOutputs(unittest.TestCase):
+    """End-to-end output flags through Mistral3ForConditionalGeneration."""
+
+    def test_output_hidden_states_and_attentions(self):
+        from paddleformers.transformers import (
+            Mistral3Config,
+            Mistral3ForConditionalGeneration,
+        )
+
+        config = Mistral3Config(text_config=SMALL_GQA_CFG, vision_config=SMALL_VISION_CFG)
+        model = Mistral3ForConditionalGeneration(config)
+        model.eval()
+
+        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [1, 6])
+        with paddle.no_grad():
+            out = model(input_ids=input_ids, output_hidden_states=True, output_attentions=True)
+
+        n_layers = SMALL_GQA_CFG["num_hidden_layers"]
+        self.assertEqual(len(out.hidden_states), n_layers + 1)
+        self.assertEqual(len(out.attentions), n_layers)
+        self.assertTrue(paddle.isfinite(out.logits).all())
+
+
+class TestMistral3AoaSymmetry(unittest.TestCase):
+    """_gen_inv_aoa_config must be the exact reverse of _gen_aoa_config."""
+
+    def test_forward_inverse_symmetric(self):
+        from paddleformers.transformers import (
+            Mistral3Config,
+            Mistral3ForConditionalGeneration,
+        )
+
+        config = Mistral3Config(text_config=SMALL_GQA_CFG, vision_config=SMALL_VISION_CFG)
+        forward = Mistral3ForConditionalGeneration._gen_aoa_config(config)["aoa_statements"]
+        inverse = Mistral3ForConditionalGeneration._gen_inv_aoa_config(config)["aoa_statements"]
+
+        def split(statements):
+            sources, targets = set(), set()
+            for stmt in statements:
+                src, tgt = stmt.split(" -> ")
+                sources.add(src.replace("^T", ""))
+                targets.add(tgt.replace("^T", ""))
+            return sources, targets
+
+        f_src, f_tgt = split(forward)
+        i_src, i_tgt = split(inverse)
+        self.assertEqual(len(inverse), len(forward))
+        self.assertEqual(f_src, i_tgt, "inverse targets must match forward sources")
+        self.assertEqual(f_tgt, i_src, "inverse sources must match forward targets")
+
+
 def _load_paddle_model_3b(dtype="float32"):
     import paddle
 

@@ -14,7 +14,7 @@
 
 from ..configuration_utils import PretrainedConfig
 
-__all__ = ["Mistral3Config", "Ministral3TextConfig"]
+__all__ = ["Mistral3Config", "Mistral3TextConfig", "Mistral3VisionConfig", "Ministral3TextConfig"]
 
 
 class Ministral3TextConfig:
@@ -80,7 +80,7 @@ class Mistral3Config(PretrainedConfig):
             Whether to use bias in the multimodal projector.
         spatial_merge_size (`int`, *optional*, defaults to 2):
             The downsampling factor for the spatial merge operation.
-        tie_word_embeddings (`bool`, *optional*, defaults to `True`):
+        tie_word_embeddings (`bool`, *optional*, defaults to `False`):
             Whether to tie the input and output embeddings.
     """
 
@@ -106,7 +106,6 @@ class Mistral3Config(PretrainedConfig):
         self.vision_feature_layer = vision_feature_layer
         self.initializer_range = initializer_range
 
-        # Default vision config (Pixtral-like)
         if vision_config is None:
             vision_config = {
                 "intermediate_size": 4096,
@@ -123,7 +122,6 @@ class Mistral3Config(PretrainedConfig):
             vision_config = Mistral3VisionConfig(**vision_config)
         self.vision_config = vision_config
 
-        # Default text config (Mistral-like)
         if text_config is None:
             text_config = {
                 "attention_dropout": 0.0,
@@ -155,8 +153,6 @@ class Mistral3Config(PretrainedConfig):
 
 
 class Mistral3VisionConfig(PretrainedConfig):
-    """Vision configuration for Mistral3 model."""
-
     model_type = "mistral3_vision"
 
     def __init__(
@@ -186,8 +182,6 @@ class Mistral3VisionConfig(PretrainedConfig):
 
 
 class Mistral3TextConfig(PretrainedConfig):
-    """Text configuration for Mistral3 model."""
-
     model_type = "mistral3_text"
 
     def __init__(
