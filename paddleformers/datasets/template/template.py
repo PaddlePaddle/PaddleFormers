@@ -1060,6 +1060,16 @@ register_template(
 )
 
 register_template(
+    name="mistral3",
+    format_user=StringFormatter(slots=["[INST]{{content}}[/INST]"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["[SYSTEM_PROMPT]{{content}}[/SYSTEM_PROMPT]"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="</s>",
+    suffix=["</s>"],
+)
+
+register_template(
     name="internlm3",
     format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
     format_assistant=StringFormatter(slots=["{{content}}"]),

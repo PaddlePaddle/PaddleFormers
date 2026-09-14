@@ -73,6 +73,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm_ocr", "GlmOcrConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("mistral3", "Mistral3Config"),
         ("olmo2", "Olmo2Config"),
         ("internlm3", "InternLM3Config"),
         ("internlm2", "InternLM2Config"),
@@ -121,6 +122,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("shieldgemma2", "ShieldGemma2ForImageClassification"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
+        ("mistral3", "Mistral3ForConditionalGeneration"),
         ("minicpm3", "MiniCPM3Model"),
         ("olmo2", "Olmo2ForCausalLM"),
         ("internlm3", "InternLM3ForCausalLM"),
@@ -145,6 +147,7 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("qwen2_5_vl_text", "qwen2_5_vl"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
+        ("mistral3", "ministral3"),
         ("internlm3", "intern_lm3"),
         ("internlm2", "intern"),
         # TODO(VL): Remove these when Gemma4 VL module (gemma4/) is created
