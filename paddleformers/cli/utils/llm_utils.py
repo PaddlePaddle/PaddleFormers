@@ -295,6 +295,16 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type == "granite":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "gemma3_text":
         target_modules = [
             ".*q_proj.*",
@@ -306,6 +316,18 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
         ]
     elif model.config.model_type == "minicpm":
+        target_modules = [
+            ".*qkv_proj.*",
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*up_gate_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
+    elif model.config.model_type == "minicpm4_1":
         target_modules = [
             ".*qkv_proj.*",
             ".*q_proj.*",

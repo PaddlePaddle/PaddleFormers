@@ -55,7 +55,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   <tbody>
     <!-- LLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="14" style="vertical-align: top;">LLM</td>
+      <td rowspan="15" style="vertical-align: top;">LLM</td>
       <td>DeepSeekv3</td>
       <td>deepseek-ai/DeepSeek-V3-Base、deepseek-ai/DeepSeek-V3、deepseek-ai/DeepSeek-V3-0324</td>
       <td>deepseek3</td>
@@ -89,6 +89,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>gpt-oss</td>
       <td>openai/gpt-oss-20b、openai/gpt-oss-120b</td>
       <td>gpt</td>
+    </tr>
+    <tr>
+      <td>Granite</td>
+      <td>ibm-granite/granite-3.2-2b-base、ibm-granite/granite-3.2-2b-instruct、ibm-granite/granite-3.2-8b-base、ibm-granite/granite-3.2-8b-instruct</td>
+      <td>granite</td>
     </tr>
     <tr>
       <td>Llama-3</td>

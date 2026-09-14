@@ -95,20 +95,16 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         """
 
         def _ffn_gate_up(matrix, ortho_fn, intermediate_size=None):
-            """Slice FFN gate_up, orthogonalise gate and up independently."""
+            """Slice FFN gate_up, orthogonalise gate and up independently.
+
+            Handles both 2D (per-expert) and 3D (fused experts) weight tensors.
+            """
             import paddle
 
-            if matrix.ndim == 2:
-                gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=1)
-                return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1)
-            elif matrix.ndim == 3:
-                expert_updates = []
-                for ei in range(matrix.shape[0]):
-                    gate, up = paddle.split(matrix[ei], [intermediate_size, intermediate_size], axis=1)
-                    expert_updates.append(paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1))
-                return paddle.stack(expert_updates, axis=0)
-            else:
-                raise ValueError(f"FFN gate_up split expects 2D or 3D tensor, got shape {matrix.shape}")
+            assert matrix.ndim == 2 or matrix.ndim == 3, "FFN gate_up split expects 2D or 3D tensor"
+
+            gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=-1)
+            return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=-1)
 
         def _mla_per_head(matrix_2d_global, ortho_fn, head_num=None, axis=None, head_split_sizes=None):
             """Slice MLA weights by heads."""
@@ -121,15 +117,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
         def _moe_experts(matrix_3d_global, ortho_fn):
             """Slice MoE weights by experts."""
-            import paddle
 
             if matrix_3d_global.ndim != 3:
                 raise ValueError(f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}")
-            n_experts = matrix_3d_global.shape[0]
-            return paddle.stack(
-                [ortho_fn(matrix_3d_global[ei]) for ei in range(n_experts)],
-                axis=0,
-            )
+
+            return ortho_fn(matrix_3d_global)
 
         slice_config = {}
 
@@ -168,7 +160,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                     },
                 )
 
@@ -178,7 +170,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.v_head_dim, config.v_head_dim],
                         },
                     )
@@ -186,7 +178,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.v_head_dim, config.v_head_dim],
                         },
                     )
@@ -197,7 +189,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": config.dsa_index_n_heads,
-                            "axis": 1,
+                            "axis": -1,
                         },
                     )
                     # Compressed weights
@@ -205,7 +197,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
                         },
                     )
@@ -213,7 +205,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
                         },
                     )
@@ -266,21 +258,21 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.qk_rope_head_dim],
                     },
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"] = (
                     mla_slice_fn,
-                    {"head_num": 1, "axis": 1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
+                    {"head_num": 1, "axis": -1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
                     mla_slice_fn,
                     {
                         "head_num": num_attention_head,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.v_head_dim],
                     },
                 )
@@ -289,7 +281,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             if use_gated_attn and mla_slice_fn is not None:
                 slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
                     mla_slice_fn,
-                    {"head_num": num_attention_head, "axis": 1},
+                    {"head_num": num_attention_head, "axis": -1},
                 )
 
         # Main layers
@@ -390,6 +382,42 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         return info_map
 
     @classmethod
+    def _gen_hf_quan_config(cls):
+        """Describe the FP8 block-quantized DeepSeek-V4 HF checkpoint.
+
+        Consumed by ``Trainer`` when ``load_from_hf`` is enabled and the
+        checkpoint's ``config.json`` declares a ``quantization_config``; the
+        descriptor is passed to
+        ``paddleformers.quantization.hf_checkpoint`` to build the dequantization
+        transform.  The logical ``.weight`` names this produces are exactly the
+        AOA sources in :meth:`_gen_aoa_config`.
+        """
+        return {
+            "schema_version": 1,
+            "component_pairing": {"weight_suffix": ".weight", "scale_suffix": ".scale"},
+            "logic_name_suffix": ".weight",
+            "groups": [
+                {
+                    "name": "fp8_block",
+                    "targets": [
+                        r"re:^(?:"
+                        r"layers\.[0-9]+\.attn\.(?:indexer\.wq_b|wkv|wo_a|wo_b|wq_a|wq_b)|"
+                        r"layers\.[0-9]+\.ffn\.(?:shared_experts\.w[123]|experts\.[0-9]+\.w[123])|"
+                        r"mtp\.[0-9]+\.(?:attn\.(?:wkv|wo_a|wo_b|wq_a|wq_b)|"
+                        r"ffn\.(?:shared_experts\.w[123]|experts\.[0-9]+\.w[123])|e_proj|h_proj)"
+                        r")\.weight$"
+                    ],
+                    "quant_method": "fp8_block",
+                    "value_format": "e4m3",
+                    # The HF config calls the scale encoding UE8M0, but this
+                    # checkpoint stores the decoded power-of-two scales as F32.
+                    "scale_format": "float32",
+                    "block_shape": [128, 128],
+                }
+            ],
+        }
+
+    @classmethod
     def _gen_aoa_config(cls, config: DeepseekV4Config):
         """Weight conversion: HuggingFace DSv4 checkpoint -> PaddleFleet internal format.
 
@@ -405,6 +433,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
+        dense_mode = getattr(config, "csa_dense_mode", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -427,7 +456,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "norm.weight -> model.norm.weight",
         ]
         if mtp_num_layers > 0 and getattr(config, "enable_mtp_magic_send", False):
-            stmts.append("embed.weight -> model.mtp_embedding.embed_tokens.weight")
+            for mtp_i in range(mtp_num_layers):
+                mtp_embed_idx = num_decoder_layers + num_head_empty_layers + mtp_i
+                stmts.append(f"embed.weight -> model.layers.{mtp_embed_idx}.mtp_embed.weight")
         if config.tie_word_embeddings:
             stmts += ["embed.weight -> model.lm_head.weight"]
         else:
@@ -481,11 +512,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{src}.hc_attn_scale -> {tgt}.self_attention_hyper_connection.alpha_pre_t, "
                 f"{tgt}.self_attention_hyper_connection.alpha_post_t, "
                 f"{tgt}.self_attention_hyper_connection.alpha_res_t, axis=0",
-                f"{tgt}.self_attention_hyper_connection.alpha_pre_t -> {tgt}.self_attention_hyper_connection.alpha_pre, dtype='bfloat16'",
-                f"{tgt}.self_attention_hyper_connection.alpha_post_t -> {tgt}.self_attention_hyper_connection.alpha_post, dtype='bfloat16'",
-                f"{tgt}.self_attention_hyper_connection.alpha_res_t -> {tgt}.self_attention_hyper_connection.alpha_res, dtype='bfloat16'",
-                f"{src}.hc_attn_base -> {tgt}.self_attention_hyper_connection.bias, dtype='bfloat16'",
-                f"{src}.hc_attn_fn^T -> {tgt}.self_attention_hyper_connection.mapping_proj.weight, dtype='bfloat16'",
+                f"{tgt}.self_attention_hyper_connection.alpha_pre_t -> {tgt}.self_attention_hyper_connection.alpha_pre, dtype='float32'",
+                f"{tgt}.self_attention_hyper_connection.alpha_post_t -> {tgt}.self_attention_hyper_connection.alpha_post, dtype='float32'",
+                f"{tgt}.self_attention_hyper_connection.alpha_res_t -> {tgt}.self_attention_hyper_connection.alpha_res, dtype='float32'",
+                f"{src}.hc_attn_base -> {tgt}.self_attention_hyper_connection.bias, dtype='float32'",
+                f"{src}.hc_attn_fn^T -> {tgt}.self_attention_hyper_connection.mapping_proj.weight, dtype='float32'",
             ]
 
             # --- mHC: MLP HyperConnection ---
@@ -493,11 +524,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{src}.hc_ffn_scale -> {tgt}.mlp_hyper_connection.alpha_pre_t, "
                 f"{tgt}.mlp_hyper_connection.alpha_post_t, "
                 f"{tgt}.mlp_hyper_connection.alpha_res_t, axis=0",
-                f"{tgt}.mlp_hyper_connection.alpha_pre_t -> {tgt}.mlp_hyper_connection.alpha_pre, dtype='bfloat16'",
-                f"{tgt}.mlp_hyper_connection.alpha_post_t -> {tgt}.mlp_hyper_connection.alpha_post, dtype='bfloat16'",
-                f"{tgt}.mlp_hyper_connection.alpha_res_t -> {tgt}.mlp_hyper_connection.alpha_res, dtype='bfloat16'",
-                f"{src}.hc_ffn_base -> {tgt}.mlp_hyper_connection.bias, dtype='bfloat16'",
-                f"{src}.hc_ffn_fn^T -> {tgt}.mlp_hyper_connection.mapping_proj.weight, dtype='bfloat16'",
+                f"{tgt}.mlp_hyper_connection.alpha_pre_t -> {tgt}.mlp_hyper_connection.alpha_pre, dtype='float32'",
+                f"{tgt}.mlp_hyper_connection.alpha_post_t -> {tgt}.mlp_hyper_connection.alpha_post, dtype='float32'",
+                f"{tgt}.mlp_hyper_connection.alpha_res_t -> {tgt}.mlp_hyper_connection.alpha_res, dtype='float32'",
+                f"{src}.hc_ffn_base -> {tgt}.mlp_hyper_connection.bias, dtype='float32'",
+                f"{src}.hc_ffn_fn^T -> {tgt}.mlp_hyper_connection.mapping_proj.weight, dtype='float32'",
             ]
 
             # --- CSA Compressor (present when compress_ratio > 0) ---
@@ -512,7 +543,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- DSA Indexer (present on layers with compress_ratio > 0 and <= 4) ---
-            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4:
+            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4 and not dense_mode:
                 idx_src = f"{src}.attn.indexer"
                 idx_tgt = f"{tgt}.self_attn.core_attention.indexer"
                 stmts += [
@@ -565,9 +596,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
         # === 3. Top-level mHC head contraction (output head HyperConnection) ===
         stmts += [
-            "hc_head_base -> model.mhc_contract.hc_head_base, dtype='bfloat16'",
-            "hc_head_fn^T -> model.mhc_contract.hc_head_fn, dtype='bfloat16'",
-            "hc_head_scale -> model.mhc_contract.hc_head_scale, dtype='bfloat16'",
+            "hc_head_base -> model.mhc_contract.hc_head_base, dtype='float32'",
+            "hc_head_fn^T -> model.mhc_contract.hc_head_fn, dtype='float32'",
+            "hc_head_scale -> model.mhc_contract.hc_head_scale, dtype='float32'",
         ]
 
         # === 4. MTP (Multi-Token Prediction) layers ===
@@ -587,9 +618,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
 
             # --- MTP head HyperConnection ---
             stmts += [
-                f"{mtp_src}.hc_head_base -> {mtp_tgt}.hc_head_base, dtype='bfloat16'",
-                f"{mtp_src}.hc_head_fn^T -> {mtp_tgt}.hc_head_fn, dtype='bfloat16'",
-                f"{mtp_src}.hc_head_scale -> {mtp_tgt}.hc_head_scale, dtype='bfloat16'",
+                f"{mtp_src}.hc_head_base -> {mtp_tgt}.hc_head_base, dtype='float32'",
+                f"{mtp_src}.hc_head_fn^T -> {mtp_tgt}.hc_head_fn, dtype='float32'",
+                f"{mtp_src}.hc_head_scale -> {mtp_tgt}.hc_head_scale, dtype='float32'",
             ]
 
             # --- LayerNorm (inside transformer_layer) ---
@@ -615,11 +646,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{mtp_src}.hc_attn_scale -> {tl}.self_attention_hyper_connection.alpha_pre_t, "
                 f"{tl}.self_attention_hyper_connection.alpha_post_t, "
                 f"{tl}.self_attention_hyper_connection.alpha_res_t, axis=0",
-                f"{tl}.self_attention_hyper_connection.alpha_pre_t -> {tl}.self_attention_hyper_connection.alpha_pre, dtype='bfloat16'",
-                f"{tl}.self_attention_hyper_connection.alpha_post_t -> {tl}.self_attention_hyper_connection.alpha_post, dtype='bfloat16'",
-                f"{tl}.self_attention_hyper_connection.alpha_res_t -> {tl}.self_attention_hyper_connection.alpha_res, dtype='bfloat16'",
-                f"{mtp_src}.hc_attn_base -> {tl}.self_attention_hyper_connection.bias, dtype='bfloat16'",
-                f"{mtp_src}.hc_attn_fn^T -> {tl}.self_attention_hyper_connection.mapping_proj.weight, dtype='bfloat16'",
+                f"{tl}.self_attention_hyper_connection.alpha_pre_t -> {tl}.self_attention_hyper_connection.alpha_pre, dtype='float32'",
+                f"{tl}.self_attention_hyper_connection.alpha_post_t -> {tl}.self_attention_hyper_connection.alpha_post, dtype='float32'",
+                f"{tl}.self_attention_hyper_connection.alpha_res_t -> {tl}.self_attention_hyper_connection.alpha_res, dtype='float32'",
+                f"{mtp_src}.hc_attn_base -> {tl}.self_attention_hyper_connection.bias, dtype='float32'",
+                f"{mtp_src}.hc_attn_fn^T -> {tl}.self_attention_hyper_connection.mapping_proj.weight, dtype='float32'",
             ]
 
             # --- mHC: MLP HyperConnection (inside transformer_layer) ---
@@ -627,11 +658,11 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{mtp_src}.hc_ffn_scale -> {tl}.mlp_hyper_connection.alpha_pre_t, "
                 f"{tl}.mlp_hyper_connection.alpha_post_t, "
                 f"{tl}.mlp_hyper_connection.alpha_res_t, axis=0",
-                f"{tl}.mlp_hyper_connection.alpha_pre_t -> {tl}.mlp_hyper_connection.alpha_pre, dtype='bfloat16'",
-                f"{tl}.mlp_hyper_connection.alpha_post_t -> {tl}.mlp_hyper_connection.alpha_post, dtype='bfloat16'",
-                f"{tl}.mlp_hyper_connection.alpha_res_t -> {tl}.mlp_hyper_connection.alpha_res, dtype='bfloat16'",
-                f"{mtp_src}.hc_ffn_base -> {tl}.mlp_hyper_connection.bias, dtype='bfloat16'",
-                f"{mtp_src}.hc_ffn_fn^T -> {tl}.mlp_hyper_connection.mapping_proj.weight, dtype='bfloat16'",
+                f"{tl}.mlp_hyper_connection.alpha_pre_t -> {tl}.mlp_hyper_connection.alpha_pre, dtype='float32'",
+                f"{tl}.mlp_hyper_connection.alpha_post_t -> {tl}.mlp_hyper_connection.alpha_post, dtype='float32'",
+                f"{tl}.mlp_hyper_connection.alpha_res_t -> {tl}.mlp_hyper_connection.alpha_res, dtype='float32'",
+                f"{mtp_src}.hc_ffn_base -> {tl}.mlp_hyper_connection.bias, dtype='float32'",
+                f"{mtp_src}.hc_ffn_fn^T -> {tl}.mlp_hyper_connection.mapping_proj.weight, dtype='float32'",
             ]
 
             # --- MTP CSA Compressor (if compress_ratio > 0 for this layer) ---
@@ -645,7 +676,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{comp_src}.wgate.weight^T -> {comp_tgt}.linear_wgate.weight",
                     f"{comp_src}.wkv.weight^T -> {comp_tgt}.linear_wkv.weight",
                 ]
-                if csa_compress_ratios[mtp_layer_idx] <= 4:
+                if csa_compress_ratios[mtp_layer_idx] <= 4 and not dense_mode:
                     idx_src = f"{mtp_src}.attn.indexer"
                     idx_tgt = f"{tl}.self_attn.core_attention.indexer"
                     stmts += [
@@ -706,6 +737,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
         num_experts = config.n_routed_experts
         n_shared_experts = getattr(config, "n_shared_experts", 1)
         moe_n_hash_layers = getattr(config, "moe_n_hash_layers", 3)
+        dense_mode = getattr(config, "csa_dense_mode", False)
         csa_compress_ratios = config.csa_compress_ratios
         num_head_empty_layers = (
             config.num_empty_layers_add_in_head
@@ -728,7 +760,9 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
             "model.norm.weight -> norm.weight",
         ]
         if mtp_num_layers > 0 and getattr(config, "enable_mtp_magic_send", False):
-            stmts.append("model.mtp_embedding.embed_tokens.weight -> embed.weight")
+            for mtp_i in range(mtp_num_layers):
+                mtp_embed_idx = num_decoder_layers + num_head_empty_layers + mtp_i
+                stmts.append(f"model.layers.{mtp_embed_idx}.mtp_embed.weight -> embed.weight")
         if config.tie_word_embeddings:
             stmts += ["model.lm_head.weight -> _"]
         else:
@@ -815,7 +849,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                     f"{comp_src}.linear_wgate.weight^T -> {comp_tgt}.wgate.weight",
                     f"{comp_src}.linear_wkv.weight^T -> {comp_tgt}.wkv.weight",
                 ]
-                if csa_compress_ratios[mtp_layer_idx] <= 4:
+                if csa_compress_ratios[mtp_layer_idx] <= 4 and not dense_mode:
                     idx_src = f"{tl}.self_attn.core_attention.indexer"
                     idx_tgt = f"{mtp_tgt}.attn.indexer"
                     stmts += [
@@ -923,7 +957,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 f"{src}.mlp_hyper_connection.alpha_post, "
                 f"{src}.mlp_hyper_connection.alpha_res "
                 f"-> {tgt}.hc_ffn_scale, axis=0",
-                f" {tgt}.hc_ffn_scale ->  {tgt}.hc_ffn_scale, dtype='float32'"
+                f"{tgt}.hc_ffn_scale -> {tgt}.hc_ffn_scale, dtype='float32'",
                 f"{src}.mlp_hyper_connection.bias -> {tgt}.hc_ffn_base, dtype='float32'",
                 f"{src}.mlp_hyper_connection.mapping_proj.weight^T -> {tgt}.hc_ffn_fn, dtype='float32'",
             ]
@@ -940,7 +974,7 @@ class DeepseekV4PreTrainedModel(PretrainedModel):
                 ]
 
             # --- DSA Indexer (present on layers with compress_ratio > 0 and <= 4) ---
-            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4:
+            if csa_compress_ratios[L] > 0 and csa_compress_ratios[L] <= 4 and not dense_mode:
                 idx_src = f"{src}.self_attn.core_attention.indexer"
                 idx_tgt = f"{tgt}.attn.indexer"
                 stmts += [
@@ -1026,6 +1060,7 @@ class DeepseekV4ForCausalLM(DeepseekV4PreTrainedModel):
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._gen_hf_quan_config = cls._gen_hf_quan_config
         gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         gpt_model.config_to_save = config
         gpt_model.is_fleet = cls.is_fleet
@@ -1059,6 +1094,7 @@ class DeepseekV4ForCausalLMPipe(DeepseekV4PreTrainedModel, GeneralModelForCausal
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        gpt_model._gen_hf_quan_config = cls._gen_hf_quan_config
         gpt_model.build_muon_param_info_map = cls.build_muon_param_info_map
         if not hasattr(config, "architectures"):
             config.architectures = [cls.__name__.replace("Pipe", "")]

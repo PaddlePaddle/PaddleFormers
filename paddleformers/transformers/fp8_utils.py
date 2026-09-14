@@ -950,7 +950,7 @@ class FP8GroupGemmMlpFunctionNode:
                     (x_fp8, x_scale),
                     (w1_t_quant, w1_t_scale),
                     o1,
-                    m_indices=self.m_indices if m_indices is None else m_indices,
+                    self.m_indices if m_indices is None else m_indices,
                 )
 
         if m_indices is None:
@@ -1003,7 +1003,7 @@ class FP8GroupGemmMlpFunctionNode:
                     (o2_fp8, o2_scale),
                     (w2_quant, w2_scale),
                     o3,
-                    m_indices=m_indices if self.fwd_subbatch else self.m_indices,
+                    m_indices if self.fwd_subbatch else self.m_indices,
                 )
 
         return o3
@@ -1043,7 +1043,7 @@ class FP8GroupGemmMlpFunctionNode:
                     (unzipped_grad_fp8, unzipped_grad_scale),
                     (bw_w2_quant, bw_w2_scale),
                     do2_s,
-                    m_indices=m_indices if self.bwd_subbatch else self.m_indices,
+                    m_indices if self.bwd_subbatch else self.m_indices,
                 )
 
         with paddle.amp.auto_cast(False):
@@ -1088,7 +1088,7 @@ class FP8GroupGemmMlpFunctionNode:
                     (do1_fp8, do1_scale),
                     (bw_w1_quant, bw_w1_scale),
                     dx,
-                    m_indices=m_indices if self.bwd_subbatch else self.m_indices,
+                    m_indices if self.bwd_subbatch else self.m_indices,
                 )
 
         return dx

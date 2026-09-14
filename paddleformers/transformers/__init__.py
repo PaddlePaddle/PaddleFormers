@@ -92,6 +92,8 @@ import_structure = {
         "TruncationStrategy",
     ],
     "auto.processing": ["AutoProcessor"],
+    "paligemma2.image_processor": ["PaliGemmaImageProcessor"],
+    "paligemma2.processor": ["PaliGemmaProcessor"],
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
@@ -171,14 +173,67 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "minicpm3.configuration": ["MiniCPM3Config"],
+    "minicpm3.modeling": [
+        "MiniCPMDecoderLayer",
+        "MiniCPM3ForCausalLM",
+        "MiniCPM3ForSequenceClassification",
+        "MiniCPM3Model",
+        "MiniCPM3PreTrainedModel",
+    ],
+    "granite.configuration": ["GraniteConfig"],
+    "granite.modeling": [
+        "GraniteDecoderLayer",
+        "GraniteModel",
+        "GranitePretrainedModel",
+        "GraniteForCausalLM",
+        "GraniteForCausalLMPipe",
+    ],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "gemma3.configuration": ["Gemma3Config"],
+    "gemma3.image_processor": ["Gemma3ImageProcessor", "Gemma3ImageProcessorKwargs"],
+    "gemma3.image_processor_fast": ["Gemma3ImageProcessorFast"],
+    "gemma3.processor": ["Gemma3Processor", "Gemma3ProcessorKwargs"],
+    "gemma3.modeling": [
+        "Gemma3ModelOutputWithPast",
+        "Gemma3CausalLMOutputWithPast",
+        "Gemma3MultiModalProjector",
+        "Gemma3PreTrainedModel",
+        "Gemma3Model",
+        "Gemma3ForConditionalGeneration",
+    ],
+    "shieldgemma2.configuration": ["ShieldGemma2Config", "ShieldGemma2VisionConfig"],
+    "shieldgemma2.modeling": [
+        "ShieldGemma2ForImageClassification",
+        "ShieldGemma2ImageClassifierOutputWithNoAttention",
+    ],
+    "shieldgemma2.processor": [
+        "DEFAULT_SHIELDGEMMA2_POLICIES",
+        "ShieldGemma2Processor",
+        "ShieldGemma2ProcessorKwargs",
+    ],
     "kimi_k2.configuration": ["KimiK2Config"],
     "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
     "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
+    "kimi_k3.configuration": [
+        "KimiK3Config",
+        "KimiK3TextConfig",
+        "KimiK3VisionConfig",
+    ],
+    "kimi_k3.modeling": [
+        "KimiK3Model",
+        "KimiK3ForCausalLM",
+        "KimiK3ForCausalLMPipe",
+        "KimiK3ForConditionalGeneration",
+        "KimiK3ModelProvider",
+    ],
+    "kimi_k3.tokenizer": ["KimiK3TikTokenTokenizer"],
+    "kimi_k3.vision_processor": ["KimiK3VisionProcessor"],
+    "kimi_k3.processor": ["KimiK3Processor"],
     "llama.configuration": [
         "LlamaConfig",
     ],
@@ -312,11 +367,13 @@ import_structure = {
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
+    "minicpm3": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
+    "granite": ["GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM"],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
     "minicpm.configuration": ["MiniCPMConfig"],
@@ -327,6 +384,14 @@ import_structure = {
         "MiniCPMForSequenceClassification",
     ],
     "minicpm": [],
+    "minicpm4_1.configuration": ["MiniCPM4_1Config"],
+    "minicpm4_1.modeling": [
+        "MiniCPM4_1Model",
+        "MiniCPM4_1ForCausalLM",
+        "MiniCPM4_1ForCausalLMPipe",
+        "MiniCPM4_1ForSequenceClassification",
+    ],
+    "minicpm4_1": [],
     "deepseek_v4.configuration": ["DeepseekV4Config"],
     "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
@@ -469,6 +534,7 @@ if TYPE_CHECKING:
     from .ernie4_5_moe_vl import *
     from .kimi_k25 import *
     from .kimi_k2 import *
+    from .kimi_k3 import *
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
@@ -488,10 +554,15 @@ if TYPE_CHECKING:
     from .glm_moe_dsa import *
     from .minimax_m2 import *
     from .minicpm import *
+    from .minicpm4_1 import *
     from .deepseek_v4 import *
     from .gpt_oss import *
+    from .minicpm3 import *
+    from .granite import *
     from .phi3 import *
     from .gemma3_text import *
+    from .gemma3 import *
+    from .shieldgemma2 import *
     from .glm_ocr import *
     from .ministral3 import *
     from .olmo2 import *
