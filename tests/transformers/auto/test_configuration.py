@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 import os
 import random
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -30,6 +32,24 @@ from ...utils.test_module.custom_configuration import CustomConfig
 
 
 class AutoConfigTest(unittest.TestCase):
+    def test_import_does_not_eagerly_load_model_utils(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "from paddleformers.transformers import AutoConfig; "
+                    "assert AutoConfig.__name__ == 'AutoConfig'; "
+                    "assert 'paddleformers.transformers.model_utils' not in sys.modules"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_built_in_model_class_config(self):
         config = AutoConfig.from_pretrained("PaddleFormers/tiny-random-qwen3", download_hub="aistudio")
         number = random.randint(0, 10000)
