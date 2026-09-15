@@ -219,6 +219,27 @@ class Template:
 
 
 @dataclass
+class FastVLMTemplate(Template):
+    image_token: str = "<image>"
+    image_token_id: int = -200
+
+    @override
+    def _convert_elements_to_ids(self, tokenizer: "PreTrainedTokenizer", elements: "SLOTS") -> list[int]:
+        token_ids = []
+        for element in elements:
+            if isinstance(element, str) and self.image_token in element:
+                chunks = element.split(self.image_token)
+                for index, chunk in enumerate(chunks):
+                    if chunk:
+                        token_ids += tokenizer.encode(chunk, add_special_tokens=False)
+                    if index < len(chunks) - 1:
+                        token_ids.append(self.image_token_id)
+            else:
+                token_ids += super()._convert_elements_to_ids(tokenizer, [element])
+        return token_ids
+
+
+@dataclass
 class ReasoningTemplate(Template):
     r"""A template that add thought to assistant message."""
 
@@ -662,6 +683,20 @@ register_template(
     default_system="You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
     chat_sep="<|im_end|>\n",
     suffix=["<|im_end|>\n"],
+)
+
+
+register_template(
+    name="fastvlm",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_observation=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    default_system="You are a helpful assistant.",
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    mm_plugin=get_mm_plugin(name="fastvlm", image_token="<image>"),
+    template_class=FastVLMTemplate,
 )
 
 

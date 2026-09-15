@@ -36,6 +36,7 @@ import_structure = {
         "_check_video_is_nested_images",
         "MMPluginMixin",
         "BasePlugin",
+        "FastVLMPlugin",
         "ErnieVLPlugin",
         "PaddleOCRVLPlugin",
         "Qwen2VLPlugin",
@@ -48,6 +49,7 @@ import_structure = {
     "template": [
         "Role",
         "Template",
+        "FastVLMTemplate",
         "ReasoningTemplate",
         "Llama2Template",
         "register_template",

@@ -393,6 +393,50 @@ class BasePlugin(MMPluginMixin):
 
 
 @dataclass
+class FastVLMPlugin(BasePlugin):
+    image_token_id: int = -200
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        if len(images) > 1:
+            raise ValueError("FastVLM currently supports exactly one image per sample.")
+        return messages
+
+    @override
+    def process_tokens(self, tokens, processor):
+        labels = deepcopy(tokens)
+        return [-100 if token == self.image_token_id else token for token in labels]
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        if videos or audios:
+            raise ValueError("FastVLM supports image input only.")
+        if not images:
+            return {}
+
+        processed_images = [self._img_download(image).convert("RGB") for image in images]
+        return dict(processor.image_processor(processed_images, return_tensors="pd"))
+
+
+@dataclass
 class PaddleOCRVLPlugin(BasePlugin):
     image_bos_token: str = "<|IMAGE_START|>"
     image_eos_token: str = "<|IMAGE_END|>"
@@ -1602,6 +1646,7 @@ class KimiK3Plugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "fastvlm": FastVLMPlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,
