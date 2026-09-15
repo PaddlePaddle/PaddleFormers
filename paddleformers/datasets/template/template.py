@@ -956,6 +956,42 @@ register_template(
 )
 
 
+# Idefics3: matches vLLM tokenizer_config.json chat_template exactly.
+# Key differences from llama3 template:
+#   1. suffix=["<|eot_id|>"] 鈥?model learns to output it (vLLM behavior), appended via SFTDataset
+#   2. chat_sep="<|eot_id|>" — matches Swift chat_sep, added between turns
+#   3. mm_plugin=idefics3 鈥?Idefics3Plugin masks visual structure tokens in loss
+# Image token expansion (<row_X_col_Y>, <global-img>, etc.) is handled by Idefics3Processor
+# internally (replace_image_token).
+register_template(
+    name="idefics3",
+    format_user=StringFormatter(
+        slots=[
+            (
+                "<|start_header_id|>user<|end_header_id|>\n\n{{content}}<|eot_id|>"
+                "<|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|start_header_id|>system<|end_header_id|>\n\n{{content}}<|eot_id|>"]),
+    format_function=FunctionFormatter(slots=["{{content}}<|eot_id|>"], tool_format="llama3"),
+    format_observation=StringFormatter(
+        slots=[
+            (
+                "<|start_header_id|>tool<|end_header_id|>\n\n{{content}}<|eot_id|>"
+                "<|start_header_id|>assistant<|end_header_id|>\n\n"
+            )
+        ]
+    ),
+    format_tools=ToolFormatter(tool_format="llama3"),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    suffix=["<|eot_id|>"],
+    chat_sep="<|eot_id|>",
+    mm_plugin=get_mm_plugin(name="idefics3", image_token="<image>"),
+)
+
+
 # copied from gemma template
 register_template(
     name="gemma",
