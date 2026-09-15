@@ -360,6 +360,11 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
             )
             # [num_experts, topk, bs*seq]
             tokens_per_expert = expert_mask.reshape([expert_mask.shape[0], -1]).sum(axis=-1)
+            # Fix 1: create a separate graph node for MLP indexing to avoid PaddlePaddle autograd
+            # gradient accumulation mismatch. hidden_states is shared by both the routing path
+            # (gate → softmax → topk → normalize) and multiple expert MLP subgraphs. Without this
+            # separation, PaddlePaddle accumulates gradients differently from PyTorch, causing diffs.
+            hidden_states_for_mlp = hidden_states + 0
             # Loop over all available experts in the model and perform the computation on each expert
             for expert_idx in range(self.num_experts):
                 expert_layer = self.experts[expert_idx]
@@ -369,16 +374,20 @@ class Qwen3MoeSparseMoeBlock(nn.Layer):
                 # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
                 if tokens_per_expert[expert_idx] <= 0.1:
                     if self.training and paddle.is_grad_enabled():
+                        # Fix 2: do NOT pass through expert_layer parameters for the fake path.
+                        # The original code ran expert_layer(x*0), which produced grad=0 tensors
+                        # for all expert weights. AdamW still applies weight_decay on grad=0
+                        # (unlike grad=None), causing inactive expert weights to diverge from HF
+                        # after each step. Instead, directly add zeros to keep expert grad=None.
                         fake_top_x = paddle.zeros(1, dtype=paddle.int64)
-                        fakse_current_state = hidden_states[fake_top_x, None].reshape([-1, hidden_states.shape[-1]])
-                        fake_state = expert_layer(fakse_current_state * 0)
+                        fake_state = paddle.zeros([1, hidden_states.shape[-1]], dtype=hidden_states.dtype)
                         final_hidden_states.index_add_(
-                            index=fake_top_x, axis=0, value=fake_state.to(hidden_states.dtype)
+                            index=fake_top_x, axis=0, value=fake_state
                         )
                     else:
                         continue
                 else:
-                    current_state = hidden_states[idx, None].reshape([-1, hidden_states.shape[-1]])
+                    current_state = hidden_states_for_mlp[idx, None].reshape([-1, hidden_states.shape[-1]])
                     current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
                     final_hidden_states.index_add_(
                         index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
