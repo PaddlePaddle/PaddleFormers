@@ -85,6 +85,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gemma4", "Gemma4MoeConfig"),  # Temporary: no standalone text ckpt, extract text_config in from_dict
         ("phi4", "Phi4Config"),
         ("phi4flash", "Phi4Config"),
+        ("hyperencoder", "HyperEncoderConfig"),
     ]
 )
 
@@ -114,6 +115,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_text", "Qwen3VL"),
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
+        ("hyperencoder", "HyperEncoderModelFleet"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
         ("phi4_multimodal", "Phi4MultimodalModel"),
         ("minicpm", "MiniCPM"),
