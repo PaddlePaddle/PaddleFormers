@@ -165,6 +165,19 @@ class Llama4ModelTester:
 
 
 class Llama4ModelTest(ModelTesterMixin, unittest.TestCase):
+    def test_training_recompute_disables_cache(self):
+        config = self.model_tester.get_config()
+        config.recompute_granularity = "full"
+        config.recompute_method = "uniform"
+        config.recompute_num_layers = 1
+        config.recompute_use_reentrant = False
+        model = Llama4TextModel(config)
+        model.train()
+        outputs = model(paddle.to_tensor([[1, 2, 3]], dtype="int64"), use_cache=True, return_dict=True)
+        self.assertIsNone(outputs.past_key_values)
+        outputs.last_hidden_state.square().mean().backward()
+        self.assertTrue(any(parameter.grad is not None for parameter in model.parameters()))
+
     base_model_class = Llama4TextModel
     return_dict = False
     use_labels = False

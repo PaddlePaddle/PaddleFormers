@@ -637,6 +637,11 @@ class Llama4TextModel(Llama4TextPretrainedModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
+        if self.training and self.config.recompute_granularity == "full":
+            if use_cache:
+                logger.warning("use_cache is incompatible with training recompute; disabling cache.")
+            use_cache = False
+            past_key_values = None
         return_dict = return_dict if return_dict is not None else getattr(self.config, "use_return_dict", False)
 
         if not ((input_ids is None) ^ (inputs_embeds is None)):
