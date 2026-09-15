@@ -230,6 +230,9 @@ class Phi4MultimodalConfig(PretrainedConfig):
         **kwargs,
     ):
         self._phi4mm_hf_config = kwargs.pop("_phi4mm_hf_config", None)
+        self.img_processor = kwargs.pop("img_processor", None)
+        if self.img_processor is None and self._phi4mm_hf_config is not None:
+            self.img_processor = copy.deepcopy(self._phi4mm_hf_config.get("img_processor"))
         super().__init__(
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id if eos_token_id is not None else [199999, 200020],
@@ -295,6 +298,8 @@ class Phi4MultimodalConfig(PretrainedConfig):
 
     def to_phi4mm_dict(self):
         """Return the upstream Phi-4-MM config used by Transformers/vLLM."""
+        if self.img_processor is None:
+            raise ValueError("Exporting Phi-4 upstream config requires img_processor from the original checkpoint.")
         output = copy.deepcopy(self._phi4mm_hf_config) if self._phi4mm_hf_config is not None else {}
 
         # Training may update these values, so always take them from the live
@@ -342,7 +347,7 @@ class Phi4MultimodalConfig(PretrainedConfig):
                 # This is a PaddleFormers extension to the upstream schema. It
                 # keeps non-default/tiny vision towers round-trippable instead
                 # of silently restoring the fixed upstream SigLIP defaults.
-                "vision_config": vision.to_dict(),
+                "vision_config": vision.to_dict(saving_file=True),
                 "embd_layer": {
                     "embedding_cls": "image_audio",
                     "image_embd_layer": {
@@ -365,7 +370,7 @@ class Phi4MultimodalConfig(PretrainedConfig):
                         "use_qformer": False,
                     },
                 },
-                "img_processor": output.get("img_processor"),
+                "img_processor": copy.deepcopy(self.img_processor),
                 "audio_processor": {
                     "name": "cascades",
                     "config": {

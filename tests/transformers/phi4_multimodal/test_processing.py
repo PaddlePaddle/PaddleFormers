@@ -32,6 +32,18 @@ from paddleformers.transformers.phi4_multimodal.processor import Phi4MultimodalP
 
 
 class Phi4MultimodalProcessorTest(unittest.TestCase):
+    def test_shifted_labels_preserve_text_after_image(self):
+        from paddleformers.datasets.template.mm_plugin import BasePlugin
+
+        plugin = BasePlugin(image_token="IMG", video_token=None, audio_token=None)
+        plugin.masked_tokens = ["BOS", "IMG", "EOS"]
+        processor = SimpleNamespace(tokenizer=SimpleNamespace(convert_tokens_to_ids=lambda tokens: [10, 11, 12]))
+        tokens = [1, 10, 11, 11, 12, 2, 3]
+        labels = tokens[1:] + [-100]
+        expected = [-100, -100, -100, -100, 2, 3, -100]
+        self.assertEqual(plugin.process_tokens(tokens, processor, labels=labels), expected)
+        self.assertEqual(plugin.process_tokens(tokens, processor)[1:] + [-100], expected)
+
     def test_feature_extractor_uses_local_kaldi_mel_filter_bank(self):
         feature_extractor = Phi4MultimodalFeatureExtractor(
             feature_size=4,

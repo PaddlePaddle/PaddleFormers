@@ -620,8 +620,8 @@ class BaseSFTDataset:
                 tokens = tokens[: self.max_seq_len + 1]
 
             # label shift
-            labels = tokens[1:] + [-100]
-            labels = self._mask_mm_token_labels(tokens, labels)
+            labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
+            labels = labels[1:] + [-100]
 
             pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
 

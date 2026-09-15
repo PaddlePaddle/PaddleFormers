@@ -368,8 +368,8 @@ class BasePlugin(MMPluginMixin):
                 )
 
             # Mask tokens that should be ignored in loss calculation
-            for i, token in enumerate(tokens):
-                if token in masked_tokens_ids or labels[i] in masked_tokens_ids:
+            for i, token in enumerate(labels):
+                if token in masked_tokens_ids:
                     labels[i] = -100
 
         return labels

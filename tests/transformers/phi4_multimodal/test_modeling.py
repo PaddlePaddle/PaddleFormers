@@ -213,6 +213,7 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
 
     def test_upstream_config_export_is_explicit_and_preserves_vision_config(self):
         config = Phi4MultimodalConfig(
+            img_processor={"name": "siglip-so400m-patch14-384"},
             num_hidden_layers=0,
             dtype="bfloat16",
             vision_config={
@@ -226,10 +227,13 @@ class Phi4MultimodalModelingTest(unittest.TestCase):
             },
         )
         with tempfile.TemporaryDirectory() as tmpdir:
+            config.save_pretrained(tmpdir)
+            config = Phi4MultimodalConfig.from_pretrained(tmpdir)
             config.save_upstream_config(tmpdir)
             exported = json.loads((Path(tmpdir) / "config.json").read_text())
 
             self.assertEqual(exported["model_type"], "phi4mm")
+            self.assertEqual(exported["img_processor"], {"name": "siglip-so400m-patch14-384"})
             self.assertEqual(exported["architectures"], ["Phi4MMForCausalLM"])
             self.assertEqual(exported["auto_map"]["AutoConfig"], "configuration_phi4mm.Phi4MMConfig")
             self.assertEqual(exported["torch_dtype"], "bfloat16")

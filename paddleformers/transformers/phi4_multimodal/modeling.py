@@ -257,6 +257,8 @@ class Phi4MultimodalVisionEncoder(nn.Layer):
     def __init__(self, config: Phi4MultimodalVisionConfig):
         super().__init__()
         self.config = config
+        if config._attn_implementation != "eager":
+            logger.warning("Phi-4 vision supports eager attention only; using eager for the vision encoder.")
         self.layers = nn.LayerList([Phi4MultimodalVisionEncoderLayer(config) for _ in range(config.num_hidden_layers)])
 
     @paddle.jit.not_to_static
@@ -862,6 +864,8 @@ class Phi4MultimodalAudioModel(_Phi4MultimodalComponentPreTrainedModel):
     def __init__(self, config: Phi4MultimodalAudioConfig):
         super().__init__(config)
         self.config = config
+        if config._attn_implementation != "eager":
+            logger.warning("Phi-4 audio supports eager attention only; using eager for the audio encoder.")
         self.encoder_embedding = Phi4MultimodalAudioMeanVarianceNormLayer(config)
         self.embed = Phi4MultimodalAudioNemoConvSubsampling(config)
         self.relative_attention_bias_layer = Phi4MultimodalAudioRelativeAttentionBias(config)
@@ -1666,6 +1670,11 @@ class Phi4MultimodalModel(Phi4MultimodalPreTrainedModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
+        if self.training and self.config.recompute_granularity == "full":
+            if use_cache:
+                logger.warning("use_cache is incompatible with Phi-4 training recompute; disabling cache.")
+            use_cache = False
+            past_key_values = None
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         previous_adapter = getattr(self.config, "_active_lora_adapter", None)
         self.config._active_lora_adapter = _lora_adapter_from_input_mode(
