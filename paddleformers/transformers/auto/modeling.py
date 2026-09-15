@@ -85,6 +85,10 @@ MAPPING_NAMES = OrderedDict(
         ("MiniCPM3", "minicpm3"),
         ("Granite", "granite"),
         ("Phi3", "phi3"),
+        ("Phi4MM", "phi4_multimodal"),
+        ("Phi4Multimodal", "phi4_multimodal"),
+        ("Phi4MultimodalAudio", "phi4_multimodal"),
+        ("Phi4MultimodalVision", "phi4_multimodal"),
         ("Phi4", "phi4"),
         ("Gemma3", "gemma3"),
         ("Gemma3Text", "gemma3_text"),
@@ -97,7 +101,13 @@ MAPPING_NAMES = OrderedDict(
     ]
 )
 
-MAPPING_SPACIAL_KEY = OrderedDict([("Gemma3", "Gemma3"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")])
+MAPPING_SPACIAL_KEY = OrderedDict(
+    [
+        ("Gemma3", "Gemma3"),
+        ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration"),
+        ("Phi4MM", "Phi4Multimodal"),
+    ]
+)
 CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3ForConditionalGeneration")])
 
 MAPPING_TASKS = OrderedDict(
