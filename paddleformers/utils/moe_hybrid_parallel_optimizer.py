@@ -44,6 +44,14 @@ from paddle.distributed.fleet.utils.mix_precision_utils import MixPrecisionOptim
 from paddle.framework import core
 from paddle.nn import ClipGradByGlobalNorm, clip
 
+from .hf_bitexact_clip import (
+    _hf_clip_coef,
+    _hf_global_norm,
+    _hf_scale_grads,
+    hf_param_norm_sq,
+    unwrap_hf_bitexact_clip,
+)
+
 __all__ = [
     "MoEHybridParallelOptimizer",
 ]
@@ -154,6 +162,18 @@ class MoEHybridParallelClipGrad:
     def _dygraph_clip(self, params_grads):
         if self._timers:
             self._timers("dygraph-clip").start()
+        # torch's recipe rounds each per-tensor norm to BF16 *before* the global
+        # sum; that rounding has to happen on this rank, and the squared BF16
+        # norms are what the all-reduce below sums. Without this the distributed
+        # path would silently revert to the paddle global-norm formula and lose
+        # the bit-exact reference that ``config.use_accuracy_compatible="hf"``
+        # selected (which is exactly the failure mode the replacement wrapper
+        # below exists to prevent). ``hf_param_norm_sq`` also applies the
+        # reference's split to fused projections, so a fused weight contributes
+        # its several BF16 norms here rather than one over the whole block.
+        hf_bitexact = unwrap_hf_bitexact_clip(self._clip) is not None
+        norm_fn = hf_param_norm_sq if hf_bitexact else (lambda _p, g: clip._squared_l2_norm(g))
+
         sum_square_dist_fp16 = []
         sum_square_dist_bf16 = []
         sum_square_dist_fp32 = []
@@ -179,7 +199,7 @@ class MoEHybridParallelClipGrad:
             if g.type == core.VarDesc.VarType.SELECTED_ROWS:
                 merge_grad = clip.merge_selected_rows(g)
                 merge_grad = clip.get_tensor_from_selected_rows(merge_grad)
-            sum_square = clip._squared_l2_norm(merge_grad)
+            sum_square = norm_fn(p, merge_grad)
 
             not_shared_enable = (not hasattr(p, "is_firstly_shared")) or (
                 hasattr(p, "is_firstly_shared") and getattr(p, "is_firstly_shared", True)
@@ -299,6 +319,27 @@ class MoEHybridParallelClipGrad:
         self._global_norm(
             global_norm_var_dist, global_norm_var_not_dist, global_norm_var_dist_moe, global_norm_var_not_dist_moe
         )
+
+        # HF bit-exact reference: same reduction (per-rank squared BF16 per-tensor
+        # norms are already in the four buckets), then torch's remaining recipe --
+        # ``bf16(sqrt(·))``, ``min(bf16(max / bf16(norm + 1e-6)), 1.0)`` and
+        # BF16-rounded scaling -- instead of paddle's formula below. The only
+        # unavoidable deviation from the single-GPU reference is the reduction
+        # order of the all-reduce, which stays FP32 and sums exact squares.
+        if unwrap_hf_bitexact_clip(self._clip) is not None:
+            total = (
+                global_norm_var_dist
+                + global_norm_var_not_dist
+                + global_norm_var_dist_moe
+                + global_norm_var_not_dist_moe
+            )
+            global_norm = _hf_global_norm(total)
+            clip_coef = _hf_clip_coef(global_norm, self.clip_norm)
+            self.stat["global_grad_norm"] = global_norm.astype("float32").item()
+            logger.info(f"hybrid-moe-hf-clip, var={float(clip_coef)}, global_norm:{float(global_norm)}")
+            if self._timers:
+                self._timers("dygraph-clip").stop()
+            return _hf_scale_grads(params_grads, clip_coef)
 
         global_norm_var_fp32 = paddle.sqrt(
             global_norm_var_dist + global_norm_var_not_dist + global_norm_var_dist_moe + global_norm_var_not_dist_moe

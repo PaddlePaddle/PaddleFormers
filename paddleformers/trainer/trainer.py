@@ -137,6 +137,7 @@ from ..transformers.segment_parallel_utils import (
     split_inputs_sequence_dim,
 )
 from ..utils import empty_device_cache, perf_utils
+from ..utils.accuracy_target import targets_hf
 from ..utils.batch_sampler import DistributedBatchSampler as NlpDistributedBatchSampler
 from ..utils.batch_sampler import MappingBatchSampler, MappingDistributedBatchSampler
 from ..utils.download import resolve_file_path
@@ -171,6 +172,7 @@ from ..utils.tools import paddle_device
 from .argparser import strtobool
 from .integrations import get_reporting_integration_callbacks
 from .plugins.timer import RuntimeTimer, get_timers, set_timers
+from .startup_profile import span as _sprof_span
 from .trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
@@ -366,8 +368,27 @@ class Trainer:
             args = TrainingArguments(output_dir=output_dir)
 
         self.args = args
-        _model_config = getattr(model, "config", None)
-        if getattr(_model_config, "use_accuracy_compatible", False) and getattr(self.args, "max_grad_norm", 0) > 0:
+        # An accuracy-aligned run has to reproduce its reference's optimizer
+        # trajectory, and the Megatron alignment suite runs with clipping off.
+        # ``max_grad_norm`` defaults to 1.0, so a config that simply does not
+        # mention it (e.g. PaddleFleet's ``GLM45Air_EP2.yaml``) would clip -- with
+        # a real global norm around 90 that rescales every gradient by ~0.01, the
+        # first update lands elsewhere and the alignment diverges from step 2 on
+        # while step 1 still matches bit-for-bit. Keep forcing clipping off for
+        # that target, but say so instead of overwriting silently.
+        #
+        # The ``"hf"`` target is deliberately exempt: its reference *does* clip,
+        # and ``_build_grad_clip()`` returns the recipe that reproduces
+        # ``torch.nn.utils.clip_grad_norm_`` bit-for-bit, so zeroing the threshold
+        # here would remove the very step being aligned.
+        _accuracy_target = getattr(getattr(model, "config", None), "use_accuracy_compatible", False)
+        if _accuracy_target and not targets_hf(_accuracy_target) and getattr(self.args, "max_grad_norm", 0) > 0:
+            logger.warning(
+                f"use_accuracy_compatible={_accuracy_target!r} aligns with Megatron-LM, which is "
+                f"compared without gradient clipping; overriding max_grad_norm="
+                f"{self.args.max_grad_norm} to 0.0. Use use_accuracy_compatible='hf' if you need a "
+                "clipped run that stays bit-exact against its reference."
+            )
             self.args.max_grad_norm = 0.0
         # Apply the reshard broadcast toggle once here: Trainer.__init__ is the
         # single point every reshard/EMA path runs after, so all_gather_state_dict
@@ -1226,7 +1247,8 @@ class Trainer:
             assert len(metadata_files) == 1, f"Found multiple metadata files in {path}"
             return metadata_files[0]
 
-        model_sharded_state_dict = self.model.sharded_state_dict()
+        with _sprof_span("sharded_state_dict"):
+            model_sharded_state_dict = self.model.sharded_state_dict()
         master_weights_path = os.path.join(resume_from_checkpoint, MASTER_WEIGHT_DIC)
         opt_states_path = os.path.join(resume_from_checkpoint, OPTIMIZER_STATE_DIC)
         model_states_path = os.path.join(resume_from_checkpoint, MODEL_STATE_DIC)
@@ -1322,14 +1344,16 @@ class Trainer:
             os.path.join(master_weights_path, get_metadata_file_name(master_weights_path)),
         ]
 
-        for metadata_file in metadata_paths:
-            if not os.path.exists(metadata_file):
-                raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
-            metadata = paddle.load(metadata_file)
-            state_dict_metadata.update(metadata.state_dict_metadata)
+        with _sprof_span("read_metadata"):
+            for metadata_file in metadata_paths:
+                if not os.path.exists(metadata_file):
+                    raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
+                metadata = paddle.load(metadata_file)
+                state_dict_metadata.update(metadata.state_dict_metadata)
 
         if not self.args.sharded_model_from_ema:
-            init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
+            with _sprof_span("init_optimizer"):
+                init_optimizer(self.optimizer, model_sharded_state_dict, state_dict_metadata)
 
             # ===== EMA State Resharding for ZCC (right after optimizer init) =====
             # Non-ZCC handles reshard internally in EMABufferFcBased._load()
@@ -1356,7 +1380,8 @@ class Trainer:
                     else:
                         logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
 
-            optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
+            with _sprof_span("opt_sharded_state_dict"):
+                optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
             opt_states = {}
             master_weights = {}
             for k, v in optimizer_sharded_state_dict.items():
@@ -1373,14 +1398,18 @@ class Trainer:
                 logger.info("[AOAConfig] generate master_weight_aoa by _gen_ckpt_convert_aoa !")
                 master_weight_aoa = self.model._gen_ckpt_convert_aoa(self.model.config)
 
-            dist.load_state_dict(
-                master_weights,
-                master_weights_path,
-                aoa_config=master_weight_aoa,
-                offload=self.args.load_via_cpu,
-                comm_method=flex_ckpt_comm_method,
-                worker_groups=worker_groups,
-            )
+            # The three loads below are opaque from here -- the work happens inside
+            # FlexCheckpoint -- so each span carries the number of tensors it was
+            # asked for, which is what turns the duration into a per-tensor cost.
+            with _sprof_span("load_master_weight", collective=True, n=len(master_weights)):
+                dist.load_state_dict(
+                    master_weights,
+                    master_weights_path,
+                    aoa_config=master_weight_aoa,
+                    offload=self.args.load_via_cpu,
+                    comm_method=flex_ckpt_comm_method,
+                    worker_groups=worker_groups,
+                )
 
             if not self.args.ignore_load_lr_and_optim:
                 opt_stat_aoa = self.args.aoa_config
@@ -1390,14 +1419,15 @@ class Trainer:
                     logger.info("[AOAConfig] generate opt_stat_aoa by _gen_ckpt_convert_aoa !")
                     opt_stat_aoa = self.model._gen_ckpt_convert_aoa(self.model.config, target="opt_state")
 
-                dist.load_state_dict(
-                    opt_states,
-                    opt_states_path,
-                    aoa_config=opt_stat_aoa,
-                    offload=self.args.load_via_cpu,
-                    comm_method=flex_ckpt_comm_method,
-                    worker_groups=worker_groups,
-                )
+                with _sprof_span("load_opt_state", collective=True, n=len(opt_states)):
+                    dist.load_state_dict(
+                        opt_states,
+                        opt_states_path,
+                        aoa_config=opt_stat_aoa,
+                        offload=self.args.load_via_cpu,
+                        comm_method=flex_ckpt_comm_method,
+                        worker_groups=worker_groups,
+                    )
                 self._load_scheduler(resume_from_checkpoint)
 
             if self.args.tensorwise_offload_optimizer:
@@ -1477,17 +1507,19 @@ class Trainer:
             else:
                 aoa_config = self.args.aoa_config
 
-            dist.load_state_dict(
-                model_sharded_state_dict,
-                model_states_path,
-                aoa_config=aoa_config,
-                offload=self.args.load_via_cpu,
-                comm_method=flex_ckpt_comm_method,
-                worker_groups=worker_groups,
-            )
+            with _sprof_span("load_model_state", collective=True, n=len(model_sharded_state_dict)):
+                dist.load_state_dict(
+                    model_sharded_state_dict,
+                    model_states_path,
+                    aoa_config=aoa_config,
+                    offload=self.args.load_via_cpu,
+                    comm_method=flex_ckpt_comm_method,
+                    worker_groups=worker_groups,
+                )
 
         if enable_bf16_opt:
-            opt_state_dict = self.optimizer.state_dict()
+            with _sprof_span("opt_state_dict"):
+                opt_state_dict = self.optimizer.state_dict()
 
             def _assign_master_weights_to_model(master_weights):
                 model_state_dict = self.model.state_dict()
@@ -1523,13 +1555,18 @@ class Trainer:
                 # _restore_master_weights_2d_on_device can gather them in place.
                 # 1D parameters go through ShardingV2's redistribute-and-
                 # concatenate, which is host-resident, so they move to host here.
-                for k, v in tmp.items():
-                    name = v.name
-                    if k in param_2d_names and reshard_util.use_device_gather():
-                        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16)
-                    else:
-                        master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
-                    master_weights[k].name = name
+                #
+                # Timed separately from the restores below: this loop is pure
+                # cast + device-to-host copy, so a large number here means the
+                # D2H traffic dominates, not the reshard collectives.
+                with _sprof_span("mw_cast_bf16", n=len(tmp), n_2d=len(param_2d_names)):
+                    for k, v in tmp.items():
+                        name = v.name
+                        if k in param_2d_names and reshard_util.use_device_gather():
+                            master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16)
+                        else:
+                            master_weights[k] = paddle.cast(to_device(v), paddle.bfloat16).cpu()
+                        master_weights[k].name = name
 
                 structure_name_map = {k: v.name for (k, v) in self.model.state_dict().items()}
 
@@ -1552,26 +1589,34 @@ class Trainer:
                     device_param_sink = {
                         p.name: p for p in self.model.state_dict().values() if p.dtype == paddle.bfloat16
                     }
-                    restored_2d = _restore_master_weights_2d_on_device(mw_2d, group, device_param_sink)
-                    if restored_2d is None:  # reshard_master_weight_device_gather=False
-                        restored_2d = _restore_master_weights_single(
-                            mw_2d,
+                    # 2D and 1D are separate spans because they use different reshard
+                    # paths -- device gather vs ShardingV2's host-resident
+                    # redistribute-and-concatenate -- and in practice one of the two
+                    # dominates. `restore_2d_host` names the fallback explicitly so a
+                    # report shows which path actually ran.
+                    with _sprof_span("restore_2d", collective=True, n=len(mw_2d)):
+                        restored_2d = _restore_master_weights_2d_on_device(mw_2d, group, device_param_sink)
+                        if restored_2d is None:  # reshard_master_weight_device_gather=False
+                            with _sprof_span("restore_2d_host", collective=True):
+                                restored_2d = _restore_master_weights_single(
+                                    mw_2d,
+                                    self.model,
+                                    self.optimizer,
+                                    group,
+                                    structure_name_map,
+                                    reshard_util.sharding_v1.restore,
+                                )
+                    all_master_weights.update(restored_2d)
+
+                    with _sprof_span("restore_1d", collective=True, n=len(mw_1d)):
+                        restored_1d = _restore_master_weights_single(
+                            mw_1d,
                             self.model,
                             self.optimizer,
                             group,
                             structure_name_map,
-                            reshard_util.sharding_v1.restore,
+                            reshard_util.sharding_v2.restore,
                         )
-                    all_master_weights.update(restored_2d)
-
-                    restored_1d = _restore_master_weights_single(
-                        mw_1d,
-                        self.model,
-                        self.optimizer,
-                        group,
-                        structure_name_map,
-                        reshard_util.sharding_v2.restore,
-                    )
                     all_master_weights.update(restored_1d)
 
                     master_weights = all_master_weights
@@ -1583,16 +1628,26 @@ class Trainer:
                         if sharding_strategy == SHARDING_STRATEGY_V1
                         else reshard_util.sharding_v2.restore
                     )
-                    master_weights = _restore_master_weights_single(
-                        master_weights, self.model, self.optimizer, group, structure_name_map, restore_func
-                    )
+                    with _sprof_span("restore_master_weights", collective=True, n=len(master_weights)):
+                        master_weights = _restore_master_weights_single(
+                            master_weights, self.model, self.optimizer, group, structure_name_map, restore_func
+                        )
 
-                _assign_master_weights_to_model(master_weights)
+                # Final fp32 -> bf16 assign into the model parameters. Anything the
+                # device gather already wrote in place is skipped here, so a large
+                # number means the host path carried most of the parameters.
+                with _sprof_span("assign_to_model", n=len(master_weights)):
+                    _assign_master_weights_to_model(master_weights)
 
-            with paddle.no_grad():
+            # fp32 master weight -> bf16 parameter write-back. Broken down inside
+            # into the split, the cast and the per-sharding-group restores, because
+            # on a large job this block dominates the whole checkpoint load and a
+            # single number does not say which of those three to attack.
+            with _sprof_span("master_weight_writeback", collective=True), paddle.no_grad():
                 if paddle.distributed.is_initialized():
                     group_getter = GroupGetter(self.model)
-                    opt_state_dict = split_opt_state(opt_state_dict, group_getter)
+                    with _sprof_span("split_opt_state"):
+                        opt_state_dict = split_opt_state(opt_state_dict, group_getter)
                     for gid in group_getter.get_group_ids():
                         sub_opt_state_dict = opt_state_dict.get(gid, {})
                         group = group_getter.get_group_by_id(gid)
@@ -3600,7 +3655,8 @@ class Trainer:
 
                 return apply_decay_param_fun
 
-            if getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False):
+            use_accuracy_compatible = getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False)
+            if use_accuracy_compatible:
                 if self.optimizer_grouped_parameters is not None:
                     params = self.optimizer_grouped_parameters
                 else:
@@ -3614,6 +3670,34 @@ class Trainer:
                 # params is already a dict list with weight_decay groups (the groups carry their own wd config).
                 if isinstance(params, (list, tuple)) and len(params) > 0 and isinstance(params[0], dict):
                     apply_decay_param_fun = None
+                elif use_accuracy_compatible == "hf":
+                    # The Megatron rule and HF's disagree on 1-D non-norm tensors:
+                    # transformers excludes by *name* (bias / any spelling of norm),
+                    # so e.g. Qwen3.5's ``linear_attn.A_log`` (shape (32,)) IS
+                    # weight-decayed there but is excluded by the shape rule.
+                    # Follow the reference when bit-exact alignment is requested.
+                    forbidden = [
+                        re.compile(pattern)
+                        for pattern in (
+                            r"bias",
+                            r"layernorm",
+                            r"rmsnorm",
+                            r"(?:^|\.)norm(?:$|\.)",
+                            r"_norm(?:$|\.)",
+                        )
+                    ]
+                    optimizer_param_ids = {id(p) for p in params}
+                    decay_parameters = {
+                        p.name
+                        for n, p in self.model.named_parameters()
+                        if id(p) in optimizer_param_ids
+                        and not p.stop_gradient
+                        and not any(pattern.search(n.lower()) for pattern in forbidden)
+                    }
+
+                    def apply_decay_param_fun(x):
+                        return x in decay_parameters
+
                 else:
                     optimizer_param_ids = {id(p) for p in params}
                     decay_parameters = {
@@ -3640,6 +3724,16 @@ class Trainer:
             if self.args.optim == OptimizerNames.ADAMW_CUSTOM:
                 optimizer_kwargs["quantization_config"] = self.model.config.quantization_config
                 optimizer_kwargs["tensorwise_offload_optimizer"] = self.args.tensorwise_offload_optimizer
+                # The AdamW step itself has a reference-specific recipe, so hand
+                # the optimizer the model's accuracy target instead of letting it
+                # read a separate env flag. Injected here rather than in
+                # ``get_optimizer_cls_and_kwargs``, which is a staticmethod and
+                # has no access to the model.
+                optimizer_kwargs["accuracy_target"] = getattr(
+                    getattr(self.model, "config", None),
+                    "use_accuracy_compatible",
+                    False,
+                )
             optimizer_kwargs["use_lowprecision_moment"] = self.args.use_lowprecision_moment
             bf16_master = optimizer_kwargs.get("use_lowprecision_moment", False)
             if hasattr(optimizer_cls, "_create_master_weight") and self.args.fp16_opt_level == "O2":
@@ -3664,7 +3758,7 @@ class Trainer:
                 apply_decay_param_fun=apply_decay_param_fun,
                 parameters=params,
                 weight_decay=self.args.weight_decay,
-                grad_clip=nn.ClipGradByGlobalNorm(self.args.max_grad_norm) if self.args.max_grad_norm > 0 else None,
+                grad_clip=self._build_grad_clip(),
                 **optimizer_kwargs,
             )
 
@@ -3672,6 +3766,35 @@ class Trainer:
                 mock_offload_optimizer()
 
         return self.optimizer
+
+    def _build_grad_clip(self):
+        """Construct the gradient clip for this run.
+
+        ``config.use_accuracy_compatible="hf"`` selects the clip that reproduces
+        torch's ``clip_grad_norm_`` recipe (BF16 per-tensor norms, BF16 global
+        norm, BF16 coefficient, BF16-rounded scaling) and records the pre-clip
+        global norm. Every other run -- default or Megatron-aligned -- keeps
+        paddle's stock ``ClipGradByGlobalNorm``.
+        """
+        if self.args.max_grad_norm <= 0:
+            return None
+        from ..utils import hf_bitexact_clip_enabled
+
+        accuracy_target = getattr(getattr(self.model, "config", None), "use_accuracy_compatible", False)
+        if hf_bitexact_clip_enabled(accuracy_target):
+            from ..utils import (
+                HFBitexactClipGradByGlobalNorm,
+                verify_hf_norm_groups_registered,
+            )
+
+            fused, reference = verify_hf_norm_groups_registered(self.model)
+            logger.info(
+                "Using HF bit-exact gradient clipping "
+                f"(max_grad_norm={self.args.max_grad_norm}); global norm taken over the "
+                f"reference's {reference}-tensor partition of {fused} parameters"
+            )
+            return HFBitexactClipGradByGlobalNorm(self.args.max_grad_norm, trainer=self)
+        return nn.ClipGradByGlobalNorm(self.args.max_grad_norm)
 
     def _load_rng_state(self, checkpoint):
         # Load RNG states from `checkpoint`
@@ -3888,6 +4011,15 @@ class Trainer:
         else:
             dist_optimizer = fleet.distributed_optimizer(optimizer)
         if isinstance(dist_optimizer, HybridParallelOptimizer) and self.args.max_grad_norm > 0:
+            # ``HybridParallelOptimizer.__init__`` has just replaced ``_grad_clip``
+            # with paddle's wrapper, which recomputes the global norm with paddle's
+            # formula. Put the HF recipe back before anything else reads the clip,
+            # so the ``_global_norm`` instrumentation below and the optimizer step
+            # both see the same object. No-op for every other accuracy target.
+            from ..utils.hf_bitexact_hybrid_clip import restore_hf_bitexact_clip
+
+            restore_hf_bitexact_clip(dist_optimizer)
+
             gradclip = dist_optimizer._inner_opt._grad_clip
             global_norm_func = gradclip._global_norm
             training_logs = self.global_training_logs
@@ -4431,12 +4563,20 @@ class Trainer:
                 inputs, self.optimizer, self.lr_scheduler
             )  # None, None => [optimizer, lr_scheduler]
 
-        if PipelineDatasetPreprocessor is None or self.args.use_dualpipev:
-            inputs = _dataset_process_function()
-        else:
-            inputs = PipelineDatasetPreprocessor(_dataset_process_function)
+        # With gradient_accumulation_steps > 1 the early micro-steps only push data
+        # into _pp_data_buffer and return above, so the whole cost of the first
+        # pipeline step lands on the last call, in these two blocks. Splitting them
+        # tells data preparation apart from pipeline scheduling.
+        with _sprof_span("pp_dataset_prepare"):
+            if PipelineDatasetPreprocessor is None or self.args.use_dualpipev:
+                inputs = _dataset_process_function()
+            else:
+                # Lazy branch: the real work happens inside forward_backward_pipeline,
+                # so this span reads near zero. Do not conclude that data preparation
+                # is free.
+                inputs = PipelineDatasetPreprocessor(_dataset_process_function)
 
-        with self.autocast_smart_context_manager():
+        with self.autocast_smart_context_manager(), _sprof_span("pp_forward_backward", collective=True):
             loss = model.forward_backward_pipeline(inputs, self.scaler if self.do_grad_scaling else None)
 
         # MTP magic send: reset per-depth counters after each optimizer step
