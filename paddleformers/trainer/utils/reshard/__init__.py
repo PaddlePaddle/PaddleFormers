@@ -16,7 +16,9 @@ from . import pp_reshard, sharding_v1, sharding_v2
 from .common import (
     SHARDING_STRATEGY_V1,
     SHARDING_STRATEGY_V2,
+    AssignedMasterWeight,
     NodeModelState,
+    all_gather_on_device,
     all_gather_state_dict,
     convert_opt_name_to_tname,
     get_moe_sharding_group,
@@ -25,7 +27,10 @@ from .common import (
     is_sharding_opt,
     merge_model_state,
     merge_opt_state,
+    set_broadcast_max_chunk_bytes,
+    set_device_gather,
     split_model_state,
     split_opt_state,
     split_structure_name_mapping,
+    use_device_gather,
 )

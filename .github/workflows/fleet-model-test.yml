@@ -102,6 +102,8 @@ jobs:
     steps:
       - name: Determine the runner
         run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
           gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') - 1 ))
           echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
 
@@ -207,7 +209,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_single_card.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45_single single_pt
           glm45_single_card_exit_code=$?
           if [[ "$glm45_single_card_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 single-card.\033[0m"
@@ -222,7 +224,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_single_card.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen_single single_pt
           qwen3_single_card_exit_code=$?
           if [[ "$qwen3_single_card_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: Qwen3-30B-A3B single-card.\033[0m"
@@ -237,7 +239,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft_single_card.sh single
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen3vl_single single_sft
           exit_code=$?
           if [[ "$exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: Qwen3-vl-8k-single-card.\033[0m"
@@ -269,6 +271,8 @@ jobs:
     steps:
       - name: Check docker image and run container
         run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> ${{ github.env }}
           docker pull $docker_image
@@ -356,7 +360,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 pt
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
@@ -371,7 +375,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_sft.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 sft
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft.\033[0m"
@@ -386,7 +390,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_sft_cp.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 sft_cp
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft cp.\033[0m"
@@ -401,7 +405,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_lora.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 lora
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 lora.\033[0m"
@@ -416,7 +420,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_dpo.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 dpo
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo.\033[0m"
@@ -431,7 +435,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_dpo_lora.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 dpo_lora
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo lora.\033[0m"
@@ -445,7 +449,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_ep4.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45_ep4 pt
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 EP4.\033[0m"
@@ -460,7 +464,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_fp8.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45_fp8 pt
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
@@ -475,7 +479,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_pt_grouped_gemm.sh
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45_grouped_gemm pt
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 Grouped GEMM.\033[0m"
@@ -485,12 +489,20 @@ jobs:
           fi
           '
 
+      # - name: Gemma4 pre-train
+      #   if: (success() || failure()) && steps.formers_install.conclusion == 'success'
+      #   run: |
+      #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
+      #     source /root/proxy
+      #     timeout 20m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh gemma4 pt
+      #     '
+
       - name: Qwen pre-train
         if: (success() || failure()) && steps.formers_install.conclusion == 'success'
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh pt
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen pt
           '
         
       - name: Qwen sft
@@ -498,7 +510,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh sft
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen sft
           '
 
 
@@ -507,7 +519,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen.sh lora
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen lora
           '
 
       - name: Qwen vl sft
@@ -515,7 +527,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 h20
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen3vl sft h20
           '
       
       - name: Qwen vl lora
@@ -523,7 +535,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh h20
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen3vl lora h20
           '
 
       - name: Qwen vl moe
@@ -531,7 +543,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe h20
+          timeout 10m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen3vl_moe sft h20
           '
       
       - name: Qwen3-vl-8k-fsdp
@@ -539,7 +551,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+          timeout 10m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen3vl_fsdp sft h20
           '
 
       - name: Terminate and delete the container
@@ -563,6 +575,8 @@ jobs:
     steps:
       - name: Check docker image and run container
         run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> ${{ github.env }}
           docker pull $docker_image
@@ -649,7 +663,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh pt
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 pt a100
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5.\033[0m"
@@ -664,7 +678,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh sft
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 sft a100
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 sft.\033[0m"
@@ -679,7 +693,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh lora
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 lora a100
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 lora.\033[0m"
@@ -694,7 +708,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh dpo
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 dpo a100
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo.\033[0m"
@@ -709,7 +723,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/glm45_a100.sh dpo_lora
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh glm45 dpo_lora a100
           glm45_exit_code=$?
           if [[ "$glm45_exit_code" != "0" ]]; then
             echo -e "::error:: \033[31mIntegration test failed: GLM4.5 dpo lora.\033[0m"
@@ -724,7 +738,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh pt
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen pt a100
           '
         
       - name: Qwen sft
@@ -732,7 +746,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh sft
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen sft a100
           '
 
       - name: Qwen lora
@@ -740,7 +754,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3_a100.sh lora
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen lora a100
           '
 
       - name: Qwen vl sft
@@ -748,7 +762,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh tp8 a100
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen3vl sft a100
           '
       
       - name: Qwen vl lora
@@ -756,7 +770,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 5m bash -x PaddleFormers/tests/integration_test/qwen3vl_lora.sh a100
+          timeout 5m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen3vl lora a100
           '
 
           
@@ -765,7 +779,7 @@ jobs:
         run: |
           docker exec -t ${{ env.container_name }} /bin/bash -ce '
           source /root/proxy
-          timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh moe a100
+          timeout 10m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen3vl_moe sft a100
           '
 
 
@@ -774,7 +788,7 @@ jobs:
       #   run: |
       #     docker exec -t ${{ env.container_name }} /bin/bash -ce '
       #     source /root/proxy
-      #     timeout 10m bash -x PaddleFormers/tests/integration_test/qwen3vl_sft.sh fsdp h20
+      #     timeout 10m bash -x PaddleFormers/tests/integration_test/run_fleet_cice.sh qwen3vl_fsdp sft h20
       #     '
 
       - name: Terminate and delete the container

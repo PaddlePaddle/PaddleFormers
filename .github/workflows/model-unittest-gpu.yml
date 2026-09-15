@@ -19,6 +19,7 @@ on:
           - 'glm4_moe'
           - 'qwen3_next'
           - 'qwen3moe'
+          - 'minicpm3'
           - 'phi3'
           - 'qwen2'
           - 'gemma3_text'
@@ -56,8 +57,19 @@ defaults:
     shell: bash
 
 jobs:
+  check-bypass:
+    name: Check bypass
+    if: ${{ inputs.can-skip != 'true' }}
+    uses: ./.github/workflows/check-bypass.yml
+    with:
+      workflow-name: 'formers-model'
+    secrets:
+      github-token: ${{ secrets.GITHUB_TOKEN }}
+
   check_skip:
     name: Check skip-models-ci label
+    needs: check-bypass
+    if: ${{ needs.check-bypass.outputs.can-skip == 'false' }}
     runs-on: 'ernie-cpu'
 
     outputs:
@@ -67,6 +79,8 @@ jobs:
         id: check_skip
         shell: bash
         run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
             echo "PR labels: $labels"
