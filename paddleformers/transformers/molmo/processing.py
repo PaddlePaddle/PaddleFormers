@@ -70,9 +70,8 @@ class MolmoProcessor(ProcessorMixin):
             )
         except Exception as error:
             logger.warning(
-                "Could not load the Molmo image processor from %s; using defaults instead: %s",
-                pretrained_model_name_or_path,
-                error,
+                f"Could not load the Molmo image processor from {pretrained_model_name_or_path}; "
+                f"using defaults instead: {error}"
             )
             image_processor = MolmoImageProcessor()
         return cls(image_processor=image_processor, tokenizer=tokenizer)
