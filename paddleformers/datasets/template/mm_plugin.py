@@ -1473,7 +1473,7 @@ class GlmOcrPlugin(BasePlugin):
                 if num_image_tokens >= len(images):
                     raise ValueError(
                         f"Found more {IMAGE_PLACEHOLDER} placeholders than provided images: "
-                        f"placeholders_so_far={num_image_tokens+1}, len(images)={len(images)}"
+                        f"placeholders_so_far={num_image_tokens + 1}, len(images)={len(images)}"
                     )
 
                 if self.expand_mm_tokens:
@@ -1494,6 +1494,112 @@ class GlmOcrPlugin(BasePlugin):
         return messages
 
 
+@dataclass
+class KimiK3Plugin(BasePlugin):
+    """Kimi-K3 plugin."""
+
+    image_bos_token: str = "<|media_begin|>"
+    image_content_token: str = "<|media_content|>"
+    image_eos_token: str = "<|media_end|>"
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+
+        image_processor = getattr(processor, "image_processor", None)
+        if image_processor is None:
+            raise ValueError("image_processor was not found in processor.")
+
+        if self.image_token is None:
+            raise ValueError("KimiK3Plugin requires image_token to be set (e.g., '<|media_pad|>').")
+
+        if IMAGE_PLACEHOLDER == self.image_token:
+            raise ValueError(
+                f"IMAGE_PLACEHOLDER ({IMAGE_PLACEHOLDER}) must be different from image_token ({self.image_token})."
+            )
+
+        pil_images = (
+            self._regularize_images(
+                images,
+                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
+                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+            )["images"]
+            if len(images) != 0
+            else []
+        )
+
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+        if self.expand_mm_tokens:
+            image_grid_thw = mm_inputs.get("image_grid_thw", [])
+            merge_kernel_size = int(image_processor.media_proc_cfg["merge_kernel_size"])
+        else:
+            image_grid_thw = [None] * len(pil_images)
+        for msg in messages:
+            content = msg["content"]
+            while IMAGE_PLACEHOLDER in content:
+                if num_image_tokens >= len(pil_images):
+                    raise ValueError(
+                        f"Found more {IMAGE_PLACEHOLDER} placeholders than provided images: "
+                        f"placeholders_so_far={num_image_tokens + 1}, len(images)={len(pil_images)}"
+                    )
+                width, height = pil_images[num_image_tokens].size
+                if self.expand_mm_tokens:
+                    _, grid_h, grid_w = (int(x) for x in image_grid_thw[num_image_tokens])
+                    image_seqlen = (grid_h // merge_kernel_size) * (grid_w // merge_kernel_size)
+                else:
+                    image_seqlen = 1
+                repl = (
+                    f"{self.image_bos_token}image {width}x{height}"
+                    f"{self.image_content_token}{self.image_token * image_seqlen}{self.image_eos_token}"
+                )
+                content = content.replace(IMAGE_PLACEHOLDER, repl, 1)
+                num_image_tokens += 1
+
+            msg["content"] = content
+
+        self.masked_tokens = [
+            self.image_token,
+            self.image_bos_token,
+            self.image_content_token,
+            self.image_eos_token,
+        ]
+        return messages
+
+    @override
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        if len(videos) != 0 or len(audios) != 0:
+            raise ValueError("Kimi-K3 currently supports image input only.")
+
+        if len(images) == 0:
+            return {}
+
+        image_processor = getattr(processor, "image_processor", None)
+        pil_images = self._regularize_images(
+            images,
+            image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
+            image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+        )["images"]
+        medias = [{"type": "image", "image": image} for image in pil_images]
+        return dict(image_processor.preprocess(medias, return_tensors="pd"))
+
+
 PLUGINS = {
     "base": BasePlugin,
     "ernie_vl": ErnieVLPlugin,
@@ -1504,6 +1610,7 @@ PLUGINS = {
     "gemma3": Gemma3Plugin,
     "qwen2_omni": Qwen2OmniPlugin,
     "glm_ocr": GlmOcrPlugin,
+    "kimi_k3": KimiK3Plugin,
 }
 
 

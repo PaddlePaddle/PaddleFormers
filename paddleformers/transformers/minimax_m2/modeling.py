@@ -85,7 +85,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
         def _qkv_per_head(matrix_2d_global, ortho_fn, num_query_groups=None, split_dims=None):
             """Slice QKV by heads, orthogonalise each head independently."""
-            groups = paddle.split(matrix_2d_global, num_query_groups, axis=1)
+            groups = paddle.split(matrix_2d_global, num_query_groups, axis=-1)
             q_heads_per_group = split_dims[0] // split_dims[-2]
 
             processed_groups = []
@@ -94,83 +94,79 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     q_part, gate_part, k_head, v_head = paddle.split(
                         group,
                         split_dims,
-                        axis=1,
+                        axis=-1,
                     )
-                    q_heads = paddle.split(q_part, q_heads_per_group, axis=1)
-                    q_ortho = paddle.concat([ortho_fn(h) for h in q_heads], axis=1)
-                    gate_heads = paddle.split(gate_part, q_heads_per_group, axis=1)
-                    gate_ortho = paddle.concat([ortho_fn(g) for g in gate_heads], axis=1)
+                    q_heads = paddle.split(q_part, q_heads_per_group, axis=-1)
+                    q_ortho = paddle.concat([ortho_fn(h) for h in q_heads], axis=-1)
+                    gate_heads = paddle.split(gate_part, q_heads_per_group, axis=-1)
+                    gate_ortho = paddle.concat([ortho_fn(g) for g in gate_heads], axis=-1)
                     processed_groups.append(
-                        paddle.concat([q_ortho, gate_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=1)
+                        paddle.concat([q_ortho, gate_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=-1)
                     )
             else:
                 for group in groups:
                     q_part, k_head, v_head = paddle.split(
                         group,
                         split_dims,
-                        axis=1,
+                        axis=-1,
                     )
-                    q_heads = paddle.split(q_part, q_heads_per_group, axis=1)
-                    q_ortho = paddle.concat([ortho_fn(h) for h in q_heads], axis=1)
-                    processed_groups.append(paddle.concat([q_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=1))
+                    q_heads = paddle.split(q_part, q_heads_per_group, axis=-1)
+                    q_ortho = paddle.concat([ortho_fn(h) for h in q_heads], axis=-1)
+                    processed_groups.append(paddle.concat([q_ortho, ortho_fn(k_head), ortho_fn(v_head)], axis=-1))
 
-            return paddle.concat(processed_groups, axis=1)
+            return paddle.concat(processed_groups, axis=-1)
 
         def _qkv_sep(matrix_2d, ortho_fn, num_query_groups=None, split_dims=None):
             """Slice QKV into Q, K, V blocks, orthogonalise each as whole."""
 
-            groups = paddle.split(matrix_2d, num_query_groups, axis=1)
+            groups = paddle.split(matrix_2d, num_query_groups, axis=-1)
             q_parts, g_parts, k_parts, v_parts = [], [], [], []
             for group in groups:
                 if len(split_dims) == 4:
-                    q_p, g_p, k_p, v_p = paddle.split(group, split_dims, axis=1)
+                    q_p, g_p, k_p, v_p = paddle.split(group, split_dims, axis=-1)
                     g_parts.append(g_p)
                 else:
-                    q_p, k_p, v_p = paddle.split(group, split_dims, axis=1)
+                    q_p, k_p, v_p = paddle.split(group, split_dims, axis=-1)
                 q_parts.append(q_p)
                 k_parts.append(k_p)
                 v_parts.append(v_p)
 
-            q_ortho = ortho_fn(paddle.concat(q_parts, axis=1))
+            q_ortho = ortho_fn(paddle.concat(q_parts, axis=-1))
             if len(split_dims) == 4:
-                g_ortho = ortho_fn(paddle.concat(g_parts, axis=1))
-            k_ortho = ortho_fn(paddle.concat(k_parts, axis=1))
-            v_ortho = ortho_fn(paddle.concat(v_parts, axis=1))
+                g_ortho = ortho_fn(paddle.concat(g_parts, axis=-1))
+            k_ortho = ortho_fn(paddle.concat(k_parts, axis=-1))
+            v_ortho = ortho_fn(paddle.concat(v_parts, axis=-1))
 
-            q_groups = paddle.split(q_ortho, num_query_groups, axis=1)
+            q_groups = paddle.split(q_ortho, num_query_groups, axis=-1)
             if len(split_dims) == 4:
-                g_groups = paddle.split(g_ortho, num_query_groups, axis=1)
-            k_groups = paddle.split(k_ortho, num_query_groups, axis=1)
-            v_groups = paddle.split(v_ortho, num_query_groups, axis=1)
+                g_groups = paddle.split(g_ortho, num_query_groups, axis=-1)
+            k_groups = paddle.split(k_ortho, num_query_groups, axis=-1)
+            v_groups = paddle.split(v_ortho, num_query_groups, axis=-1)
 
             if len(split_dims) == 4:
                 return paddle.concat(
                     [
-                        paddle.concat([q_groups[i], g_groups[i], k_groups[i], v_groups[i]], axis=1)
+                        paddle.concat([q_groups[i], g_groups[i], k_groups[i], v_groups[i]], axis=-1)
                         for i in range(num_query_groups)
                     ],
-                    axis=1,
+                    axis=-1,
                 )
             else:
                 return paddle.concat(
-                    [paddle.concat([q_groups[i], k_groups[i], v_groups[i]], axis=1) for i in range(num_query_groups)],
-                    axis=1,
+                    [paddle.concat([q_groups[i], k_groups[i], v_groups[i]], axis=-1) for i in range(num_query_groups)],
+                    axis=-1,
                 )
 
         def _ffn_gate_up(matrix, ortho_fn, intermediate_size=None):
-            """Slice FFN gate_up, orthogonalise gate and up independently."""
+            """Slice FFN gate_up, orthogonalise gate and up independently.
 
-            if matrix.ndim == 2:
-                gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=1)
-                return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1)
-            elif matrix.ndim == 3:
-                expert_updates = []
-                for ei in range(matrix.shape[0]):
-                    gate, up = paddle.split(matrix[ei], [intermediate_size, intermediate_size], axis=1)
-                    expert_updates.append(paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=1))
-                return paddle.stack(expert_updates, axis=0)
-            else:
-                raise ValueError(f"FFN gate_up split expects 2D or 3D tensor, got shape {matrix.shape}")
+            Handles both 2D (per-expert) and 3D (fused experts) weight tensors.
+            """
+
+            assert matrix.ndim == 2 or matrix.ndim == 3, "FFN gate_up split expects 2D or 3D tensor"
+
+            gate, up = paddle.split(matrix, [intermediate_size, intermediate_size], axis=-1)
+            return paddle.concat([ortho_fn(gate), ortho_fn(up)], axis=-1)
 
         def _mla_per_head(matrix_2d_global, ortho_fn, head_num=None, axis=None, head_split_sizes=None):
             """Slice MLA weights by heads."""
@@ -185,11 +181,8 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
 
             if matrix_3d_global.ndim != 3:
                 raise ValueError(f"MoE expert split expects 3D tensor, got shape {matrix_3d_global.shape}")
-            n_experts = matrix_3d_global.shape[0]
-            return paddle.stack(
-                [ortho_fn(matrix_3d_global[ei]) for ei in range(n_experts)],
-                axis=0,
-            )
+
+            return ortho_fn(matrix_3d_global)
 
         slice_config = {}
 
@@ -239,7 +232,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_heads,
-                        "axis": 1,
+                        "axis": -1,
                     },
                 )
 
@@ -249,7 +242,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.v_head_dim, config.v_head_dim],
                         },
                     )
@@ -257,7 +250,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.v_head_dim, config.v_head_dim],
                         },
                     )
@@ -268,7 +261,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": config.dsa_index_n_heads,
-                            "axis": 1,
+                            "axis": -1,
                         },
                     )
                     # Compressed weights
@@ -276,7 +269,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
                         },
                     )
@@ -284,7 +277,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         mla_slice_fn,
                         {
                             "head_num": 1,
-                            "axis": 1,
+                            "axis": -1,
                             "head_split_sizes": [config.dsa_index_head_dim, config.dsa_index_head_dim],
                         },
                     )
@@ -303,20 +296,20 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         v_head_dim = config.swa_v_head_dim if layer_is_swa else config.v_head_dim
                         slice_config[f"{prefix}.self_attn.q_proj.weight"] = (
                             _mla_per_head,
-                            {"head_num": g, "axis": 1, "head_split_sizes": [q_lora_rank]},
+                            {"head_num": g, "axis": -1, "head_split_sizes": [q_lora_rank]},
                         )
                         slice_config[f"{prefix}.self_attn.k_proj.weight"] = (
                             _mla_per_head,
-                            {"head_num": num_kv_heads, "axis": 1, "head_split_sizes": [head_dim]},
+                            {"head_num": num_kv_heads, "axis": -1, "head_split_sizes": [head_dim]},
                         )
                         slice_config[f"{prefix}.self_attn.v_proj.weight"] = (
                             _mla_per_head,
-                            {"head_num": num_kv_heads, "axis": 1, "head_split_sizes": [v_head_dim]},
+                            {"head_num": num_kv_heads, "axis": -1, "head_split_sizes": [v_head_dim]},
                         )
                         if use_gated_attn:
                             slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
                                 _mla_per_head,
-                                {"head_num": num_heads, "axis": 1, "head_split_sizes": [v_head_dim]},
+                                {"head_num": num_heads, "axis": -1, "head_split_sizes": [v_head_dim]},
                             )
                         if vha_premix_fn is not None:
                             slice_config[f"{prefix}.self_attn.vha_premix_weight"] = (vha_premix_fn, {})
@@ -376,21 +369,21 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     mla_slice_fn,
                     {
                         "head_num": num_attention_heads,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [config.qk_nope_head_dim, config.qk_rope_head_dim],
                     },
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_a_proj_with_mqa.weight"] = (
                     mla_slice_fn,
-                    {"head_num": 1, "axis": 1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
+                    {"head_num": 1, "axis": -1, "head_split_sizes": [config.kv_lora_rank, config.qk_rope_head_dim]},
                 )
 
                 slice_config[f"{prefix}.self_attn.kv_b_proj.weight"] = (
                     mla_slice_fn,
                     {
                         "head_num": num_attention_heads,
-                        "axis": 1,
+                        "axis": -1,
                         "head_split_sizes": [config.qk_nope_head_dim, v_head_dim],
                     },
                 )
@@ -398,7 +391,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                 if use_gated_attn:
                     slice_config[f"{prefix}.self_attn.gate_proj.weight"] = (
                         mla_slice_fn,
-                        {"head_num": num_attention_heads, "axis": 1},
+                        {"head_num": num_attention_heads, "axis": -1},
                     )
 
         # Main layers
@@ -553,7 +546,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             ]
 
             # transformer_layer.mlp.up_gate_proj.weight
-            if config.use_dense_mtp:
+            if getattr(config, "use_dense_mtp", False):
                 prefix_offset += ".transformer_layer"
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.mlp.gate_proj.weight^T, {prefix}.mlp.up_proj.weight^T -> {prefix_offset}.mlp.up_gate_proj.weight, fused_ffn",
@@ -783,7 +776,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         )
 
         moe_layer_start = config.first_k_dense_replace
-        moe_layer_end = num_hidden_layers if config.use_dense_mtp else num_hidden_layers + num_nextn_predict_layers
+        moe_layer_end = (
+            num_hidden_layers
+            if getattr(config, "use_dense_mtp", False)
+            else num_hidden_layers + num_nextn_predict_layers
+        )
         # All layers are MoE (first_k_dense_replace=0)
         for layer_idx in reversed(range(moe_layer_start, moe_layer_end)):
             layer_idx_offset = layer_idx + num_head_empty_layers
@@ -792,10 +789,16 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             if layer_idx >= num_hidden_layers:
                 # for mtp
                 prefix_offset += ".transformer_layer"
-            aoa_config["aoa_statements"] += [
-                f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
-                f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
-            ]
+            if getattr(config, "use_accuracy_compatible", False):
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
+                    f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='bfloat16'",
+                ]
+            else:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.block_sparse_moe.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
+                    f"{prefix}.block_sparse_moe.gate.weight -> {prefix_offset}.mlp.gate.weight",
+                ]
 
             if config.routed_scaling_factor_learnable:
                 aoa_config["aoa_statements"] += [
@@ -928,7 +931,7 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
             ]
 
             # dense MTP: inverse mapping for dense MLP weights
-            if config.use_dense_mtp:
+            if getattr(config, "use_dense_mtp", False):
                 prefix_offset_tf = f"{prefix_offset}.transformer_layer"
                 aoa_statements += [
                     f"{prefix_offset_tf}.mlp.up_gate_proj.weight -> {prefix}.mlp.gate_proj.weight, {prefix}.mlp.up_proj.weight, fused_ffn",
@@ -1153,7 +1156,11 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                         aoa_statements.append(f"{','.join(bias_v_ordered)} -> {prefix}.self_attn.v_proj.bias, axis=0")
 
         # All layers are MoE (first_k_dense_replace=0)
-        moe_layer_end = num_hidden_layers if config.use_dense_mtp else num_hidden_layers + num_nextn_predict_layers
+        moe_layer_end = (
+            num_hidden_layers
+            if getattr(config, "use_dense_mtp", False)
+            else num_hidden_layers + num_nextn_predict_layers
+        )
         for layer_idx in range(config.first_k_dense_replace, moe_layer_end):
             layer_idx_offset = layer_idx + num_head_empty_layers
             prefix_offset = f"{model_prefix}layers.{layer_idx_offset}"
@@ -1204,10 +1211,16 @@ class MiniMaxM2PreTrainedModel(PretrainedModel):
                     f"{prefix_offset}.block_sparse_moe.shared_experts.up_proj.weight^T -> {prefix}.block_sparse_moe.shared_experts.w3.weight",
                 ]
 
-            aoa_statements += [
-                f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight",
-                f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
-            ]
+            if getattr(config, "use_accuracy_compatible", False):
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight, dtype='float32'",
+                    f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
+                ]
+            else:
+                aoa_statements += [
+                    f"{prefix_offset}.mlp.gate.weight -> {prefix}.block_sparse_moe.gate.weight",
+                    f"{prefix_offset}.mlp.gate.e_score_correction_bias -> {prefix}.block_sparse_moe.e_score_correction_bias",
+                ]
 
             if config.routed_scaling_factor_learnable:
                 aoa_statements += [

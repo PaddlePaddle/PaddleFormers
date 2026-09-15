@@ -78,10 +78,10 @@ class AsyncCheckpointHandler:
         is_sync=True,
         state_dict_type="model_weight",
         ckpt_quant_stage="O0",
-        save_to_hf=False,
+        save_safetensors=False,
     ):
         if is_sync:
-            state_dict, metadata = prepare_safe_save_state_dict(state_dict, save_to_hf=save_to_hf)
+            state_dict, metadata = prepare_safe_save_state_dict(state_dict, save_safetensors=save_safetensors)
             if state_dict_type == "optimizer_weight" and ckpt_quant_stage != "O0":
                 state_dict = quant_unified_optimizer(state_dict, state_dict_type, ckpt_quant_stage)
             safe_save_file(state_dict, path, metadata=metadata)
@@ -113,7 +113,7 @@ class AsyncCheckpointHandler:
                             state_dict_type,
                             self.global_rank,
                             ckpt_quant_stage,
-                            save_to_hf,
+                            save_safetensors,
                         ),
                     )
                     self._process_model_weight.start()
@@ -142,7 +142,7 @@ class AsyncCheckpointHandler:
                             else state_dict_type,
                             self.global_rank,
                             ckpt_quant_stage,
-                            save_to_hf,
+                            save_safetensors,
                         ),
                     )
                     self._process_master_weight.start()
@@ -169,7 +169,7 @@ class AsyncCheckpointHandler:
                             state_dict_type,
                             self.global_rank,
                             ckpt_quant_stage,
-                            save_to_hf,
+                            save_safetensors,
                         ),
                     )
                     self._process_optimizer_weight.start()
@@ -201,7 +201,7 @@ class AsyncCheckpointHandler:
         state_dict_type,
         global_rank,
         ckpt_quant_stage="O0",
-        save_to_hf=False,
+        save_safetensors=False,
     ):
         shm = shared_memory.SharedMemory(name=shm_name)
         while True:
@@ -219,7 +219,7 @@ class AsyncCheckpointHandler:
                     state_dict = quant_unified_optimizer(
                         state_dict, state_dict_type, ckpt_quant_stage, async_save=True
                     )  # ckpt quantization
-                metadata = {"format": "pt"} if save_to_hf else {"format": "np"}
+                metadata = {"format": "pt"} if save_safetensors else {"format": "np"}
                 safe_save_file(state_dict, path, metadata=metadata)
                 del state_dict
                 saved_signal_path = os.path.join(signal_path, f".{state_dict_type}.done.{global_rank}")

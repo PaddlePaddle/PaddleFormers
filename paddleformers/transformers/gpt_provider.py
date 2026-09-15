@@ -152,6 +152,10 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
     # Multi-token prediction
     mtp_enabled: bool = False
 
+    # Per-decoder-layer attention implementation. When unset, all layers use
+    # multi_latent_attention or self_attention according to the global flag.
+    layer_types: Optional[list[str]] = None
+
     # Additional parameters that might be needed
     init_model_with_meta_device: bool = False
     use_te_rng_tracker: bool = False
