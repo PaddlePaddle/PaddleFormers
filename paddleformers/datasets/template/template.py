@@ -578,6 +578,15 @@ register_template(
     format_assistant=StringFormatter(slots=["{{content}}"]),
 )
 
+register_template(
+    name="deepseek_ocr2",
+    format_user=StringFormatter(slots=["{{content}}"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["{{content}}\n"]),
+    format_prefix=EmptyFormatter(slots=["<｜begin▁of▁sentence｜>"]),
+    mm_plugin=get_mm_plugin(name="deepseek_ocr2", image_token="<image>"),
+)
+
 # copied from chatml template
 register_template(
     name="ernie",
