@@ -393,6 +393,84 @@ class BasePlugin(MMPluginMixin):
 
 
 @dataclass
+class Lfm2VlPlugin(BasePlugin):
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        if len(images) > 1:
+            raise ValueError("LFM2-VL currently supports exactly one image per sample.")
+
+        messages = deepcopy(messages)
+        image_index = 0
+        for message in messages:
+            if IMAGE_PLACEHOLDER not in message["content"]:
+                continue
+
+            replacement = processor._tokens_per_image(
+                mm_inputs["image_rows"][image_index],
+                mm_inputs["image_cols"][image_index],
+                mm_inputs["image_sizes"][image_index],
+                use_special_tokens=True,
+            )
+            message["content"] = message["content"].replace(IMAGE_PLACEHOLDER, replacement, 1)
+            image_index += 1
+
+        return messages
+
+    @override
+    def process_tokens(self, tokens, processor):
+        image_processor = processor.image_processor
+        masked_tokens = [
+            processor.image_token,
+            processor.image_start_token,
+            processor.image_end_token,
+            processor.image_thumbnail_token,
+        ]
+        masked_tokens.extend(
+            f"<|img_row_{row}_col_{column}|>"
+            for row in range(1, image_processor.max_tiles + 1)
+            for column in range(1, image_processor.max_tiles + 1)
+        )
+        masked_token_ids = set(processor.tokenizer.convert_tokens_to_ids(masked_tokens))
+        unk_token_id = getattr(processor.tokenizer, "unk_token_id", None)
+        if unk_token_id is not None:
+            masked_token_ids.discard(unk_token_id)
+        return [-100 if token in masked_token_ids else token for token in tokens]
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        if videos or audios:
+            raise ValueError("LFM2-VL supports image input only.")
+        if not images:
+            return {}
+
+        processed_images = [self._img_download(image).convert("RGB") for image in images]
+        mm_inputs = dict(processor.image_processor(processed_images, return_tensors="pd", return_row_col_info=True))
+        # The common multimodal collator batches these two names. The LFM2-VL
+        # model accepts them as aliases for spatial_shapes and pixel_attention_mask.
+        mm_inputs["image_grid_thw"] = mm_inputs["spatial_shapes"]
+        mm_inputs["feature_attention_mask"] = mm_inputs["pixel_attention_mask"]
+        return mm_inputs
+
+
+@dataclass
 class PaddleOCRVLPlugin(BasePlugin):
     image_bos_token: str = "<|IMAGE_START|>"
     image_eos_token: str = "<|IMAGE_END|>"
@@ -1602,6 +1680,7 @@ class KimiK3Plugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "lfm2_vl": Lfm2VlPlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,
