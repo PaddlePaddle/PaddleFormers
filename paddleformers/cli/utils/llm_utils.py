@@ -155,6 +155,27 @@ def get_lora_target_modules(model):
             ".*w2.*",
             ".*w3.*",
         ]
+    elif model.config.model_type == "llava_next":
+        target_modules = [
+            # Language Model
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            # Vision Encoder
+            "model.vision_tower.*q_proj.*",
+            "model.vision_tower.*k_proj.*",
+            "model.vision_tower.*v_proj.*",
+            "model.vision_tower.*out_proj.*",
+            "model.vision_tower.*fc1.*",
+            "model.vision_tower.*fc2.*",
+            # Projector
+            "model.multi_modal_projector.*linear_1.*",
+            "model.multi_modal_projector.*linear_2.*",
+        ]
     elif model.config.model_type == "qwen2_5_vl":
         target_modules = [
             # Language Model
