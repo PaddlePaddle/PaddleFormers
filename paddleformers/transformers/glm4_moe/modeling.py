@@ -87,7 +87,10 @@ class GLMMoEModelProvider(GPTModelProvider):
     rope_scaling: float = 1.0
     bias_dropout_fusion: bool = True
     moe_expert_fusion: bool = False
-    use_accuracy_compatible: bool = False
+    # ``False`` or a target name ("megatron" / "hf"); see
+    # ``paddleformers.utils.accuracy_target``. Both non-default values are
+    # truthy, so the ``if use_accuracy_compatible`` tests below keep working.
+    use_accuracy_compatible: Union[bool, str] = False
 
 
 def eager_attention_forward(

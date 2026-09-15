@@ -20,6 +20,7 @@ from paddle.distributed import fleet
 
 from paddleformers.trainer import TrainingArguments
 from paddleformers.transformers.configuration_utils import llmmetaclass
+from paddleformers.utils.accuracy_target import ACCURACY_TARGET_MEGATRON
 from paddleformers.utils.log import logger
 
 DEFAULT_QUANTIZE_LAYERS = [".*mlp.*", ".*self_attn.*"]
@@ -335,9 +336,36 @@ class FinetuningArguments(
         },
     )
 
-    use_accuracy_compatible: bool = field(
-        default=False,
-        metadata={"help": ("Whether to enable accuracy alignment with the Megatron framework.")},
+    # Annotated ``str`` rather than ``Union[bool, str]``: ``PdArgumentParser``
+    # only accepts ``Optional[X]`` for ``Union`` and raises on anything else.
+    # The default is the empty string, not "false": a non-empty string is
+    # *truthy*, and this field is truthiness-tested in about a dozen places, so a
+    # "false" default silently turns the accuracy-compatible kernels on for every
+    # run that never sets it. The authoritative conversion happens in
+    # ``LlmMetaConfig.set_llm_config`` via ``normalize_accuracy_target``, which
+    # also accepts a real bool and the stringified spellings, so a YAML ``true``
+    # still resolves to "megatron"; the falsy default here is defense in depth
+    # for any path that reads the args object without going through that funnel.
+    use_accuracy_compatible: str = field(
+        default="",
+        metadata={
+            "help": (
+                "Which reference the accuracy-compatible kernels reproduce bit-for-bit. "
+                "Empty/False (default) uses the throughput kernels; 'megatron' (also accepted "
+                "as True, its historical meaning) aligns with Megatron-LM; 'hf' aligns "
+                "with the HuggingFace/Torch reference. Normalized by "
+                "paddleformers.utils.accuracy_target.normalize_accuracy_target."
+            ),
+            # ``PdArgumentParser`` forwards unknown metadata keys straight to
+            # ``parser.add_argument``, and it only synthesizes these two for
+            # ``bool`` fields. Declaring them keeps the historical valueless
+            # spelling ``--use_accuracy_compatible`` working: it used to mean
+            # ``True``, whose canonical name is now "megatron". Without them the
+            # str field would demand an argument and every existing launch
+            # command using the bare flag would fail to parse.
+            "nargs": "?",
+            "const": ACCURACY_TARGET_MEGATRON,
+        },
     )
 
     def __post_init__(self):
