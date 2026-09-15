@@ -1404,6 +1404,8 @@ class Gemma3Plugin(BasePlugin):
 
 @dataclass
 class Llama4Plugin(BasePlugin):
+    masked_tokens: Optional[list[str]] = None
+
     @override
     def process_messages(
         self,
