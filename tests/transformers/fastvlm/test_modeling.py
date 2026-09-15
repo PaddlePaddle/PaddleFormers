@@ -16,12 +16,10 @@ from tokenizers.models import WordLevel
 from transformers import PreTrainedTokenizerFast
 
 from paddleformers.transformers import AutoModelForConditionalGeneration, AutoProcessor
-from paddleformers.transformers.fastvlm import (
-    FastVLMConfig,
-    FastVLMForConditionalGeneration,
-    FastVLMImageProcessor,
-    FastVLMProcessor,
-)
+from paddleformers.transformers.fastvlm.configuration import FastVLMConfig
+from paddleformers.transformers.fastvlm.image_processor import FastVLMImageProcessor
+from paddleformers.transformers.fastvlm.modeling import FastVLMForConditionalGeneration
+from paddleformers.transformers.fastvlm.processor import FastVLMProcessor
 
 
 class FastVLMModelTest(unittest.TestCase):
