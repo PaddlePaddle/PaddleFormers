@@ -25,6 +25,7 @@ import paddle
 import paddleformers.transformers as transformers_module
 from paddleformers.transformers import (
     AutoModel,
+    AutoModelForCausalLM,
     AutoModelForConditionalGeneration,
     Gemma3Config,
     Gemma3ForCausalLM,
@@ -180,11 +181,14 @@ class Gemma3ModelTest(unittest.TestCase):
             num_key_value_heads=2,
             head_dim=8,
             max_position_embeddings=64,
+            architectures=["Gemma3ForCausalLM"],
         )
 
         text_model = AutoModel.from_config(text_config)
+        text_causal_model = AutoModelForCausalLM.from_config(text_config)
 
         self.assertEqual(type(text_model).__name__, "Gemma3TextModel")
+        self.assertIsInstance(text_causal_model, Gemma3ForCausalLM)
 
     def test_top_level_exports_resolve_to_upstream_gemma3_text(self):
         self.assertEqual(transformers_module._class_to_module["Gemma3Config"], "gemma3.configuration")
