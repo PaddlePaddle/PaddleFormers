@@ -429,7 +429,7 @@ def build_qwen2_decoder_as_encoder(
         state_dict = paddle.load(checkpoint)
 
         decoder_as_encoder.load_state_dict(state_dict, strict=True)
-        logger.info("Loaded decoder-as-encoder checkpoint from %s", checkpoint)
+        logger.info(f"Loaded decoder-as-encoder checkpoint from {checkpoint}")
     return decoder_as_encoder
 
 
@@ -959,7 +959,7 @@ def _build_sam(
         image_encoder.load_state_dict(
             {k[30:]: v for k, v in state_dict.items() if "vision_tower_high" in k}, strict=True
         )
-        logger.info("Loaded image encoder checkpoint from %s", checkpoint)
+        logger.info(f"Loaded image encoder checkpoint from {checkpoint}")
     return image_encoder
 
 
@@ -973,7 +973,7 @@ def load_image(image_path):
             image = Image.open(image_path)
         return ImageOps.exif_transpose(image)
     except Exception as error:
-        logger.warning("Failed to load image %s: %s", image_path, error)
+        logger.warning(f"Failed to load image {image_path}: {error}")
         try:
             return Image.open(image_path)
         except:
@@ -1107,7 +1107,7 @@ def draw_bounding_boxes(image, refs, ouput_path):
                             cropped = image.crop((x1, y1, x2, y2))
                             cropped.save(f"{ouput_path}/images/{img_idx}.jpg")
                         except Exception as error:
-                            logger.warning("Failed to save cropped image %s: %s", img_idx, error)
+                            logger.warning(f"Failed to save cropped image {img_idx}: {error}")
                         img_idx += 1
 
                     try:
@@ -2008,7 +2008,7 @@ class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
 
                 """process the global view"""
                 if image_size <= 768:
-                    logger.debug("Resizing the global image view directly to %s", image_size)
+                    logger.debug(f"Resizing the global image view directly to {image_size}")
                     image = image.resize((image_size, image_size))
                 # else:
                 global_view = ImageOps.pad(
