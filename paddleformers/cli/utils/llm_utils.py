@@ -408,6 +408,27 @@ def get_lora_target_modules(model):
             ".*mlp_AR.*linear_1.*",
             ".*mlp_AR.*linear_2.*",
         ]
+    elif model.config.model_type == "internvl_chat":
+        target_modules = [
+            # Language Model
+            "language_model.*qkv_proj.*",
+            "language_model.*up_gate_proj.*",
+            "language_model.*q_proj.*",
+            "language_model.*k_proj.*",
+            "language_model.*v_proj.*",
+            "language_model.*o_proj.*",
+            "language_model.*gate_proj.*",
+            "language_model.*up_proj.*",
+            "language_model.*down_proj.*",
+            # Vision Encoder
+            "vision_model.*attn.qkv.*",
+            "vision_model.*attn.proj.*",
+            "vision_model.*mlp.fc1.*",
+            "vision_model.*mlp.fc2.*",
+            # Aligner
+            "mlp1\\.1.*",
+            "mlp1\\.3.*",
+        ]
     elif model.config.model_type == "phi3":
         target_modules = [
             ".*qkv_proj.*",

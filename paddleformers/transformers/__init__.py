@@ -421,6 +421,10 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "internvl3.configuration": ["InternVisionConfig", "InternVLChatConfig"],
+    "internvl3.modeling": ["InternVisionModel", "InternVLChatModel", "InternVLChatForConditionalGeneration"],
+    "internvl3.processing": ["InternVL3Processor", "InternVLProcessor"],
+    "internvl3.processor": ["InternVL3Processor", "InternVLProcessor"],
     "olmo2.configuration": ["Olmo2Config"],
     "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
     "olmo2": [],
@@ -544,6 +548,7 @@ if TYPE_CHECKING:
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .internvl3 import *
     from .olmo2 import *
     from .intern_lm3 import *
     from .intern_lm2_5 import *

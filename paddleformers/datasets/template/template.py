@@ -752,6 +752,23 @@ register_template(
 )
 
 
+register_template(
+    name="internvl3",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="qwen"),
+    format_observation=StringFormatter(
+        slots=["<|im_start|>user\n<tool_response>\n{{content}}\n</tool_response><|im_end|>\n<|im_start|>assistant\n"]
+    ),
+    format_tools=ToolFormatter(tool_format="qwen"),
+    default_system="你是书生·万象，英文名是InternVL，是由上海人工智能实验室、清华大学及多家合作单位联合开发的多模态大语言模型。",
+    suffix=["<|im_end|>\n"],
+    chat_sep="<|im_end|>\n",
+    mm_plugin=get_mm_plugin(name="internvl3", image_token="<IMG_CONTEXT>"),
+)
+
+
 # copied from qwen template
 register_template(
     name="qwen3_vl",
