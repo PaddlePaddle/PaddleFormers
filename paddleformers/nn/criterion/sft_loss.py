@@ -45,7 +45,6 @@ def sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs):
     if self.use_filtered_label_loss or loss_mask is None:
         loss_mask = labels != self.ignored_index
     loss_mask = loss_mask.reshape([-1]).cast(paddle.float32)
-    # 逐位对齐, 全精度聚合
     masked_lm_loss = paddle.sum(masked_lm_loss.cast(paddle.float32).reshape([-1]) * loss_mask)
     loss = masked_lm_loss / loss_mask.sum()
     loss_sum = masked_lm_loss.sum().detach()
@@ -58,9 +57,19 @@ def sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs):
 
 
 def loss_impl(self, logits, labels):
+    # 原实现，subbatch/fused 路径仍使用（labels 已带 unsqueeze(-1)）
     logits = logits.cast("float32")
     loss = self.loss_func(logits, labels)
     return loss
+
+
+def loss_impl_aligned(self, logits, labels):
+    logits = logits.cast("float32")
+    labels_flat = labels.reshape([-1]).cast(paddle.int64)
+    logits_flat = logits.reshape([-1, logits.shape[-1]])
+    return paddle.nn.functional.cross_entropy(
+        logits_flat, labels_flat, ignore_index=self.ignored_index, reduction='mean',
+    )
 
 
 def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias, labels, loss_mask, transpose_y):
@@ -119,7 +128,12 @@ def sft_calculate_loss(self, logits, hidden_states, lm_head_weight, lm_head_bias
             )
             masked_lm_loss = sb_loss_func(self, logits, labels.unsqueeze(-1))
         else:
-            masked_lm_loss = loss_impl(self, logits, labels.unsqueeze(-1))
+            # 普通路径：使用与 PyTorch cross_entropy 数值对齐的实现，直接返回标量
+            loss = loss_impl_aligned(self, logits, labels)
+            loss_sum = loss.detach()
+            if not self.return_tuple:
+                return loss
+            return loss, loss_sum
 
     masked_lm_loss = sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask)
     return masked_lm_loss
