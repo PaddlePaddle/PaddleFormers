@@ -104,17 +104,24 @@ def hack_offload_optimizer(mode=None):
         # release/3.3) still have the per-param _muon_update. Prefer
         # patching _muon_update_group and fall back to _muon_update.
         if hasattr(Muon, "_muon_update_group"):
-            # Batched momentum offload. _muon_update_group fetches
-            # momentum buffers internally via _get_accumulator, so reload
-            # them for every param in the group before the update and
-            # offload them back afterwards.
+            # Batched momentum + master_weight offload. _muon_update_group
+            # fetches momentum buffers and master weights internally, so
+            # reload them for every param in the group before the update and
+            # offload them back afterwards. This keeps the master_weight
+            # residency scoped to a single update_group (same granularity as
+            # the first-order momentum), instead of loading every master
+            # weight at once in _apply_optimize.
             origin_muon_update_group = Muon._muon_update_group
 
             def new_muon_update_group(self, group_params_grads, *args, **kwargs):
+                mw_dict = getattr(self, "_master_weights", None)
                 for param, _ in group_params_grads:
                     momentum_buffer = self._get_accumulator(self._moment_acc_str, param)
                     reload(momentum_buffer)
-
+                    if mw_dict:
+                        mw = mw_dict.get(param.name)
+                        if mw is not None and isinstance(mw, paddle.Tensor):
+                            reload(mw)
                 ret = origin_muon_update_group(self, group_params_grads, *args, **kwargs)
 
                 for param, _ in group_params_grads:
@@ -122,12 +129,16 @@ def hack_offload_optimizer(mode=None):
                     if is_offload_opt:
                         momentum_buffer = self._get_accumulator(self._moment_acc_str, param)
                         offload(momentum_buffer)
+                        if mw_dict:
+                            mw = mw_dict.get(param.name)
+                            if mw is not None and isinstance(mw, paddle.Tensor):
+                                offload(mw)
                 return ret
 
             Muon._muon_update_group = new_muon_update_group
         elif hasattr(Muon, "_muon_update"):
-            # Per-param momentum offload for older Paddle where
-            # _muon_update receives momentum_buffer as an argument.
+            # Per-param momentum + master_weight offload for older Paddle
+            # where _muon_update receives momentum_buffer as an argument.
             origin_muon_update = Muon._muon_update
 
             def new_muon_update(
@@ -143,7 +154,11 @@ def hack_offload_optimizer(mode=None):
                 weight_decay,
                 version,
             ):
+                mw_dict = getattr(self, "_master_weights", None)
+                mw = mw_dict.get(param.name) if mw_dict else None
                 reload(momentum_buffer)
+                if mw is not None and isinstance(mw, paddle.Tensor):
+                    reload(mw)
                 ret = origin_muon_update(
                     self,
                     param,
@@ -160,40 +175,11 @@ def hack_offload_optimizer(mode=None):
                 is_offload_opt = getattr(param, "is_offload_opt", True)
                 if is_offload_opt:
                     offload(momentum_buffer)
+                    if mw is not None and isinstance(mw, paddle.Tensor):
+                        offload(mw)
                 return ret
 
             Muon._muon_update = new_muon_update
-
-        # 4b: Patch _apply_optimize — reload/offload master_weights around Muon updates
-        origin_muon_apply = Muon._apply_optimize
-
-        def new_muon_apply(self, loss, startup_program, params_grads):
-            # Reload master_weights to GPU before Muon update
-            # (needed after checkpoint restore where master_weights may be on CPU/pinned)
-            mw_dict = getattr(self, "_master_weights", None)
-            if mw_dict:
-                for param, grad in params_grads:
-                    if grad is None:
-                        continue
-                    mw = mw_dict.get(param.name)
-                    if mw is not None and isinstance(mw, paddle.Tensor):
-                        reload(mw)
-
-            ret = origin_muon_apply(self, loss, startup_program, params_grads)
-
-            # Offload master_weights back to CPU pinned after Muon update
-            if mw_dict:
-                for param, grad in params_grads:
-                    if grad is None:
-                        continue
-                    mw = mw_dict.get(param.name)
-                    if mw is not None and isinstance(mw, paddle.Tensor):
-                        is_offload_opt = getattr(param, "is_offload_opt", True)
-                        if is_offload_opt:
-                            offload(mw)
-            return ret
-
-        Muon._apply_optimize = new_muon_apply
 
     except ImportError:
         pass
@@ -248,7 +234,7 @@ def hack_offload_optimizer_eb5():
 
     setattr(opt_type, "_insert_sync", new_insert_sync)
 
-    # Step 4: mock Muon's momentum update and Muon._apply_optimize
+    # Step 4: mock Muon's momentum update
     # Muon's momentum update is pure Python (paddle.lerp + paddle.assign),
     # so it bypasses the _C_ops.adamw_ patch above. We need explicit
     # reload/offload for Muon's momentum_buffer and master_weights.
@@ -267,9 +253,14 @@ def hack_offload_optimizer_eb5():
             origin_muon_update_group = Muon._muon_update_group
 
             def new_muon_update_group(self, group_params_grads, *args, **kwargs):
+                mw_dict = getattr(self, "_master_weights", None)
                 for param, _ in group_params_grads:
                     momentum_buffer = self._get_accumulator(self._moment_acc_str, param)
                     reload(momentum_buffer)
+                    if mw_dict:
+                        mw = mw_dict.get(param.name)
+                        if mw is not None and isinstance(mw, paddle.Tensor):
+                            reload(mw)
 
                 ret = origin_muon_update_group(self, group_params_grads, *args, **kwargs)
 
@@ -278,12 +269,16 @@ def hack_offload_optimizer_eb5():
                     if is_offload_opt:
                         momentum_buffer = self._get_accumulator(self._moment_acc_str, param)
                         offload(momentum_buffer)
+                        if mw_dict:
+                            mw = mw_dict.get(param.name)
+                            if mw is not None and isinstance(mw, paddle.Tensor):
+                                offload(mw)
                 return ret
 
             Muon._muon_update_group = new_muon_update_group
         elif hasattr(Muon, "_muon_update"):
-            # Per-param momentum offload for older Paddle where
-            # _muon_update receives momentum_buffer as an argument.
+            # Per-param momentum + master_weight offload for older Paddle
+            # where _muon_update receives momentum_buffer as an argument.
             origin_muon_update = Muon._muon_update
 
             def new_muon_update(
@@ -299,7 +294,11 @@ def hack_offload_optimizer_eb5():
                 weight_decay,
                 version,
             ):
+                mw_dict = getattr(self, "_master_weights", None)
+                mw = mw_dict.get(param.name) if mw_dict else None
                 reload(momentum_buffer)
+                if mw is not None and isinstance(mw, paddle.Tensor):
+                    reload(mw)
                 ret = origin_muon_update(
                     self,
                     param,
@@ -316,40 +315,11 @@ def hack_offload_optimizer_eb5():
                 is_offload_opt = getattr(param, "is_offload_opt", True)
                 if is_offload_opt:
                     offload(momentum_buffer)
+                    if mw is not None and isinstance(mw, paddle.Tensor):
+                        offload(mw)
                 return ret
 
             Muon._muon_update = new_muon_update
-
-        # 4b: Patch _apply_optimize — reload/offload master_weights around Muon updates
-        origin_muon_apply = Muon._apply_optimize
-
-        def new_muon_apply(self, loss, startup_program, params_grads):
-            # Reload master_weights to GPU before Muon update
-            # (needed after checkpoint restore where master_weights may be on CPU/pinned)
-            mw_dict = getattr(self, "_master_weights", None)
-            if mw_dict:
-                for param, grad in params_grads:
-                    if grad is None:
-                        continue
-                    mw = mw_dict.get(param.name)
-                    if mw is not None and isinstance(mw, paddle.Tensor):
-                        reload(mw)
-
-            ret = origin_muon_apply(self, loss, startup_program, params_grads)
-
-            # Offload master_weights back to CPU pinned after Muon update
-            if mw_dict:
-                for param, grad in params_grads:
-                    if grad is None:
-                        continue
-                    mw = mw_dict.get(param.name)
-                    if mw is not None and isinstance(mw, paddle.Tensor):
-                        is_offload_opt = getattr(param, "is_offload_opt", True)
-                        if is_offload_opt:
-                            offload(mw)
-            return ret
-
-        Muon._apply_optimize = new_muon_apply
 
     except ImportError:
         pass
