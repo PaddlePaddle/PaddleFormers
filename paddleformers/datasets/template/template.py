@@ -665,6 +665,15 @@ register_template(
 )
 
 
+register_template(
+    name="telechat",
+    format_user=StringFormatter(slots=["<_user>{{content}}<_bot>"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    suffix=["<_end>"],
+    chat_sep="<_end>",
+)
+
+
 # copied from qwen template
 register_template(
     name="qwen3",
