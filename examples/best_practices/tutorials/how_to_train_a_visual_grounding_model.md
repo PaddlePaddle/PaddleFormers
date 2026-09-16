@@ -6,6 +6,8 @@ Visual Grounding（视觉定位）是一种让多模态大模型能够将自然�
 
 本文通过一组基于[COCO 数据集](https://huggingface.co/datasets/detection-datasets/coco)采样处理得到的 Grounding 数据集和[Qwen2.5-VL-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct)模型，演示如何使用[PaddleFormers](https://github.com/PaddlePaddle/PaddleFormers)训练一个支持 Grounding 能力的 LoRA 模型全流程，并验证训练好的模型在定位模式下的性能和效果。整个实验使用1张80G A100显卡(约占61GB)进行训练，总耗时约5小时。
 
+*在线教程：https://aistudio.baidu.com/projectdetail/10000159*
+
 # 2. 任务准备
 
 ## 2.1. 模型准备
