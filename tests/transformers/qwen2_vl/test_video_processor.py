@@ -28,7 +28,7 @@ from paddleformers.transformers.image_utils import (
     get_image_size,
 )
 from paddleformers.transformers.qwen2_vl.video_processor import smart_resize
-from tests.testing_utils import gpu_device_initializer
+from tests.testing_utils import gpu_device_initializer, slow
 
 from ..test_video_processing_common import (
     VideoProcessingTestMixin,
@@ -224,6 +224,7 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
                 expected_output_video_shape,
             )
 
+    @slow
     def test_nested_input(self):
         """Tests that the processor can work with nested list where each video is a list of arrays"""
         for video_processing_class in self.video_processor_list:
@@ -278,6 +279,7 @@ class Qwen2VLVideoProcessingTest(VideoProcessingTestMixin, unittest.TestCase):
             expected_output_video_shape = self.video_processor_tester.expected_output_video_shape(video_inputs)
             self.assertEqual(list(encoded_videos.shape), expected_output_video_shape)
 
+    @slow
     def test_call_sample_frames(self):
         for video_processing_class in self.video_processor_list:
             video_processing = video_processing_class(**self.video_processor_dict)
