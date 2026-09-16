@@ -1299,11 +1299,14 @@ class Trainer:
         ]
 
         with _sprof_span("read_metadata"):
+            # time each metadata file (model / opt / master) separately
             for metadata_file in metadata_paths:
-                if not os.path.exists(metadata_file):
-                    raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
-                metadata = paddle.load(metadata_file)
-                state_dict_metadata.update(metadata.state_dict_metadata)
+                _md_tag = os.path.basename(os.path.dirname(metadata_file)) or "metadata"
+                with _sprof_span("read_metadata.%s" % _md_tag, collective=True):
+                    if not os.path.exists(metadata_file):
+                        raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
+                    metadata = paddle.load(metadata_file)
+                    state_dict_metadata.update(metadata.state_dict_metadata)
 
         if not self.args.sharded_model_from_ema:
             with _sprof_span("init_optimizer"):
@@ -1382,15 +1385,19 @@ class Trainer:
                         comm_method=flex_ckpt_comm_method,
                         worker_groups=worker_groups,
                     )
-                self._load_scheduler(resume_from_checkpoint)
+                # lr scheduler restore, after opt state load
+                with _sprof_span("load_scheduler"):
+                    self._load_scheduler(resume_from_checkpoint)
 
             if self.args.tensorwise_offload_optimizer:
                 logger.info("Offloading optimizer state for FC...")
-                for k, v in optimizer_sharded_state_dict.items():
-                    if v.local_tensor.numel() <= 1:
-                        continue
-                    offload(v.local_tensor)
-                del opt_states, master_weights, optimizer_sharded_state_dict
+                # offload opt state tensors to CPU
+                with _sprof_span("opt_state_offload"):
+                    for k, v in optimizer_sharded_state_dict.items():
+                        if v.local_tensor.numel() <= 1:
+                            continue
+                        offload(v.local_tensor)
+                    del opt_states, master_weights, optimizer_sharded_state_dict
 
         enable_bf16_opt = (
             not isinstance(self.model, LoRAModel)

@@ -1766,7 +1766,12 @@ class TrainingArguments:
     )
 
     def __post_init__(self):
-        world_size = paddle.distributed.get_world_size()
+        # time first get_world_size / CUDA device_capability probe (first distributed / CUDA touch).
+        # span() is a no-op with no provider registered.
+        from .startup_profile import span as _sprof_span
+
+        with _sprof_span("post_init.get_world_size"):
+            world_size = paddle.distributed.get_world_size()
         if in_auto_parallel_align_mode():
             # self.max_grad_norm = 0.0
             # The current auto_hybrid_pp has aligned the handling of ClipGradByGlobalNorm with the original dygraph semi-auto parallel and dynamic manual-parallel modes and can correctly handle grad_clip, so it is no longer necessary to set max_grad_norm=0.0.
@@ -1786,6 +1791,9 @@ class TrainingArguments:
             os.environ["FLAGS_cudnn_deterministic"] = "1"
             os.environ["FLAGS_embedding_deterministic"] = "1"
 
+        # first CUDA device_capability probe (may trigger CUDA context init); enter/exit avoids re-indent
+        _cap_sp = _sprof_span("post_init.cuda_capability_probe")
+        _cap_sp.__enter__()
         if self.fa_version is not None:
             if paddle.base.core.is_compiled_with_cuda():
                 assert self.fa_version in (
@@ -1819,6 +1827,7 @@ class TrainingArguments:
                 paddle.set_flags({"FLAGS_flash_attn_version": self.fa_version})
             except Exception:
                 logger.warning("Flag FLAGS_flash_attn_version cannot set its value through this function.")
+        _cap_sp.__exit__(None, None, None)
 
         logger.info(f"fa_version = {self.fa_version} set FLAGS_flash_attn_version to {self.fa_version}")
 
