@@ -18,6 +18,10 @@ from contextlib import suppress
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+import transformers
+
+transformers.utils.is_torch_available = lambda: False
+
 from .utils.lazy_import import _LazyModule
 
 PADDLEFORMERS_STABLE_VERSION = "PADDLEFORMERS_STABLE_VERSION"
