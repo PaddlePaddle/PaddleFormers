@@ -1,0 +1,62 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./tests/fixtures/dummy/sft/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./tests/fixtures/dummy/sft/eval.jsonl
+eval_dataset_prob: "1.0"
+max_seq_len: 512
+packing: false
+mix_strategy: concat
+template_backend: jinja
+
+model_name_or_path: ./tiny-random-minicpm
+_attn_implementation: eager
+convert_from_hf: false
+
+stage: SFT
+fine_tuning: full
+continue_training: true
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 10
+eval_steps: 10000
+evaluation_strategy: steps
+save_steps: 10000
+save_total_limit: 1
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 1
+disable_tqdm: true
+eval_accumulation_steps: 1
+output_dir: ./checkpoints/minicpm-sft-single
+warmup_steps: 10
+learning_rate: 1.0e-5
+recompute_granularity: full
+recompute_method: uniform
+recompute_num_layers: 1
+tensor_model_parallel_size: 1
+pipeline_model_parallel_size: 1
+sharding: ""
+optim: adamw
+bf16: true
+fp16_opt_level: O2
+save_checkpoint_format: sharding_io
+load_checkpoint_format: sharding_io
