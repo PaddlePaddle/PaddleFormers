@@ -92,6 +92,9 @@ class GLMMoEModelProvider(GPTModelProvider):
     # truthy, so the ``if use_accuracy_compatible`` tests below keep working.
     use_accuracy_compatible: Union[bool, str] = False
 
+    attention_softmax_in_fp32: bool = True
+    bf16: bool = True
+
 
 def eager_attention_forward(
     module: nn.Layer,
