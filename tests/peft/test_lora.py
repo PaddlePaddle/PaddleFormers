@@ -23,10 +23,7 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.peft.lora import LoRAConfig, LoRALinear, LoRAModel
-from paddleformers.transformers import AutoModelForCausalLM, Glm4MoeModel
-from paddleformers.transformers import (
-    Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
-)
+from paddleformers.transformers import AutoModelForCausalLM
 
 from ..testing_utils import gpu_device_initializer
 
@@ -61,6 +58,34 @@ class TestLoraLayer(unittest.TestCase):
         eval_weight = lora_layer.weight
         self.assertTrue(paddle.allclose(train_result, eval_result))
         self.assertTrue(paddle.allclose(train_weight, eval_weight))
+
+    def test_merge_unmerge_bf16_weight_with_fp32_lora(self):
+        lora_layer = LoRALinear(in_features=4, out_features=3, r=2, lora_alpha=2)
+        lora_layer.to(dtype="bfloat16")
+        lora_layer.lora_A = paddle.create_parameter(
+            shape=[4, 2], dtype="float32", default_initializer=paddle.nn.initializer.Constant(value=1.0)
+        )
+        lora_layer.lora_B = paddle.create_parameter(
+            shape=[2, 3], dtype="float32", default_initializer=paddle.nn.initializer.Constant(value=1.0)
+        )
+        original_weight = lora_layer.weight.clone()
+        delta_weight = lora_layer.get_delta_weight()
+
+        lora_layer.merge()
+        self.assertEqual(lora_layer.weight.dtype, paddle.bfloat16)
+        self.assertTrue(
+            paddle.equal_all(
+                lora_layer.weight.cast(dtype="float32"),
+                (original_weight + delta_weight).cast(dtype=paddle.bfloat16).cast(dtype="float32"),
+            ).item()
+        )
+
+        expected_unmerged = (lora_layer.weight - delta_weight).cast(dtype=paddle.bfloat16)
+        lora_layer.unmerge()
+        self.assertEqual(lora_layer.weight.dtype, paddle.bfloat16)
+        self.assertTrue(
+            paddle.equal_all(lora_layer.weight.cast(dtype="float32"), expected_unmerged.cast(dtype="float32")).item()
+        )
 
     def test_save_load(self):
         with TemporaryDirectory() as tempdir:
@@ -214,6 +239,10 @@ class TestLoraModel(unittest.TestCase):
             self.fail(f"get_merge_state_dict(offload=True) raised an exception: {e}")
 
     def test_fuse_moe_lora(self):
+        from paddleformers.transformers import (
+            Qwen3VLMoeForConditionalGenerationDeprecated as Qwen3VLMoeForConditionalGeneration,
+        )
+
         lora_config = LoRAConfig(
             target_modules=[
                 "model.language_model.*mlp.experts",
@@ -286,6 +315,8 @@ class TestLoraModel(unittest.TestCase):
 
 class TestLoraModelFC(unittest.TestCase):
     def test_lora_model_save_load_fc(self):
+        from paddleformers.transformers import Glm4MoeModel
+
         with TemporaryDirectory() as tempdir:
             input_ids = paddle.to_tensor([[0, 345, 232, 328, 740, 140, 1695, 69, 6078, 1588, 2]])
             lora_config = LoRAConfig(
