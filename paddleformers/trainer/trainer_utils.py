@@ -1848,15 +1848,22 @@ def _restore_master_weights_2d_on_device(master_weights, group, param_sink):
 
 
 def _restore_master_weights_single(master_weights, model, optimizer, group, structure_name_map, restore_func):
+    # split restore into pack / restore_func (reshard) / unpack / all_gather. no-op without provider.
+    from .startup_profile import span as _sprof_span
+
     nms = reshard_util.NodeModelState(group=group)
     nms_tmp = reshard_util.NodeModelState(group=group)
-    nms_tmp.add_master_weights(master_weights)
-    nms_tmp.pack_keys(structure_name_map, paddle.device.get_device())
-    nms.merge_from(nms_tmp, max(group.rank, 0))
-    del nms_tmp
-    nms = restore_func(nms, model, optimizer)
-    nms.unpack_keys()
-    return reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
+    with _sprof_span("rmw.pack", n=len(master_weights)):
+        nms_tmp.add_master_weights(master_weights)
+        nms_tmp.pack_keys(structure_name_map, paddle.device.get_device())
+        nms.merge_from(nms_tmp, max(group.rank, 0))
+        del nms_tmp
+    with _sprof_span("rmw.restore_func", collective=True):
+        nms = restore_func(nms, model, optimizer)
+    with _sprof_span("rmw.unpack"):
+        nms.unpack_keys()
+    with _sprof_span("rmw.all_gather", collective=True):
+        return reshard_util.all_gather_state_dict(nms.master_weights, lambda x: True, group)
 
 
 def recover_params_from_master_weight(ema_state_dict, model, optimizer, group):

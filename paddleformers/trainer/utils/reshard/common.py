@@ -1032,28 +1032,32 @@ def all_gather_on_device(state_dict, group, param_sink=None, max_chunk_bytes=Non
             del state_dict[k]
         gathered[k] = paddle.empty(shape, dtype=dtype)
 
-    for chunk in _iter_state_dict_bucket_chunks(buckets, _STATE_DICT_BROADCAST_CHUNK_SIZE, max_chunk_bytes):
-        gpu_buckets = []
-        for bucket in chunk:
-            if bucket["rank"] == group_rank:
-                tensor = _fill_bucket_from_device(bucket, state_dict)
-            else:
-                tensor = paddle.empty([bucket["numel"]], dtype=bucket["dtype"])
-            gpu_buckets.append((bucket, tensor))
+    # time the bucketed broadcast loop (the actual comm); no-op without provider
+    from ...startup_profile import span as _sprof_span
 
-        _broadcast_state_dict_chunk(gpu_buckets, group)
+    with _sprof_span("agod.broadcast", collective=True, n_bucket=len(buckets)):
+        for chunk in _iter_state_dict_bucket_chunks(buckets, _STATE_DICT_BROADCAST_CHUNK_SIZE, max_chunk_bytes):
+            gpu_buckets = []
+            for bucket in chunk:
+                if bucket["rank"] == group_rank:
+                    tensor = _fill_bucket_from_device(bucket, state_dict)
+                else:
+                    tensor = paddle.empty([bucket["numel"]], dtype=bucket["dtype"])
+                gpu_buckets.append((bucket, tensor))
 
-        # The broadcast was enqueued on the calc stream with
-        # use_calc_stream=True, so these copies are already ordered after it.
-        for bucket, tensor in gpu_buckets:
-            _scatter_bucket_on_device(bucket, tensor, destinations, gathered)
-        # Release before packing the next chunk, otherwise both chunks would be
-        # resident and max_chunk_bytes would stop bounding anything. The scatter
-        # only enqueues, so wait for it before the buffers are dropped -- without
-        # this the host would run ahead allocating buckets for later chunks
-        # while earlier ones are still in flight.
-        del gpu_buckets
-        paddle.device.synchronize()
+            _broadcast_state_dict_chunk(gpu_buckets, group)
+
+            # The broadcast was enqueued on the calc stream with
+            # use_calc_stream=True, so these copies are already ordered after it.
+            for bucket, tensor in gpu_buckets:
+                _scatter_bucket_on_device(bucket, tensor, destinations, gathered)
+            # Release before packing the next chunk, otherwise both chunks would be
+            # resident and max_chunk_bytes would stop bounding anything. The scatter
+            # only enqueues, so wait for it before the buffers are dropped -- without
+            # this the host would run ahead allocating buckets for later chunks
+            # while earlier ones are still in flight.
+            del gpu_buckets
+            paddle.device.synchronize()
 
     assert not state_dict, f"{len(state_dict)} source tensors were never packed"
     return OrderedDict((k, gathered[k]) for k, _ in meta_list)

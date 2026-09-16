@@ -87,8 +87,12 @@ def shard(node_model_state, model, optimizer):
 
 
 def restore(node_model_state, model, optimizer):
+    # split into even_distribute (cross-rank redistribute) and merge_items (local concat)
+    from ...startup_profile import span as _sprof_span
+
     # evenly distribute param
-    node_model_state.even_distribute()
+    with _sprof_span("shardingv2.even_distribute", collective=True):
+        node_model_state.even_distribute()
     param_shapes = {k: v.shape for (k, v) in model.state_dict().items()}
 
     def merge_func(k, v):
@@ -102,7 +106,8 @@ def restore(node_model_state, model, optimizer):
         shape = param_shapes[structure_name]
         return merge_tensors(k, tensor_list, shape)
 
-    node_model_state.collapse_key().merge_items(merge_func)
+    with _sprof_span("shardingv2.merge_items"):
+        node_model_state.collapse_key().merge_items(merge_func)
     return node_model_state
 
 
