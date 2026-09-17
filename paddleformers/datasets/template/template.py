@@ -956,7 +956,7 @@ register_template(
 )
 
 register_template(
-    name="llama4",
+    name="llama4_vl",
     format_user=StringFormatter(
         slots=[
             ("<|header_start|>user<|header_end|>\n\n{{content}}<|eot|>" "<|header_start|>assistant<|header_end|>\n\n")
@@ -991,6 +991,10 @@ register_template(
     ),
 )
 
+
+# The text-only template must not require a multimodal processor.
+TEMPLATES["llama4"] = deepcopy(TEMPLATES["llama4_vl"])
+TEMPLATES["llama4"].mm_plugin = get_mm_plugin(name="base")
 
 # copied from gemma template
 register_template(

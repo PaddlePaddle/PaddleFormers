@@ -140,7 +140,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td rowspan="5" style="vertical-align: top;">VLM</td>
       <td>Llama Guard 4</td>
       <td>meta-llama/Llama-Guard-4-12B</td>
-      <td>llama4</td>
+      <td>llama4_vl</td>
     </tr>
     <tr>
       <td>🏛️ERNIE-4.5-VL</td>

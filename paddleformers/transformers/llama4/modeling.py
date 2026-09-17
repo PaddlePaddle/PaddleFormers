@@ -549,7 +549,11 @@ class Llama4TextPretrainedModel(PretrainedModel):
 class Llama4TextModel(Llama4TextPretrainedModel):
     def __init__(self, config: Llama4TextConfig):
         super().__init__(config)
-        if config.attention_chunk_size is not None and config._attn_implementation != "eager":
+        if (
+            config.attention_chunk_size is not None
+            and "chunked_attention" in config.layer_types
+            and config._attn_implementation != "eager"
+        ):
             raise ValueError(
                 "Llama4 chunked attention currently requires `_attn_implementation='eager'`; "
                 f"got {config._attn_implementation!r}."
@@ -672,7 +676,11 @@ class Llama4TextModel(Llama4TextPretrainedModel):
         }
         full_causal_mask, full_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
-        if self.config._attn_implementation == "eager" and self.config.attention_chunk_size is not None:
+        if (
+            self.config._attn_implementation == "eager"
+            and self.config.attention_chunk_size is not None
+            and "chunked_attention" in self.config.layer_types
+        ):
             chunked_causal_mask = self._create_chunked_causal_mask(
                 bsz,
                 seq_length,

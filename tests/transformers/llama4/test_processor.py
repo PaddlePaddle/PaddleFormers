@@ -74,6 +74,14 @@ class Llama4ProcessorTest(unittest.TestCase):
         self.tokenizer = get_tokenizer()
         self.processor = Llama4Processor(Llama4ImageProcessor(), self.tokenizer)
 
+    def test_plugin_preserves_native_tile_selection(self):
+        image = Image.new("RGB", (1200, 900))
+        plugin = Llama4Plugin(image_token="<|image|>", video_token=None, audio_token=None)
+        actual = plugin.get_mm_inputs([image], [], [], self.processor, imglens=[1])
+        expected = self.processor.image_processor([image], return_tensors="pd")
+        np.testing.assert_array_equal(actual["aspect_ratios"].numpy(), expected["aspect_ratios"].numpy())
+        np.testing.assert_array_equal(actual["pixel_values"].numpy(), expected["pixel_values"].numpy())
+
     def test_processor_matches_visual_feature_count(self):
         image = Image.fromarray(np.zeros((400, 800, 3), dtype=np.uint8))
         inputs = self.processor(text="<|image|>", images=image, return_tensors="pd")

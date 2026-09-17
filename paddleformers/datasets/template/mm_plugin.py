@@ -1407,6 +1407,18 @@ class Llama4Plugin(BasePlugin):
     masked_tokens: Optional[list[str]] = None
 
     @override
+    def _get_mm_inputs(self, images, videos, audios, processor, **kwargs):
+        # Llama4's image processor chooses tiles from the original resolution.
+        # BasePlugin's pixel-budget resize changes that choice.
+        if not images:
+            return {}
+        images = [(self._img_download(image) if isinstance(image, str) else image).convert("RGB") for image in images]
+        imglens = kwargs.get("imglens")
+        if imglens is not None:
+            images = _make_batched_images(images, imglens)
+        return processor.image_processor(images, return_tensors="pd")
+
+    @override
     def process_messages(
         self,
         messages,

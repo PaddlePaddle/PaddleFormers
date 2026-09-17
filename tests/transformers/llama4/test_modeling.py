@@ -257,6 +257,14 @@ class Llama4ModelTest(ModelTesterMixin, unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "num_hidden_layers"):
             Llama4TextConfig(num_hidden_layers=2, layer_types=["full_attention"])
 
+    def test_full_attention_ignores_cli_chunk_size_for_backend_guard(self):
+        config = self.model_tester.get_config()
+        config.layer_types = ["full_attention"] * config.num_hidden_layers
+        config.attention_chunk_size = 8192
+        config._attn_implementation = "flashmask"
+        model = Llama4TextModel(config)
+        self.assertEqual(len(model.layers), config.num_hidden_layers)
+
     def test_auto_model_mapping(self):
         config = self.model_tester.get_config()
         model = AutoModel.from_config(config)
