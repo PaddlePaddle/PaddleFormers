@@ -50,6 +50,7 @@ import_structure = {
         "Template",
         "ReasoningTemplate",
         "Llama2Template",
+        "SeedOssTemplate",
         "register_template",
         "parse_template",
         "get_template_and_fix_tokenizer",
@@ -63,6 +64,7 @@ import_structure = {
         "GLM4MOEToolUtils",
         "Llama3ToolUtils",
         "ERNIEToolUtils",
+        "SeedOssToolUtils",
         "get_tool_utils",
     ],
     "augment_utils": [
