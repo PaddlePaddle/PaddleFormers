@@ -437,6 +437,39 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
         self.assertEqual(image_masks.shape, [2, 2])
         self.assertTrue(paddle.equal_all(image_input_idx, paddle.to_tensor([[1, -100], [3, 4]])))
 
+    def test_packed_images_locate_template_prefix_and_preserve_invalid_indices(self):
+        def sample(prefix):
+            tokens = prefix + [90, 91, 90, 12]
+            return Sequence(
+                token_ids=tokens,
+                position_ids=list(range(len(tokens))),
+                labels=tokens,
+                num_examples=1,
+                mm_inputs={
+                    "images": paddle.ones([1, 3, 3]),
+                    "image_masks": paddle.ones([1, 3]),
+                    "input_ids": paddle.to_tensor([1, 90, 91, 90, 12]),
+                    "image_input_idx": paddle.to_tensor([[1, 3, -100]], dtype="int64"),
+                },
+            )
+
+        first, second = sample([1, 8, 9, 10]), sample([1, 7])
+        _, _, indices = _pack_molmo_multimodal_inputs([first, second])
+        self.assertTrue(paddle.equal_all(indices, paddle.to_tensor([[4, 6, -100], [10, 12, -100]])))
+        self.assertEqual(first.mm_inputs["image_input_idx"].tolist(), [[1, 3, -100]])
+        plain = sample([1])
+        _, _, plain_indices = _pack_molmo_multimodal_inputs([plain])
+        self.assertEqual(plain_indices.tolist(), [[1, 3, -100]])
+        plain.mm_inputs["image_input_idx"] = paddle.to_tensor([[3, 1, -100]], dtype="int64")
+        _, _, reordered = _pack_molmo_multimodal_inputs([plain])
+        self.assertEqual(reordered.tolist(), [[3, 1, -100]])
+        plain.token_ids = plain.token_ids + plain.token_ids
+        with self.assertRaisesRegex(ValueError, "uniquely locate"):
+            _pack_molmo_multimodal_inputs([plain])
+        first.token_ids = [1, 2, 3]
+        with self.assertRaisesRegex(ValueError, "uniquely locate"):
+            _pack_molmo_multimodal_inputs([first])
+
     def test_mm_collate_packs_molmo_inputs(self):
         first = Sequence(
             token_ids=[1, 2, 3],

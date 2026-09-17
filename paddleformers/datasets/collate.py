@@ -64,6 +64,25 @@ def _pack_molmo_multimodal_inputs(batch_sequence):
             images.append(paddle.to_tensor(mm_inputs["images"]))
             image_masks.append(paddle.to_tensor(mm_inputs["image_masks"]))
             indices = paddle.to_tensor(mm_inputs["image_input_idx"]).clone()
+            if "input_ids" in mm_inputs:
+                # Processor indices refer to its image-only prompt, not the
+                # final template tokens (which may prepend a system prompt).
+                source = np.asarray(mm_inputs["input_ids"]).reshape(-1).tolist()
+                valid_indices = indices.numpy()[indices.numpy() >= 0]
+                if valid_indices.size:
+                    first, last = int(valid_indices.min()), int(valid_indices.max())
+                    if last >= len(source):
+                        raise ValueError("Molmo image indices exceed the processor token sequence.")
+                    image_span = source[first : last + 1]
+                    tokens = list(sequence.token_ids)
+                    starts = [
+                        start
+                        for start in range(len(tokens) - len(image_span) + 1)
+                        if tokens[start : start + len(image_span)] == image_span
+                    ]
+                    if len(starts) != 1:
+                        raise ValueError("Cannot uniquely locate Molmo image tokens in the formatted sequence.")
+                    indices = paddle.where(indices >= 0, indices + starts[0] - first, indices)
             indices = paddle.where(indices >= 0, indices + token_offset, indices)
             image_input_idx.append(indices)
 
