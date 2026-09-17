@@ -138,7 +138,9 @@ class MiniMaxLightningAttention(nn.Layer):
             config=config,
             norm_type="rms_norm",
             hidden_size=self.head_dim * self.num_attention_heads,
-            norm_eps=config.rms_norm_eps,
+            # Lightning attention uses the upstream norm's default epsilon,
+            # independently of the decoder RMSNorm epsilon.
+            norm_eps=1e-6,
             input_is_parallel=config.sequence_parallel,
         )
 
@@ -1003,6 +1005,10 @@ class MiniMaxModel(MiniMaxPretrainedModel):
 
     def __init__(self, config: MiniMaxConfig):
         super().__init__(config)
+        if config.tensor_model_parallel_size > 1:
+            raise ValueError(
+                "MiniMax currently does not support tensor parallelism; set tensor_model_parallel_size=1."
+            )
         self.config = config
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size

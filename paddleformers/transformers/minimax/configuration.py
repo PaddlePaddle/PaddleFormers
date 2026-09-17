@@ -227,6 +227,10 @@ class MiniMaxConfig(PretrainedConfig):
             sliding_window=sliding_window,
             **kwargs,
         )
+        if self.tensor_model_parallel_size > 1:
+            raise ValueError(
+                "MiniMax currently does not support tensor parallelism; set tensor_model_parallel_size=1."
+            )
 
 
 __all__ = ["MiniMaxConfig"]

@@ -203,6 +203,28 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
 
         self.assertIn("model.layers.0.block_sparse_moe.gate.weight", model.state_dict())
 
+    def test_lightning_norm_uses_upstream_epsilon(self):
+        config = self.model_tester.get_config()
+        config.rms_norm_eps = 1e-5
+        layer = MiniMaxLightningAttention(config, layer_idx=1)
+        self.assertEqual(layer.norm.variance_epsilon, 1e-6)
+        x = paddle.randn([2, 3, config.hidden_size]) * 0.01
+        x.stop_gradient = False
+        actual = layer.norm(x)
+        expected = x * paddle.rsqrt(x.square().mean(-1, keepdim=True) + 1e-6) * layer.norm.weight
+        paddle.testing.assert_close(actual, expected, rtol=1e-6, atol=1e-6)
+        actual_grad = paddle.grad(actual.sum(), x, retain_graph=True)[0]
+        expected_grad = paddle.grad(expected.sum(), x)[0]
+        paddle.testing.assert_close(actual_grad, expected_grad, rtol=1e-5, atol=1e-5)
+
+    def test_rejects_unsupported_tensor_parallelism(self):
+        with self.assertRaisesRegex(ValueError, "does not support tensor parallelism"):
+            MiniMaxConfig(tensor_model_parallel_size=2)
+        config = self.model_tester.get_config()
+        config.tensor_model_parallel_size = 2
+        with self.assertRaisesRegex(ValueError, "does not support tensor parallelism"):
+            MiniMaxModel(config)
+
     def test_output_hidden_states_uses_config_default(self):
         config, input_ids, input_mask = self.model_tester.prepare_config_and_inputs()
         config.output_hidden_states = True
