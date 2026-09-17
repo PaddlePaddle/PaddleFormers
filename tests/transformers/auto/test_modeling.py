@@ -69,6 +69,14 @@ class AutoModelTest(unittest.TestCase):
             )
             self.assertIsInstance(reloaded_model, LlamaModel)
 
+    def test_architecture_takes_priority_over_directory_name(self):
+        model_class = AutoModel._get_model_class_from_config(
+            "/tmp/qwen2-export",
+            "unused-config.json",
+            LlamaConfig(architectures=["LlamaModel"]),
+        )
+        self.assertIs(model_class, LlamaModel)
+
     @slow
     def test_model_from_pretrained_cache_dir(self):
         model_name = "Paddleformers/tiny-random-llama"

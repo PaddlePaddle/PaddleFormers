@@ -63,6 +63,7 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
+        ("Llama4", "llama4"),
         ("KimiK2", "kimi_k2"),
         ("KimiK3", "kimi_k3"),
         ("Qwen2", "qwen2"),
@@ -97,7 +98,13 @@ MAPPING_NAMES = OrderedDict(
     ]
 )
 
-MAPPING_SPACIAL_KEY = OrderedDict([("Gemma3", "Gemma3"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")])
+MAPPING_SPACIAL_KEY = OrderedDict(
+    [
+        ("Gemma3", "Gemma3"),
+        ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration"),
+        ("Llama4", "Llama4Text"),
+    ]
+)
 CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3ForConditionalGeneration")])
 
 MAPPING_TASKS = OrderedDict(
@@ -203,9 +210,9 @@ class _BaseAutoModelClass:
                 if model_flag in init_class:
                     model_name = model_flag + "Model"
                     break
-            if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
-                model_name = "PaliGemma2ForConditionalGenerationModel"
-        elif model_name is None:
+        if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
+            model_name = "PaliGemma2ForConditionalGenerationModel"
+        if model_name is None and init_class is None:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
                 if type(pretrained_model_name_or_path) is str and name in pretrained_model_name_or_path.lower():
@@ -214,6 +221,9 @@ class _BaseAutoModelClass:
         if init_class == "PaliGemmaForConditionalGeneration":
             import_class = importlib.import_module("paddleformers.transformers.paligemma2.modeling")
             return getattr(import_class, "PaliGemma2ForConditionalGeneration")
+        if init_class == "Llama4ForConditionalGeneration":
+            import_class = importlib.import_module("paddleformers.transformers.llama4.multimodal")
+            return getattr(import_class, "Llama4ForConditionalGeneration")
         if model_name is None:
             # Try to get model class from config class
             if not isinstance(config, PretrainedConfig) and pretrained_model_name_or_path is not None:

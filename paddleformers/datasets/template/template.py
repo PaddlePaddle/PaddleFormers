@@ -955,6 +955,46 @@ register_template(
     chat_sep="<|eot_id|>",
 )
 
+register_template(
+    name="llama4_vl",
+    format_user=StringFormatter(
+        slots=[
+            ("<|header_start|>user<|header_end|>\n\n{{content}}<|eot|>" "<|header_start|>assistant<|header_end|>\n\n")
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|header_start|>system<|header_end|>\n\n{{content}}<|eot|>"]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="llama4"),
+    format_observation=StringFormatter(
+        slots=[
+            (
+                "<|header_start|>ipython<|header_end|>\n\n{{content}}<|eot|>"
+                "<|header_start|>assistant<|header_end|>\n\n"
+            )
+        ]
+    ),
+    format_tools=ToolFormatter(tool_format="llama4"),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    suffix=["<|eot|>"],
+    chat_sep="<|eot|>",
+    mm_plugin=get_mm_plugin(
+        name="llama4",
+        image_token="<|image|>",
+        masked_tokens=[
+            "<|image|>",
+            "<|image_start|>",
+            "<|image_end|>",
+            "<|patch|>",
+            "<|tile_x_separator|>",
+            "<|tile_y_separator|>",
+        ],
+    ),
+)
+
+
+# The text-only template must not require a multimodal processor.
+TEMPLATES["llama4"] = deepcopy(TEMPLATES["llama4_vl"])
+TEMPLATES["llama4"].mm_plugin = get_mm_plugin(name="base")
 
 # copied from gemma template
 register_template(
