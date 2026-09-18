@@ -447,6 +447,11 @@ class TrainingArguments:
 
         flex_ckpt_comm_method (str, None):
             Communication method used in FlexCheckpoint reshard. One of "broadcast" and "parallel_broadcast". Default is None.
+
+        flex_ckpt_load_num_workers (`int`, *optional*, defaults to 1):
+            Number of threads `paddle.load` uses to read the tensor payloads of each FlexCheckpoint
+            `.distcp` file. 1 keeps the serial read. Ignored when the installed paddle's
+            `dist.load_state_dict` does not accept `num_workers`.
     """
 
     output_dir: str = field(
@@ -1762,6 +1767,14 @@ class TrainingArguments:
         default=None,
         metadata={
             "help": "Communication method for FlexCheckpoint reshard. Options: 'auto', 'broadcast', 'parallel_broadcast'. Default: 'auto'."
+        },
+    )
+
+    flex_ckpt_load_num_workers: int = field(
+        default=1,
+        metadata={
+            "help": "Threads used by paddle.load to read the tensor payloads of each FlexCheckpoint .distcp "
+            "file. 1 means the serial read. Ignored if the installed paddle does not support it."
         },
     )
 
