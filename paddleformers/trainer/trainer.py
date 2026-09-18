@@ -1365,20 +1365,9 @@ class Trainer:
                     and self.args.zcc_save_ema_coef is not None
                     and self._is_fc_format_ema(ema_state_path)
                 ):
-                    same_strategy, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(
-                        resume_from_checkpoint
+                    self._ema_reshard_result = self._load_ema_with_reshard(
+                        ema_state_path, flex_ckpt_comm_method, worker_groups
                     )
-
-                    if not same_strategy:
-                        logger.info(
-                            f"[EMA Reshard] Parallelism strategy changed ({err_msg}), performing EMA reshard..."
-                        )
-                        self._ema_reshard_result = self._load_ema_with_reshard(
-                            ema_state_path, flex_ckpt_comm_method, worker_groups
-                        )
-                        logger.info("[EMA Reshard] EMA reshard completed, results stored for subprocess")
-                    else:
-                        logger.info("[EMA Reshard] Same strategy, subprocess will load EMA directly from file")
 
             with _sprof_span("opt_sharded_state_dict"):
                 optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
