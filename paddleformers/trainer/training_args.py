@@ -704,6 +704,16 @@ class TrainingArguments:
             )
         },
     )
+    sharding_machine_balanced_2d_partition: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Whether to balance the 2D (Muon) parameter bytes across machines when partitioning them "
+                "to owner ranks, instead of the default greedy per-group partition. This only takes effect "
+                "when using the Muon optimizer."
+            )
+        },
+    )
     sharding_offload_opt_buffersize_GB: int = field(
         default=-1,
         metadata={
@@ -2345,6 +2355,22 @@ class TrainingArguments:
                                 self.optim == OptimizerNames.MUON
                             ), "sharding_comm_group_call_opt only supports Muon optimizer."
                             strategy.hybrid_configs["sharding_configs"].comm_group_call_opt = True
+
+                        if self.sharding_machine_balanced_2d_partition:
+                            if self.optim != OptimizerNames.MUON:
+                                raise ValueError(
+                                    "sharding_machine_balanced_2d_partition only supports Muon "
+                                    f"optimizer, but got optim={self.optim}."
+                                )
+                            if not hasattr(
+                                strategy.hybrid_configs["sharding_configs"],
+                                "machine_balanced_2d_partition",
+                            ):
+                                raise ValueError(
+                                    "sharding_machine_balanced_2d_partition is not supported by "
+                                    "current version of Paddle. Please try latest develop Paddle."
+                                )
+                            strategy.hybrid_configs["sharding_configs"].machine_balanced_2d_partition = True
 
                         if self.split_param:
                             strategy.hybrid_configs["sharding_configs"].split_param = True
