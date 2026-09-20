@@ -35,6 +35,7 @@ from huggingface_hub.utils import EntryNotFoundError
 from .. import __version__
 from ..quantization.quantization_config import QuantizationConfig
 from ..utils import CONFIG_NAME, LEGACY_CONFIG_NAME
+from ..utils.accuracy_target import normalize_accuracy_target
 from ..utils.download import resolve_file_path
 from ..utils.downloader import hf_file_exists
 from ..utils.log import logger
@@ -566,9 +567,11 @@ class LlmMetaConfig:
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
         (
             "use_accuracy_compatible",
-            bool,
+            str,
             False,
-            "Whether to enable accuracy-compatible kernels for cross-framework numerical alignment. Defaults to False.",
+            "Which reference the accuracy-compatible kernels reproduce bit-for-bit: False "
+            "(default kernels), 'megatron' (also accepted as True) or 'hf'. Both non-default "
+            "values are truthy, so existing bool checks keep working.",
         ),
         ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
@@ -650,6 +653,17 @@ class LlmMetaConfig:
             value = getattr(args, key, value)
             if value is None:
                 continue
+            if key == "use_accuracy_compatible":
+                # This is the single funnel from args to config, so normalizing
+                # here covers every workflow (sft, dpo, auto_parallel, the
+                # pretrain scripts) and the secondary text_config /
+                # ref_model_config writes, without each args class having to
+                # remember. The field is truthiness-tested in about a dozen
+                # places and a YAML ``false`` can arrive as the *string*
+                # "false", which is truthy; normalizing turns that back into a
+                # real ``False`` and also keeps a serialized config.json holding
+                # a JSON ``false`` rather than baking the string into it.
+                value = normalize_accuracy_target(value)
             setattr(config, key, value)
 
 

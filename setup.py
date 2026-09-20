@@ -204,7 +204,7 @@ try:
         install_requires=REQUIRED_PACKAGES,
         entry_points={"console_scripts": get_console_scripts()},
         extras_require={
-            "paddlefleet": ["paddlefleet==0.4.0.post20260908+2bd8d7e9ab6"],
+            "paddlefleet": ["paddlefleet==0.4.0.post20260909+08dd2e727b0"],
         },
         python_requires=">=3.8",
         classifiers=[
