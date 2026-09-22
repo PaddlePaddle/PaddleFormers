@@ -1333,6 +1333,10 @@ class Trainer:
             os.path.join(master_weights_path, get_metadata_file_name(master_weights_path)),
         ]
 
+        # Only state_dict_metadata is needed here; storage_metadata dominates the
+        # size of the file, so read it partially when paddle supports that.
+        read_state_dict_metadata = getattr(dist, "load_state_dict_metadata", None)
+
         with _sprof_span("read_metadata"):
             # time each metadata file (model / opt / master) separately
             for metadata_file in metadata_paths:
@@ -1340,8 +1344,11 @@ class Trainer:
                 with _sprof_span("read_metadata.%s" % _md_tag, collective=True):
                     if not os.path.exists(metadata_file):
                         raise FileNotFoundError(f"Metadata file not found: {metadata_file}")
-                    metadata = paddle.load(metadata_file)
-                    state_dict_metadata.update(metadata.state_dict_metadata)
+                    if read_state_dict_metadata is not None:
+                        state_dict_metadata.update(read_state_dict_metadata(metadata_file))
+                    else:
+                        metadata = paddle.load(metadata_file)
+                        state_dict_metadata.update(metadata.state_dict_metadata)
 
         if not self.args.sharded_model_from_ema:
             with _sprof_span("init_optimizer"):
