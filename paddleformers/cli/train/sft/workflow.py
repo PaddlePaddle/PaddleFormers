@@ -376,7 +376,14 @@ def run_sft(
     else:
         logger.info(f"Loading model weights from {model_args.model_name_or_path}")
         if "VL" in model_args.stage:
-            model_class = AutoModelForConditionalGeneration
+            if getattr(model_config, "model_type", None) == "molmo":
+                # Upstream Molmo exposes its multimodal model through ForCausalLM rather than
+                # ForConditionalGeneration. Pipeline parallelism is not implemented for its vision path.
+                if training_args.pipeline_model_parallel_size > 1:
+                    raise ValueError("Molmo VL-SFT does not support pipeline model parallelism.")
+                model_class = AutoModelForCausalLM
+            else:
+                model_class = AutoModelForConditionalGeneration
             if training_args.pipeline_model_parallel_size > 1:
                 if data_args.eval_with_do_generation and training_args.do_eval:
                     raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
