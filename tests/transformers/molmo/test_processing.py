@@ -21,7 +21,11 @@ class MolmoFallbackTest(unittest.TestCase):
         with (
             patch("paddleformers.transformers.molmo.processing.AutoTokenizer.from_pretrained", return_value=tokenizer),
             patch.object(MolmoImageProcessor, "from_pretrained", side_effect=ValueError("invalid config")),
+            patch("paddleformers.transformers.molmo.processing.logger.warning") as warning,
         ):
             processor = ProcessorProbe.from_pretrained("local-model")
+        warning.assert_called_once()
+        self.assertIn("local-model", warning.call_args.args[0])
+        self.assertIn("invalid config", warning.call_args.args[0])
         self.assertIs(processor.tokenizer, tokenizer)
         self.assertIsInstance(processor.image_processor, MolmoImageProcessor)

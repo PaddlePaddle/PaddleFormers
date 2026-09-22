@@ -793,7 +793,16 @@ class MolmoPretrainedModel(PretrainedModel):
                 f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.weight, "
                 f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.weight, "
                 f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.weight, "
-                f"fused_qkv_old, num_heads={n_heads}, num_key_value_groups={n_kv_groups}"
+                f"fused_qkv_old, num_heads={n_heads}, num_key_value_groups={n_kv_heads}"
+            )
+
+        if config.qkv_bias:
+            aoa_statements.append(
+                f"model.transformer.blocks.$LAYER_ID.att_proj.bias -> "
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.bias, "
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.bias, "
+                f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.bias, "
+                f"fused_qkv_old, num_heads={n_heads}, num_key_value_groups={n_kv_heads}, axis=0"
             )
 
         aoa_statements.append(
@@ -831,6 +840,13 @@ class MolmoPretrainedModel(PretrainedModel):
             f"{model_prefix}embed_tokens.new_embedding.weight -> model.transformer.wte.new_embedding",
             f"{model_prefix}norm.weight -> model.transformer.ln_f.weight",
         ]
+        if config.qkv_bias:
+            aoa_statements.append(
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.bias, "
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_proj.bias, "
+                f"{model_prefix}layers.$LAYER_ID.self_attn.v_proj.bias -> "
+                "model.transformer.blocks.$LAYER_ID.att_proj.bias, axis=0"
+            )
 
         if getattr(config, "vision_backbone", None) is not None:
             v_prefix = f"{model_prefix}vision_backbone"

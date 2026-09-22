@@ -72,7 +72,11 @@ def _pack_molmo_multimodal_inputs(batch_sequence):
                 if valid_indices.size:
                     first, last = int(valid_indices.min()), int(valid_indices.max())
                     if last >= len(source):
-                        raise ValueError("Molmo image indices exceed the processor token sequence.")
+                        raise ValueError(
+                            "Molmo image indices exceed the processor token sequence. "
+                            f"source_length={len(source)}, sequence_length={len(sequence.token_ids)}, "
+                            f"first={first}, last={last}."
+                        )
                     image_span = source[first : last + 1]
                     tokens = list(sequence.token_ids)
                     starts = [
@@ -81,7 +85,12 @@ def _pack_molmo_multimodal_inputs(batch_sequence):
                         if tokens[start : start + len(image_span)] == image_span
                     ]
                     if len(starts) != 1:
-                        raise ValueError("Cannot uniquely locate Molmo image tokens in the formatted sequence.")
+                        raise ValueError(
+                            "Cannot uniquely locate Molmo image tokens in the formatted sequence. "
+                            f"sequence_length={len(tokens)}, source_length={len(source)}, "
+                            f"first={first}, last={last}, matches={len(starts)}. "
+                            "No match can indicate truncation or changed tokens; multiple matches are ambiguous."
+                        )
                     indices = paddle.where(indices >= 0, indices + starts[0] - first, indices)
             indices = paddle.where(indices >= 0, indices + token_offset, indices)
             image_input_idx.append(indices)

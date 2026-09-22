@@ -464,10 +464,10 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
         _, _, reordered = _pack_molmo_multimodal_inputs([plain])
         self.assertEqual(reordered.tolist(), [[3, 1, -100]])
         plain.token_ids = plain.token_ids + plain.token_ids
-        with self.assertRaisesRegex(ValueError, "uniquely locate"):
+        with self.assertRaisesRegex(ValueError, "sequence_length=.*first=1, last=3, matches=2"):
             _pack_molmo_multimodal_inputs([plain])
         first.token_ids = [1, 2, 3]
-        with self.assertRaisesRegex(ValueError, "uniquely locate"):
+        with self.assertRaisesRegex(ValueError, "sequence_length=3.*first=1, last=3, matches=0"):
             _pack_molmo_multimodal_inputs([first])
 
     def test_mm_collate_packs_molmo_inputs(self):
@@ -582,6 +582,24 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
             "model.vision_backbone.image_vit.patch_embedding.weight",
             statements,
         )
+
+    def test_qkv_bias_checkpoint_roundtrip(self):
+        for kv_heads in (4, 1):
+            with self.subTest(kv_heads=kv_heads):
+                config = self.model_tester.get_config(with_vision=True)
+                config.num_attention_heads = 4
+                config.num_key_value_heads = kv_heads
+                config.qkv_bias = True
+                config.additional_vocab_size = 8
+                model = MolmoForCausalLM(config)
+                for name, parameter in model.named_parameters():
+                    if name.endswith(("q_proj.bias", "k_proj.bias", "v_proj.bias")):
+                        parameter.set_value(paddle.randn(parameter.shape))
+                with tempfile.TemporaryDirectory() as directory:
+                    model.save_pretrained(directory, safe_serialization=True)
+                    restored = MolmoForCausalLM.from_pretrained(directory, dtype="float32")
+                for name, value in model.state_dict().items():
+                    np.testing.assert_array_equal(value.numpy(), restored.state_dict()[name].numpy(), err_msg=name)
 
     def test_vision_backbone(self):
         self.model_tester.create_and_check_vision_backbone()
