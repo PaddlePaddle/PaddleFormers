@@ -23,6 +23,7 @@ from paddleformers.nn.norm import RMSNorm
 from paddleformers.transformers import MiniMaxConfig, MiniMaxForCausalLM, MiniMaxModel
 from paddleformers.transformers.auto.modeling import AutoModelForCausalLM
 from paddleformers.transformers.minimax.modeling import (
+    MiniMaxCache,
     MiniMaxLightningAttention,
     MiniMaxSparseMoeBlock,
 )
@@ -33,6 +34,37 @@ from tests.transformers.test_modeling_common import (
     ids_tensor,
     random_attention_mask,
 )
+
+
+class MiniMaxCacheBatchTest(unittest.TestCase):
+    def test_batch_operations_keep_linear_and_kv_aligned(self):
+        config = MiniMaxConfig(num_hidden_layers=2, layer_types=["full_attention", "linear_attention"])
+        for operation, indices in (
+            ("reorder_cache", [1, 0, 1]),
+            ("batch_select_indices", [1]),
+            ("batch_repeat_interleave", [0, 0, 1, 1]),
+        ):
+            with self.subTest(operation=operation):
+                cache = MiniMaxCache(config)
+                keys = paddle.arange(16, dtype="float32").reshape([2, 1, 2, 4])
+                values = keys + 100
+                linear = paddle.arange(32, dtype="float32").reshape([2, 1, 4, 4])
+                cache.update(keys, values, 0)
+                cache.set_linear_cache(1, linear)
+                selected = paddle.to_tensor(indices, dtype="int64")
+                getattr(cache, operation)(2 if operation == "batch_repeat_interleave" else selected)
+                self.assertIsNone(cache.get_linear_cache(0))
+                self.assertTrue(paddle.equal_all(cache.layers[0].keys, keys[selected]))
+                self.assertTrue(paddle.equal_all(cache.layers[0].values, values[selected]))
+                self.assertTrue(paddle.equal_all(cache.get_linear_cache(1), linear[selected]))
+                self.assertEqual(cache.get_seq_length(0), 2)
+
+    def test_empty_linear_cache_batch_operations(self):
+        cache = MiniMaxCache(MiniMaxConfig(num_hidden_layers=2))
+        cache.reorder_cache(paddle.to_tensor([0], dtype="int64"))
+        cache.batch_repeat_interleave(2)
+        cache.batch_select_indices(paddle.to_tensor([0], dtype="int64"))
+        self.assertEqual(cache.linear_cache, [])
 
 
 class MiniMaxModelTester:

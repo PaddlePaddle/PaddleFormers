@@ -89,6 +89,24 @@ class MiniMaxCache(DynamicCache):
     def __len__(self):
         return max(super().__len__(), len(self.linear_cache))
 
+    def reorder_cache(self, beam_idx: paddle.Tensor):
+        super().reorder_cache(beam_idx)
+        self.linear_cache = [
+            None if state is None else paddle.index_select(state, beam_idx, axis=0) for state in self.linear_cache
+        ]
+
+    def batch_repeat_interleave(self, repeats: int):
+        super().batch_repeat_interleave(repeats)
+        self.linear_cache = [
+            None if state is None else paddle.repeat_interleave(state, repeats, axis=0) for state in self.linear_cache
+        ]
+
+    def batch_select_indices(self, indices: paddle.Tensor):
+        super().batch_select_indices(indices)
+        self.linear_cache = [
+            None if state is None else paddle.index_select(state, indices, axis=0) for state in self.linear_cache
+        ]
+
     def crop(self, max_length: int):
         raise RuntimeError("MiniMaxCache does not support `crop` method")
 
