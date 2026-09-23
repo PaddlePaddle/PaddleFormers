@@ -639,6 +639,22 @@ register_template(
 )
 
 register_template(
+    name="minimax",
+    format_user=StringFormatter(
+        slots=[
+            "<beginning_of_sentence>user name=user\n{{content}}<end_of_sentence>\n"
+            "<beginning_of_sentence>ai name=assistant\n"
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(
+        slots=["<beginning_of_sentence>system ai_setting=assistant\n{{content}}<end_of_sentence>\n"]
+    ),
+    chat_sep="<end_of_sentence>\n",
+    suffix=["<end_of_sentence>"],
+)
+
+register_template(
     name="paddleocr_vl",
     format_user=StringFormatter(slots=["User: {{content}}\nAssistant: "]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
