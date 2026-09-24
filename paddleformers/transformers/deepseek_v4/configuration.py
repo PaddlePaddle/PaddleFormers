@@ -68,6 +68,14 @@ class DeepseekV4Config(PretrainedConfig):
             num_hidden_layers. Values in {0, 4, 128}.
         csa_compress_rotary_base (`float`, *optional*, defaults to 160000.0):
             RoPE base for compressed KV positions.
+        indexcache_topk_pattern (`str`, *optional*):
+            IndexCache F/S pattern over the ratio=4 CSA layers, one character per
+            C4 layer. `F` runs that layer's own learned Indexer, `S` reuses the
+            nearest preceding `F` layer's top-k. Must start with `F`. `None`
+            disables IndexCache.
+        indexcache_multi_layer_distill (`bool`, *optional*, defaults to `False`):
+            Distill each `S` layer's attention target onto the producer `F`
+            layer's top-k probabilities. Requires `indexcache_topk_pattern`.
         enable_hyper_connections (`bool`, *optional*, defaults to `True`):
             Enable mHC multi-stream residual connections.
         num_residual_streams (`int`, *optional*, defaults to 4):
@@ -113,6 +121,32 @@ class DeepseekV4Config(PretrainedConfig):
         "index_topk": "dsa_index_topk",
     }
 
+    @classmethod
+    def from_dict(cls, config_dict, **kwargs):
+        """Load legacy checkpoints using only the canonical training field."""
+
+        def migrate(values):
+            values = dict(values)
+            if "index_topk_pattern" not in values:
+                return values
+            legacy = values.pop("index_topk_pattern")
+            current = values.get("indexcache_topk_pattern")
+
+            def normalize(value):
+                if value is None:
+                    return None
+                if not isinstance(value, str):
+                    raise ValueError("IndexCache pattern must be a string or None.")
+                return value.strip().upper() or None
+
+            legacy, current = normalize(legacy), normalize(current)
+            if legacy is not None and current is not None and legacy != current:
+                raise ValueError("Checkpoint index_topk_pattern and indexcache_topk_pattern disagree.")
+            values["indexcache_topk_pattern"] = current if current is not None else legacy
+            return values
+
+        return super().from_dict(migrate(config_dict), **migrate(kwargs))
+
     def __init__(
         self,
         # === Basic architecture ===
@@ -146,6 +180,9 @@ class DeepseekV4Config(PretrainedConfig):
         csa_compress_ratios=None,
         csa_compress_rotary_base=160000.0,
         csa_dense_mode=False,
+        # === IndexCache (CSA F/S top-k reuse) ===
+        indexcache_topk_pattern=None,
+        indexcache_multi_layer_distill=False,
         # === DSA Indexer ===
         dsa_index_n_heads=64,
         dsa_index_head_dim=128,
@@ -195,6 +232,8 @@ class DeepseekV4Config(PretrainedConfig):
         **kwargs,
     ):
         # Remap HF-style field names passed via kwargs to Fleet-internal names
+        if "index_topk_pattern" in kwargs:
+            raise ValueError("Use indexcache_topk_pattern; load legacy checkpoints through from_dict/from_pretrained.")
         for hf_name, fleet_name in self._HF_TO_FLEET_FIELD_MAP.items():
             if hf_name in kwargs:
                 val = kwargs.pop(hf_name)
@@ -245,6 +284,10 @@ class DeepseekV4Config(PretrainedConfig):
             self.csa_compress_ratios = csa_compress_ratios
         self.csa_compress_rotary_base = csa_compress_rotary_base
         self.csa_dense_mode = csa_dense_mode
+
+        # IndexCache (CSA F/S top-k reuse)
+        self.indexcache_topk_pattern = indexcache_topk_pattern
+        self.indexcache_multi_layer_distill = indexcache_multi_layer_distill
 
         # DSA Indexer
         self.dsa_index_n_heads = dsa_index_n_heads
