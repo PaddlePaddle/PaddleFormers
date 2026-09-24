@@ -279,15 +279,6 @@ DIST_CKPT_PATH = "dist_ckpt"
 DIST_MODEL_PATH = "dist_model"
 
 
-def _distributed_model_with_indexcache(model):
-    """Select Fleet's explicit IndexCache wrapper only for opted-in models."""
-    if getattr(getattr(model, "config", None), "indexcache_topk_pattern", None):
-        from paddlefleet.distributed.model import distributed_model
-
-        return distributed_model(model)
-    return fleet.distributed_model(model)
-
-
 class Trainer:
     """
     Trainer is a simple but feature-complete training and eval loop for PaddlePaddle, optimized for PaddleFormers.
@@ -4178,7 +4169,7 @@ class Trainer:
                 model._prepare_pipeline_inputs_func if hasattr(model, "_prepare_pipeline_inputs_func") else None
             )
 
-            model = _distributed_model_with_indexcache(model)
+            model = fleet.distributed_model(model)
             if prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = prepare_pipeline_inputs_func
             else:
@@ -4267,7 +4258,7 @@ class Trainer:
             elif ShardingOption.SHARD_OP in self.args.sharding:
                 if self.args.amp_master_grad:
                     mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
-                model = _distributed_model_with_indexcache(model)
+                model = fleet.distributed_model(model)
 
                 if self.args.amp_master_grad:
                     self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
@@ -4325,7 +4316,7 @@ class Trainer:
             if self.args.amp_master_grad:
                 mix_precision_utils.MixPrecisionLayer(model, dtype=self.amp_dtype)  # return value has no use
 
-            model = _distributed_model_with_indexcache(model)
+            model = fleet.distributed_model(model)
             assert self.optimizer is not None, "Tensor parallel mode need decorate optimizer, pelease init optimizer."
             if self.args.amp_master_grad:
                 self.optimizer = mix_precision_utils.MixPrecisionOptimizer(self.optimizer)
@@ -5503,10 +5494,10 @@ class Trainer:
             # Only accept wrapped model for pipeline_parallel mode
             if self.model is self.model_wrapped and isinstance(self.model_wrapped, PipelineLayer):
                 # NOTE(gongenlei): when do_train=False, do_eval=True, we need to wrap model for pipeline
-                self.model_wrapped = _distributed_model_with_indexcache(self.model_wrapped)
+                self.model_wrapped = fleet.distributed_model(self.model_wrapped)
             if isinstance(self.model_wrapped, LoRAModel) and isinstance(self.model_wrapped.model, PipelineLayer):
                 # NOTE(liuting): when do_train=False, do_eval=True, lora=True, we need to wrap model for pipeline
-                self.model_wrapped = _distributed_model_with_indexcache(self.model_wrapped.model)
+                self.model_wrapped = fleet.distributed_model(self.model_wrapped.model)
             model = self.model_wrapped
             if _prepare_pipeline_inputs_func is not None:
                 model._prepare_pipeline_inputs_func = _prepare_pipeline_inputs_func
