@@ -86,6 +86,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>gemma</td>
     </tr>
     <tr>
+      <td>T5Gemma</td>
+      <td>google/t5gemma-2b-2b-prefixlm、google/t5gemma-2b-2b-prefixlm-it、google/t5gemma-2b-2b-ul2、google/t5gemma-2b-2b-ul2-it、google/t5gemma-9b-9b-prefixlm、google/t5gemma-9b-9b-prefixlm-it、google/t5gemma-9b-9b-ul2、google/t5gemma-9b-9b-ul2-it</td>
+      <td>gemma</td>
+    </tr>
+    <tr>
       <td>GLM-4.5</td>
       <td>zai-org/GLM-4.5-Air-Base、zai-org/GLM-4.5-Air、zai-org/GLM-4.5-Base、zai-org/GLM-4.5</td>
       <td>glm4_moe</td>
