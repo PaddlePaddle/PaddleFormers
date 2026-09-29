@@ -913,6 +913,63 @@ class Qwen2VLPlugin(BasePlugin):
 
 
 @dataclass
+class Ovis2Plugin(BasePlugin):
+    """Expand Ovis2 image placeholders and prepare image patches for SFT."""
+
+    @override
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        if videos or audios:
+            raise ValueError("Ovis2 only supports image inputs.")
+
+        mm_inputs = {}
+        if images:
+            images = self._regularize_images(
+                images,
+                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
+                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+            )["images"]
+            mm_inputs.update(processor.image_processor(images, return_tensors="pd"))
+
+        return mm_inputs
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        messages = deepcopy(messages)
+        grids = mm_inputs.get("grids", [])
+        image_index = 0
+
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                content = content.replace(
+                    IMAGE_PLACEHOLDER,
+                    processor._image_placeholder(grids[image_index]),
+                    1,
+                )
+                image_index += 1
+            message["content"] = content
+
+        return messages
+
+
+@dataclass
 class Qwen2OmniPlugin(Qwen2VLPlugin):
     audio_bos_token: str = "<|audio_start|>"
     audio_eos_token: str = "<|audio_end|>"
@@ -1603,6 +1660,7 @@ class KimiK3Plugin(BasePlugin):
 PLUGINS = {
     "base": BasePlugin,
     "ernie_vl": ErnieVLPlugin,
+    "ovis2": Ovis2Plugin,
     "qwen2_vl": Qwen2VLPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,
     "qwen3_vl": Qwen3VLPlugin,
