@@ -189,6 +189,28 @@ import_structure = {
         "GraniteForCausalLM",
         "GraniteForCausalLMPipe",
     ],
+    "cohere.configuration": ["CohereConfig"],
+    "cohere.modeling": [
+        "CohereAttention",
+        "CohereDecoderLayer",
+        "CohereForCausalLM",
+        "CohereForCausalLMPipe",
+        "CohereLayerNorm",
+        "CohereModel",
+        "CoherePretrainedModel",
+        "CohereRotaryEmbedding",
+    ],
+    "seed_oss.configuration": ["SeedOssConfig"],
+    "seed_oss.modeling": [
+        "SeedOssModel",
+        "SeedOssPretrainedModel",
+        "SeedOssForCausalLM",
+        "SeedOssForCausalLMPipe",
+        "SeedOssForSequenceClassification",
+        "SeedOssForTokenClassification",
+        "SeedOssForQuestionAnswering",
+    ],
+    "seed_oss": [],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
@@ -379,13 +401,14 @@ import_structure = {
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
+    "cohere": [],
     "minicpm3": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
-    "granite": ["GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM"],
+    "granite": [],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
     "minicpm.configuration": ["MiniCPMConfig"],
@@ -414,6 +437,24 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "phi4_multimodal.configuration": [
+        "Phi4MultimodalAudioConfig",
+        "Phi4MultimodalConfig",
+        "Phi4MultimodalVisionConfig",
+    ],
+    "phi4_multimodal.feature_extraction": ["Phi4MultimodalFeatureExtractor"],
+    "phi4_multimodal.image_processor": ["Phi4MultimodalImageProcessor"],
+    "phi4_multimodal.modeling": [
+        "Phi4MMForCausalLM",
+        "Phi4MMForConditionalGeneration",
+        "Phi4MultimodalAudioModel",
+        "Phi4MultimodalForCausalLM",
+        "Phi4MultimodalForConditionalGeneration",
+        "Phi4MultimodalModel",
+        "Phi4MultimodalPreTrainedModel",
+        "Phi4MultimodalVisionModel",
+    ],
+    "phi4_multimodal.processor": ["Phi4MultimodalProcessor"],
     "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
     "glm4v_moe.modeling": [
         "Glm4vMoeForConditionalGeneration",
@@ -550,8 +591,11 @@ if TYPE_CHECKING:
     from .deepseek_v4 import *
     from .gpt_oss import *
     from .minicpm3 import *
+    from .cohere import *
     from .granite import *
+    from .seed_oss import *
     from .phi3 import *
+    from .phi4_multimodal import *
     from .gemma3_text import *
     from .gemma3 import *
     from .shieldgemma2 import *

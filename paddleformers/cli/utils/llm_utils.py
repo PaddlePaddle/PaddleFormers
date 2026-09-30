@@ -77,7 +77,7 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "bloom":
         target_modules = [".*query_key_value.*", ".*dense.*", ".*dense_h_to_4h.*", ".*dense_4h_to_h.*"]
-    elif model.config.model_type in ["llama", "llama4_text", "llama4", "jamba", "olmo2"]:
+    elif model.config.model_type in ["llama", "llama4_text", "llama4", "jamba", "olmo2", "cohere"]:
         target_modules = [
             ".*q_proj.*",
             ".*v_proj.*",
@@ -298,6 +298,16 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type == "seed_oss":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "gemma3_text":
         target_modules = [
             ".*q_proj.*",
@@ -414,6 +424,17 @@ def get_lora_target_modules(model):
             ".*o_proj.*",
             ".*gate_up_proj.*",
             ".*down_proj.*",
+        ]
+    elif model.config.model_type == "phi4_multimodal":
+        # Keep the outer PEFT adapter on the language backbone. Phi-4
+        # Multimodal already has its own vision/speech adapters, so broad
+        # patterns would either wrap the modality encoders or match those
+        # native adapter sublayers a second time.
+        target_modules = [
+            "model.layers.*.self_attn.qkv_proj",
+            "model.layers.*.self_attn.o_proj",
+            "model.layers.*.mlp.gate_up_proj",
+            "model.layers.*.mlp.down_proj",
         ]
     elif model.config.model_type in ("phi4", "phi4flash"):
         # phi4flash: hybrid decoder (Mamba SSM + Attention), only attention layers have Wqkv/out_proj
