@@ -228,6 +228,18 @@ import_structure = {
         "Gemma3Model",
         "Gemma3ForConditionalGeneration",
     ],
+    "ovis2.configuration": ["Ovis2Config", "Ovis2VisionConfig"],
+    "ovis2.image_processor": ["Ovis2ImageProcessor"],
+    "ovis2.processor": ["Ovis2Processor", "Ovis2ProcessorKwargs"],
+    "ovis2.modeling": [
+        "BaseModelOutputWithVisualIndicatorFeatures",
+        "Ovis2ModelOutputWithPast",
+        "Ovis2CausalLMOutputWithPast",
+        "Ovis2PreTrainedModel",
+        "Ovis2VisionModel",
+        "Ovis2Model",
+        "Ovis2ForConditionalGeneration",
+    ],
     "shieldgemma2.configuration": ["ShieldGemma2Config", "ShieldGemma2VisionConfig"],
     "shieldgemma2.modeling": [
         "ShieldGemma2ForImageClassification",
@@ -374,6 +386,7 @@ import_structure = {
     ],
     "llama": [],
     "qwen2": [],
+    "ovis2": [],
     "glm_ocr": [],
     "qwen3": [],
     "deepseek_v3": [],
@@ -562,6 +575,7 @@ if TYPE_CHECKING:
     from .llama import *
     from .optimization import *
     from .qwen2 import *
+    from .ovis2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *
     from .qwen2_vl import *
