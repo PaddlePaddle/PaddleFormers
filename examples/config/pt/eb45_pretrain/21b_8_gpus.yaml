@@ -16,6 +16,7 @@ tokenizer_name_or_path: examples/experiments/ernie_pretrain/ernie/src/tokenizers
 moe_router_bias_update_rate: 0.001
 moe_with_send_router_loss: False
 moe_group: ep
+moe_token_dispatcher_type: deepep
 use_moe: true
 
 # train
@@ -95,3 +96,7 @@ ernie_model_config:
         spaq: true
         transpose_split_quant: true
     use_combine_before_a2a: true
+
+save_safetensors: false
+overlap_p2p_comm: false
+batch_p2p_comm: true

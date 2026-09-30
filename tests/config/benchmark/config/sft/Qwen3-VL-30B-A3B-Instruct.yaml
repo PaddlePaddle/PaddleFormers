@@ -61,6 +61,7 @@ recompute_num_layers: 1
 
 moe_expert_fusion: true
 moe_deep_gemm: true
+moe_token_dispatcher_type: deepep
 
 apply_rope_fusion: False
 moe_router_force_load_balancing: false

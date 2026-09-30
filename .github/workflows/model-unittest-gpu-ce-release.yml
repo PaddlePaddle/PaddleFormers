@@ -24,6 +24,7 @@ on:
           - 'glm_moe'
           - 'qwen3_next'
           - 'qwen3moe'
+          - 'minicpm3'
           - 'phi3'
           - 'deepseek_v3'
           - 'qwen2_moe'
