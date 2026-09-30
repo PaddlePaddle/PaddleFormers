@@ -21,6 +21,7 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from functools import partial
+from types import MethodType
 from typing import Any, Callable, Literal, Optional, Union
 
 import paddle
@@ -54,6 +55,21 @@ from .auto.configuration import AutoConfig
 from .model_provider import ModelProviderMixin
 
 logger = logging.getLogger(__name__)
+
+
+def _copy_model_attributes(source, target):
+    """Copy model state while binding model methods to the converted instance."""
+    for attr_name in dir(source):
+        if attr_name.startswith("__"):
+            continue
+        try:
+            attr_value = getattr(source, attr_name)
+            if inspect.ismethod(attr_value) and attr_value.__self__ is source:
+                attr_value = MethodType(attr_value.__func__, target)
+            setattr(target, attr_name, attr_value)
+        except Exception:
+            # Some inherited descriptors are read-only on the target class.
+            continue
 
 
 class GPTModel(FleetGPTModel, PretrainedModel):
@@ -230,14 +246,7 @@ class GPTModelProvider(GPTConfig, ModelProviderMixin[GPTModel]):
             fleet_model = gpt_builder(self, num_stages=pp_size, seg_method=seg_method, loss_fn=loss_fn)
             # Convert original FleetGPTModel to our GPTModel to correctly inherit PretrainedModel methods
             model = GPTModel.__new__(GPTModel)
-            # Manually copy all attributes
-            for attr_name in dir(fleet_model):
-                if not attr_name.startswith("__"):
-                    try:
-                        attr_value = getattr(fleet_model, attr_name)
-                        setattr(model, attr_name, attr_value)
-                    except:
-                        pass
+            _copy_model_attributes(fleet_model, model)
 
         return model
 
