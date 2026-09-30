@@ -105,6 +105,13 @@ import_structure = {
     ],
     "diff_transformer.tokenizer": ["DiffTransformerTokenizer"],
     "diff_transformer": [],
+    "aya_vision.configuration": ["AyaVisionConfig"],
+    "aya_vision.modeling": ["AyaVisionPreTrainedModel", "AyaVisionModel", "AyaVisionForConditionalGeneration"],
+    "aya_vision.processor": ["AyaVisionProcessor"],
+    "cohere2.configuration": ["Cohere2Config"],
+    "cohere2.modeling": ["Cohere2PreTrainedModel", "Cohere2Model", "Cohere2ForCausalLM"],
+    "siglip_vision_model.configuration": ["SiglipVisionConfig"],
+    "siglip_vision_model.modeling": ["SiglipVisionPretrainedModel", "SiglipVisionModel"],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v32.configuration": ["DeepseekV32Config"],
     "deepseek_v32.modeling": [
