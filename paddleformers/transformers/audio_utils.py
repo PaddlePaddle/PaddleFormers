@@ -33,17 +33,19 @@ def hertz_to_mel(freq: Union[float, np.ndarray], mel_scale: str = "htk") -> Unio
         freq (`float` or `np.ndarray`):
             The frequency, or multiple frequencies, in hertz (Hz).
         mel_scale (`str`, *optional*, defaults to `"htk"`):
-            The mel frequency scale to use, `"htk"` or `"slaney"`.
+            The mel frequency scale to use, `"htk"`, `"kaldi"` or `"slaney"`.
 
     Returns:
         `float` or `np.ndarray`: The frequencies on the mel scale.
     """
 
-    if mel_scale not in ["slaney", "htk"]:
-        raise ValueError('mel_scale should be one of "htk" or "slaney".')
+    if mel_scale not in ["slaney", "htk", "kaldi"]:
+        raise ValueError('mel_scale should be one of "htk", "kaldi" or "slaney".')
 
     if mel_scale == "htk":
         return 2595.0 * np.log10(1.0 + (freq / 700.0))
+    elif mel_scale == "kaldi":
+        return 1127.0 * np.log(1.0 + (freq / 700.0))
 
     min_log_hertz = 1000.0
     min_log_mel = 15.0
@@ -67,17 +69,19 @@ def mel_to_hertz(mels: Union[float, np.ndarray], mel_scale: str = "htk") -> Unio
         mels (`float` or `np.ndarray`):
             The frequency, or multiple frequencies, in mels.
         mel_scale (`str`, *optional*, `"htk"`):
-            The mel frequency scale to use, `"htk"` or `"slaney"`.
+            The mel frequency scale to use, `"htk"`, `"kaldi"` or `"slaney"`.
 
     Returns:
         `float` or `np.ndarray`: The frequencies in hertz.
     """
 
-    if mel_scale not in ["slaney", "htk"]:
-        raise ValueError('mel_scale should be one of "htk" or "slaney".')
+    if mel_scale not in ["slaney", "htk", "kaldi"]:
+        raise ValueError('mel_scale should be one of "htk", "kaldi" or "slaney".')
 
     if mel_scale == "htk":
         return 700.0 * (10.0 ** (mels / 2595.0) - 1.0)
+    elif mel_scale == "kaldi":
+        return 700.0 * (np.exp(mels / 1127.0) - 1.0)
 
     min_log_hertz = 1000.0
     min_log_mel = 15.0
@@ -123,6 +127,7 @@ def mel_filter_bank(
     sampling_rate: int,
     norm: Optional[str] = None,
     mel_scale: str = "htk",
+    triangularize_in_mel_space: bool = False,
 ) -> np.ndarray:
     """
     Creates a frequency bin conversion matrix used to obtain a mel spectrogram. This is called a *mel filter bank*, and
@@ -158,7 +163,9 @@ def mel_filter_bank(
         norm (`str`, *optional*):
             If `"slaney"`, divide the triangular mel weights by the width of the mel band (area normalization).
         mel_scale (`str`, *optional*, defaults to `"htk"`):
-            The mel frequency scale to use, `"htk"` or `"slaney"`.
+            The mel frequency scale to use, `"htk"`, `"kaldi"` or `"slaney"`.
+        triangularize_in_mel_space (`bool`, *optional*, defaults to `False`):
+            Whether to construct the triangular filters in mel space instead of frequency space.
 
     Returns:
         `np.ndarray` of shape (`num_frequency_bins`, `num_mel_filters`): Triangular filter bank matrix. This is a
@@ -167,14 +174,23 @@ def mel_filter_bank(
     if norm is not None and norm != "slaney":
         raise ValueError('norm must be one of None or "slaney"')
 
-    # frequencies of FFT bins in Hz
-    fft_freqs = np.linspace(0, sampling_rate // 2, num_frequency_bins)
+    if num_frequency_bins < 2:
+        raise ValueError(f"Require num_frequency_bins: {num_frequency_bins} >= 2")
+    if min_frequency > max_frequency:
+        raise ValueError(f"Require min_frequency: {min_frequency} <= max_frequency: {max_frequency}")
 
     # center points of the triangular mel filters
     mel_min = hertz_to_mel(min_frequency, mel_scale=mel_scale)
     mel_max = hertz_to_mel(max_frequency, mel_scale=mel_scale)
     mel_freqs = np.linspace(mel_min, mel_max, num_mel_filters + 2)
     filter_freqs = mel_to_hertz(mel_freqs, mel_scale=mel_scale)
+
+    if triangularize_in_mel_space:
+        fft_bin_width = sampling_rate / ((num_frequency_bins - 1) * 2)
+        fft_freqs = hertz_to_mel(fft_bin_width * np.arange(num_frequency_bins), mel_scale=mel_scale)
+        filter_freqs = mel_freqs
+    else:
+        fft_freqs = np.linspace(0, sampling_rate // 2, num_frequency_bins)
 
     mel_filters = _create_triangular_filter_bank(fft_freqs, filter_freqs)
 

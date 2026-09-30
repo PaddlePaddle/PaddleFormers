@@ -1,11 +1,13 @@
 # 训练能力支持
 |模型|PT / CPT|SFT|SFT-LoRA|DPO|DPO-LoRA|
 |-|-|-|-|-|-|
+|Cohere|✓|✓|✓|✓|✓|
 |DeepSeekv3|✓|✓|✓|✓|✓|
 |🏛️ERNIE-4.5|✓|✓|✓|✓|✓|
 |Gemma3|✓|✓|✓|✓|✓|
 |GLM-4.5|✓|✓|✓|✓|✓|
 |GPT-OSS|✓|✓|✓|x|x|
+|Seed-OSS|✓|✓|✓|x|x|
 |Granite|✓|✓|✓|✓|✓|
 |LLaMA3|✓|✓|✓|✓|✓|
 |MiniMax-Text-01|✓|✓|✓|x|x|
@@ -15,6 +17,7 @@
 |Qwen3|✓|✓|✓|✓|✓|
 |Qwen3-Next|✓|✓|✓|✓|✓|
 |🏛️ERNIE-4.5-VL|x|✓|✓|x|x|
+|Phi-4-multimodal|x|✓|✓|x|x|
 |🏛️PaddleOCR-VL|x|✓|✓|x|x|
 |Qwen2.5-VL|x|✓|✓|x|x|
 |Qwen3-VL|x|✓|✓|x|x|
@@ -22,11 +25,13 @@
 # 分布式能力支持
 |模型|TP + SP|PP|EP|CP|DP|FSDP|
 |-|-|-|-|-|-|-|
+|Cohere|✓|✓|-|x|✓|✓|
 |DeepSeekv3|✓|✓|✓|x|✓|✓|
 |🏛️ERNIE-4.5|✓|✓|✓|x|✓|✓|
 |Gemma3|x|✓|-|x|✓|✓|
 |GLM-4.5|✓|✓|✓|✓|✓|✓|
 |GPT-OSS|✓|✓|x|x|✓|✓|
+|Seed-OSS|✓|✓|-|x|✓|✓|
 |Granite|✓|✓|-|x|✓|✓|
 |LLaMA3|✓|✓|-|x|✓|✓|
 |MiniMax-Text-01|x|x|x|x|✓|✓|
@@ -36,6 +41,7 @@
 |Qwen3|✓|✓|✓|✓|✓|✓|
 |Qwen3-Next|✓|✓|✓|x|✓|✓|
 |🏛️ERNIE-4.5-VL|✓|✓|✓|x|✓|✓|
+|Phi-4-multimodal|x|x|-|x|✓|✓|
 |🏛️PaddleOCR-VL|x|x|-|x|✓|✓|
 |Qwen2.5-VL|✓|x|-|x|✓|✓|
 |Qwen3-VL|x|x|✓|x|✓|✓|
