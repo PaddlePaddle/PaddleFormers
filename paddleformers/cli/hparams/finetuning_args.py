@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -19,6 +20,7 @@ from paddle.distributed import fleet
 
 from paddleformers.trainer import TrainingArguments
 from paddleformers.transformers.configuration_utils import llmmetaclass
+from paddleformers.utils.accuracy_target import ACCURACY_TARGET_MEGATRON
 from paddleformers.utils.log import logger
 
 DEFAULT_QUANTIZE_LAYERS = [".*mlp.*", ".*self_attn.*"]
@@ -72,17 +74,31 @@ class PreTrainingArguments(TrainingArguments):
         metadata={"help": "the logging interval of global_training_logs"},
     )
     internal_medicine_monitors: Optional[str] = field(
-        default="",
+        default="qk_stats,moe_health,massive_act,mhc_health,vha_health",
         metadata={
-            "help": "Comma-separated list of internal medicine monitors. Options: qk_stats,moe_health,massive_act,all"
+            "help": "Comma-separated list of internal medicine monitors. Options: "
+            "qk_stats,moe_health,massive_act,mhc_health,vha_health,all. Defaults to all five. "
+            "mhc_health is a hard no-op on models without HyperConnectionTransformerLayer, "
+            "vha_health likewise on models without VHA postmix. "
+            "To disable monitoring entirely, set internal_medicine_monitor_interval to 0."
         },
     )
     internal_medicine_monitor_interval: int = field(
         default=0,
         metadata={
             "help": "Step interval for internal medicine monitors. "
-            "0 (default) disables monitoring (no collection, no viewer). "
-            "Positive integer is the sampling interval."
+            "0 = disabled (default; no collection, no viewer). "
+            "Positive integer = enable monitoring with that sampling interval."
+        },
+    )
+    internal_medicine_debug_mode: bool = field(
+        default=False,
+        metadata={
+            "help": "Collect the metric families that grow per structural unit "
+            "(moe_health per-expert, mhc_health per hyper-connection cell). These are "
+            "~48% of the keys per step, so they are off by default and only worth the "
+            "cross-rank payload while debugging a specific model. "
+            "See internal_medicine.core.metric_families.DEBUG_ONLY_FAMILIES."
         },
     )
     internal_medicine_qk_row_stride: int = field(
@@ -91,14 +107,6 @@ class PreTrainingArguments(TrainingArguments):
             "help": "qk_stats query-row subsampling stride. 1 = exact full pass. "
             "Larger values (e.g. 16/32) subsample query rows to cut the O(S^2) cost "
             "on long sequences; mean/entropy/sink stay unbiased, max is a lower bound."
-        },
-    )
-    internal_medicine_log_dir: str = field(
-        default="",
-        metadata={
-            "help": "Directory for the per-step JSONL produced by the internal-medicine "
-            "callback (rank 0 only). File name is fixed to 'internal_medicine.jsonl'. "
-            "Empty -> use output_dir. Consumed by tools/internal_medicine/server.py."
         },
     )
     num_consecutive: int = field(
@@ -127,6 +135,11 @@ class PreTrainingArguments(TrainingArguments):
         default=False,
         metadata={"help": "shuffle num_consecutive or not"},
     )
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.internal_medicine_monitors and (self.internal_medicine_monitor_interval or 0) > 0:
+            self.internal_medicine_log_dir = os.path.join(self.output_dir, "internal_medicine")
 
     @property
     def need_data(self):
@@ -323,9 +336,36 @@ class FinetuningArguments(
         },
     )
 
-    use_accuracy_compatible: bool = field(
-        default=False,
-        metadata={"help": ("Whether to enable accuracy alignment with the Megatron framework.")},
+    # Annotated ``str`` rather than ``Union[bool, str]``: ``PdArgumentParser``
+    # only accepts ``Optional[X]`` for ``Union`` and raises on anything else.
+    # The default is the empty string, not "false": a non-empty string is
+    # *truthy*, and this field is truthiness-tested in about a dozen places, so a
+    # "false" default silently turns the accuracy-compatible kernels on for every
+    # run that never sets it. The authoritative conversion happens in
+    # ``LlmMetaConfig.set_llm_config`` via ``normalize_accuracy_target``, which
+    # also accepts a real bool and the stringified spellings, so a YAML ``true``
+    # still resolves to "megatron"; the falsy default here is defense in depth
+    # for any path that reads the args object without going through that funnel.
+    use_accuracy_compatible: str = field(
+        default="",
+        metadata={
+            "help": (
+                "Which reference the accuracy-compatible kernels reproduce bit-for-bit. "
+                "Empty/False (default) uses the throughput kernels; 'megatron' (also accepted "
+                "as True, its historical meaning) aligns with Megatron-LM; 'hf' aligns "
+                "with the HuggingFace/Torch reference. Normalized by "
+                "paddleformers.utils.accuracy_target.normalize_accuracy_target."
+            ),
+            # ``PdArgumentParser`` forwards unknown metadata keys straight to
+            # ``parser.add_argument``, and it only synthesizes these two for
+            # ``bool`` fields. Declaring them keeps the historical valueless
+            # spelling ``--use_accuracy_compatible`` working: it used to mean
+            # ``True``, whose canonical name is now "megatron". Without them the
+            # str field would demand an argument and every existing launch
+            # command using the bare flag would fail to parse.
+            "nargs": "?",
+            "const": ACCURACY_TARGET_MEGATRON,
+        },
     )
 
     def __post_init__(self):
