@@ -365,7 +365,7 @@ class Qwen2PretrainedModel(PretrainedModel):
         # lm_head
         if config.tie_word_embeddings:
             if is_fleet:
-                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}lm_head.weight"]
+                aoa_config["aoa_statements"] += [f"model.embed_tokens.weight -> {model_prefix}shared_head.weight"]
             else:
                 aoa_config["aoa_statements"] += ["model.embed_tokens.weight -> lm_head.weight"]
         else:
@@ -419,7 +419,7 @@ class Qwen2PretrainedModel(PretrainedModel):
 
         if config.tie_word_embeddings:
             if is_fleet:
-                aoa_statements += [f"{model_prefix}lm_head.weight -> _"]
+                aoa_statements += [f"{model_prefix}shared_head.weight -> _"]
             else:
                 aoa_statements += ["lm_head.weight -> _"]
         else:
