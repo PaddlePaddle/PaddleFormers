@@ -26,6 +26,7 @@ import_structure = {
     "flex_async_save": [],
     "zero_cost_checkpoint": [],
     "sharding_io": [],
+    "input_saver": [],
 }
 
 if TYPE_CHECKING:
