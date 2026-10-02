@@ -46,7 +46,7 @@ from .trainer_utils import (
     split_parallel_config,
 )
 
-# Conditionally import paddlefleet modules
+# Conditionally import paddlefleet modules for optional distributed training support.
 if is_paddlefleet_available():
     from paddlefleet.parallel_state import get_tensor_model_parallel_group
     from paddlefleet.training import initialize_fleet
