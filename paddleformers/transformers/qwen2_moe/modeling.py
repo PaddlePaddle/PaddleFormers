@@ -361,30 +361,24 @@ class Qwen2MoeSparseMoeBlock(nn.Layer):
             # this will be used to easily index which expert is going to be sollicitated
             expert_mask = paddle.nn.functional.one_hot(selected_experts, num_classes=self.num_experts).permute(2, 1, 0)
             # [num_experts, topk, bs*seq]
-            tokens_per_expert = expert_mask.reshape([expert_mask.shape[0], -1]).sum(axis=-1)
-            # Loop over all available experts in the model and perform the computation on each expert
-            for expert_idx in range(self.num_experts):
+            # Only iterate over experts that have at least one assigned token,
+            # skipping experts with no tokens avoids unnecessary computation and
+            # keeps the backward graph topology consistent with the HuggingFace implementation.
+            expert_hit = paddle.greater(
+                expert_mask.sum(axis=(-1, -2)), paddle.zeros([1], dtype=expert_mask.dtype)
+            ).nonzero()
+            for expert_idx in expert_hit:
+                expert_idx = int(expert_idx[0])
                 expert_layer = self.experts[expert_idx]
                 top_x, idx = paddle.where(expert_mask[expert_idx])
                 # Index the correct hidden states and compute the expert hidden state for
                 # the current expert. We need to make sure to multiply the output hidden
                 # states by `routing_weights` on the corresponding tokens (top-1 and top-2)
-                if tokens_per_expert[expert_idx] <= 0.1:
-                    if self.training and paddle.is_grad_enabled():
-                        fake_top_x = paddle.zeros(1, dtype=paddle.int64)
-                        fakse_current_state = hidden_states[fake_top_x, None].reshape([-1, hidden_states.shape[-1]])
-                        fake_state = expert_layer(fakse_current_state * 0)
-                        final_hidden_states.index_add_(
-                            index=fake_top_x, axis=0, value=fake_state.to(hidden_states.dtype)
-                        )
-                    else:
-                        continue
-                else:
-                    current_state = hidden_states[idx, None].reshape([-1, hidden_states.shape[-1]])
-                    current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
-                    final_hidden_states.index_add_(
-                        index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
-                    )
+                current_state = hidden_states[idx, None].reshape([-1, hidden_states.shape[-1]])
+                current_hidden_states = expert_layer(current_state) * routing_weights[idx, top_x].unsqueeze(-1)
+                final_hidden_states.index_add_(
+                    index=idx.reshape([-1]), axis=0, value=current_hidden_states.to(hidden_states.dtype)
+                )
 
         shared_expert_output = self.shared_expert(hidden_states)
         shared_expert_output = F.sigmoid(self.shared_expert_gate(hidden_states)) * shared_expert_output
