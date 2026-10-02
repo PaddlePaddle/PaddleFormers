@@ -49,8 +49,13 @@ def get_logits(batch_ids, max_retries=1, timeout=1200, retry_delay=1, prob_nums=
         Exception: Thrown when all retry attempts fail
     """
 
+    hcg = paddle.distributed.fleet.get_hybrid_communicate_group()
+    sd_rank = hcg.get_sharding_parallel_rank()
+    infer_server_ips = INFER_SERVER_IP.split(",")
+    infer_server_ip = infer_server_ips[sd_rank % len(infer_server_ips)]
+
     headers = {"Content_Type": "application/json"}
-    url = f"http://{INFER_SERVER_IP}:{INFER_SERVER_PORT}/generate"
+    url = f"http://{infer_server_ip}:{INFER_SERVER_PORT}/generate"
     payload = {
         "prompt_token_ids": batch_ids,
         "max_tokens": 1,
