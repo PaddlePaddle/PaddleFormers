@@ -1131,7 +1131,7 @@ class TrainingArguments:
         metadata={"help": "enable framework timer, will output timeline information in logging and visualdl."},
     )
     distributed_dataloader: Optional[bool] = field(
-        default=False, metadata={"help": "Whether to use distributed dataloader."}
+        default=True, metadata={"help": "Whether to use distributed dataloader."}
     )
     unified_checkpoint: Optional[bool] = field(
         default=False,
