@@ -32,6 +32,12 @@ if [ ! -f $CACHE_DIR/qwen/Qwen3-30B-A3B-Base.tar ]; then
   tar -xf Qwen3-30B-A3B-Base.tar
 fi
 
+minicpm_tiny_dir=$CACHE_DIR/minicpm/tiny-random-minicpm
+if [ ! -f $minicpm_tiny_dir/model_state.pdparams ]; then
+  mkdir -p $minicpm_tiny_dir
+  python $root_dir/PaddleFormers/scripts/minicpm/create_tiny_random.py --output-dir $minicpm_tiny_dir
+fi
+
 cd $root_dir/PaddleFormers/examples/experiments/paddlefleet
 
 # apt-get update
