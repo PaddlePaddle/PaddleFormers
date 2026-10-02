@@ -30,6 +30,12 @@ def get_container_type(container):
     return container_t
 
 
+class TestGetContainerType(unittest.TestCase):
+    def test_empty_container_type(self):
+        self.assertIs(get_container_type([]), list)
+        self.assertIs(get_container_type(()), tuple)
+
+
 class CommonTest(unittest.TestCase):
     def __init__(self, methodName="runTest"):
         super(CommonTest, self).__init__(methodName=methodName)
