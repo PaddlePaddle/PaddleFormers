@@ -98,6 +98,14 @@ tar -xvf complex_table_dataset.tar -C ./complex_table
 
 如果您想要基于自己的数据集进行训练，请参考 [PaddleFormers - 数据集格式文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/dataset_format.md#24-%E5%A4%9A%E6%A8%A1%E6%80%81%E6%8C%87%E4%BB%A4%E5%BE%AE%E8%B0%83sft%E6%95%B0%E6%8D%AE%E6%A0%BC%E5%BC%8F) 准备数据。
 
+在表格识别任务中，**推荐使用 OTSL 格式进行微调训练**，处理原始表格获得微调数据需要如下步骤：
+1. 准备待训练的表格图像集，并对每张表格图像进行标注，标注内容只需包含表格结构和单元格文本（及内部换行、公式等），无需带有表格样式信息（如CSS样式）：
+   - 若表格标注为 HTML 格式，则需要参考[转换代码](https://paddle-model-ecology.bj.bcebos.com/paddlex/convert_html_to_otsl.py)将其转为 OTSL 格式；
+   - 若表格标注已是 OTSL 格式，则无需再进行格式转换。
+2. 将表格图像、OTSL 格式标注构建为训练格式数据集，完成微调数据构建。
+
+此外，如果需要将 OTSL 格式表格转为 HTML 格式表格，可以参考[PaddleOCR-VL 后处理代码](https://github.com/PaddlePaddle/PaddleX/blob/release/3.4/paddlex/inference/pipelines/paddleocr_vl/uilts.py#L899)进行转换。
+
 
 
 ## 训练配置
@@ -699,7 +707,37 @@ td, th {
 |PaddleOCR-VL-1.5-<br>Table-SFT (LoRA)|0.9909|0.9703|0.9872|0.9687|
 
 ### 部署推理
-部署 PaddleOCR-VL-1.5 模型，请参考 [PaddleFormers - 模型部署文档](https://github.com/PaddlePaddle/PaddleFormers/blob/develop/docs/zh/deployment_guide.md) 和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)
+
+部署 PaddleOCR-VL 模型时，可以选取 **FastDeploy** 或 **vLLM** 两种方式之一进行部署推理。
+
+#### 基于 FastDeploy 部署推理
+基于 FastDeploy 部署推理 PaddleOCR-VL 模型，请参考 PaddlePaddle 官方提供的 [PaddleOCR-VL部署推理最佳实践](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)。
+
+在启动 FastDeploy 服务时，需要加载微调后的模型路径：
+
+```bash
+python -m fastdeploy.entrypoints.openai.api_server \
+    --model {MODEL_PATH} \  # 微调后模型的本地存储路径
+    ......
+```
+
+在 `--model` 配置项写入微调后模型的路径后 ，FastDeploy 会加载路径下的**模型权重**和**对话模板**，其他可调整参数请参考[PaddleOCR-VL部署推理最佳实践](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)，并基于文档编写代码，调用 FastDeploy 服务进行推理。
+
+
+#### 基于 vLLM 部署推理
+基于 vLLM 部署推理 PaddleOCR-VL 模型，请参考 vLLM 官方提供的[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)。
+
+在启动 vLLM 服务时，需要加载微调后的模型路径：
+
+```bash
+vllm serve {MODEL_PATH} \  # 微调后模型的本地存储路径
+    --chat-template {chat_template_path}/
+    ......
+```
+
+通过微调后的模型路径、对话模板路径（一般以 chat_template.jinja 为文件名存储在模型路径下）启动 vLLM 服务，vLLM 会加载给定路径的**模型权重**和**对话模板**进行部署，其他可调整参数请参考[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)和[vLLM官方文档](https://docs.vllm.ai/en/latest/usage)，并基于文档编写代码，调用 vLLM 服务进行推理。
+
+除此之外，如果需要结合前置版面区域检测排序模型进行推理，请参考[PaddleOCR官方文档](https://www.paddleocr.ai/latest/version3.x/pipeline_usage/PaddleOCR-VL.html#22-python)使用产线进行推理，并在实例化产线对象时指定版面区域检测排序模型、推理服务URL等信息。
 
 
 
