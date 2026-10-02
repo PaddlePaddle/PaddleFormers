@@ -553,6 +553,7 @@ class ShardingOption(ExplicitEnum):
     FSDP = "fsdp"
     # NO_SHARD = "no"
     OFFLOAD = "offload"
+    FSDP = "fsdp"
 
 
 def is_main_process(local_rank):
