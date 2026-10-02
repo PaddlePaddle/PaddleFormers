@@ -16,6 +16,7 @@
 |Qwen2|✓|✓|✓|✓|✓|
 |Qwen3|✓|✓|✓|✓|✓|
 |Qwen3-Next|✓|✓|✓|✓|✓|
+|DeepSeek-OCR-2|x|✓|✓|x|x|
 |🏛️ERNIE-4.5-VL|x|✓|✓|x|x|
 |Phi-4-multimodal|x|✓|✓|x|x|
 |🏛️PaddleOCR-VL|x|✓|✓|x|x|
@@ -40,6 +41,7 @@
 |Qwen2|✓|✓|x|x|✓|✓|
 |Qwen3|✓|✓|✓|✓|✓|✓|
 |Qwen3-Next|✓|✓|✓|x|✓|✓|
+|DeepSeek-OCR-2|x|x|-|x|x|x|
 |🏛️ERNIE-4.5-VL|✓|✓|✓|x|✓|✓|
 |Phi-4-multimodal|x|x|-|x|✓|✓|
 |🏛️PaddleOCR-VL|x|x|-|x|✓|✓|
