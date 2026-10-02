@@ -441,6 +441,13 @@ class PdArgumentParser(ArgumentParser):
                     # pdc_init_step > 0
                     logger.info(f"resume training process by pdc longjob with resume step: {pdc_init_step}")
                     resume_checkpoint = os.path.join(args.get("output_dir", None), f"checkpoint-{pdc_init_step}")
+                    # resuming from output_dir/checkpoint-N, which is always saved in paddle format
+                    if os.getenv("NORMAL_RESUME", "").lower() == "true":
+                        args["load_from_hf"] = False
+                        args["ignore_load_lr_and_optim"] = False
+                        logger.warning(
+                            "NORMAL_RESUME is set, force load_from_hf=False & ignore_load_lr_and_optim=False"
+                        )
                     if user_defined_resume_from_checkpoint is not None:
                         logger.warning(
                             f"pdc_init_step:{pdc_init_step} and resume_ckpt:{user_defined_resume_from_checkpoint} exist together, use resume_checkpoint:{resume_checkpoint}"
