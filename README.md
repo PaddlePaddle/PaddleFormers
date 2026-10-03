@@ -55,7 +55,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   <tbody>
     <!-- LLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="17" style="vertical-align: top;">LLM</td>
+      <td rowspan="18" style="vertical-align: top;">LLM</td>
       <td>DeepSeekv3</td>
       <td>deepseek-ai/DeepSeek-V3-Base、deepseek-ai/DeepSeek-V3、deepseek-ai/DeepSeek-V3-0324</td>
       <td>deepseek3</td>
@@ -111,6 +111,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>llama3</td>
     </tr>
     <tr>
+      <td>Llama-4-Text</td>
+      <td>meta-llama/Llama-4-Scout-17B-16E、meta-llama/Llama-4-Maverick-17B-128E</td>
+      <td>llama4</td>
+    </tr>
+    <tr>
       <td>MiniMax-Text-01</td>
       <td>MiniMaxAI/MiniMax-Text-01</td>
       <td>minimax</td>
@@ -147,7 +152,12 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     </tr>
     <!-- VLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="5" style="vertical-align: top;">VLM</td>
+      <td rowspan="6" style="vertical-align: top;">VLM</td>
+      <td>Llama Guard 4</td>
+      <td>meta-llama/Llama-Guard-4-12B</td>
+      <td>llama4_vl</td>
+    </tr>
+    <tr>
       <td>🏛️ERNIE-4.5-VL</td>
       <td>baidu/ERNIE-4.5-VL-28B-A3B-Base-PT、baidu/ERNIE-4.5-VL-28B-A3B-PT、baidu/ERNIE-4.5-VL-424B-A47B-Base-PT、baidu/ERNIE-4.5-VL-424B-A47B-PT、baidu/ERNIE-4.5-VL-28B-A3B-Thinking</td>
       <td>ernie_vl、ernie_vl_nothink</td>
