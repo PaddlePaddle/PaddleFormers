@@ -11,6 +11,7 @@
 |Granite|✓|✓|✓|✓|✓|
 |LLaMA3|✓|✓|✓|✓|✓|
 |LLaMA4-Text|✓|✓|✓|x|x|
+|MiniMax-Text-01|✓|✓|✓|x|x|
 |OLMo2|✓|✓|✓|✓|✓|
 |Phi4|✓|✓|✓|✓|✓|
 |Qwen2|✓|✓|✓|✓|✓|
@@ -36,6 +37,7 @@
 |Granite|✓|✓|-|x|✓|✓|
 |LLaMA3|✓|✓|-|x|✓|✓|
 |LLaMA4-Text|x|x|x|x|✓|✓|
+|MiniMax-Text-01|x|x|x|x|✓|✓|
 |OLMo2|✓|✓|-|x|✓|✓|
 |Phi4|✓|✓|-|x|✓|✓|
 |Qwen2|✓|✓|x|x|✓|✓|

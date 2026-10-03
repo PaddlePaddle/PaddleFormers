@@ -166,6 +166,13 @@ class TestTemplate(unittest.TestCase):
         )
         self.assertEqual(template.suffix, ["<|eot|>"])
 
+    def test_minimax_assistant_separator_is_not_duplicated(self):
+        template = TEMPLATES["minimax"]
+
+        self.assertEqual(template.format_assistant.apply(content="answer"), ["answer"])
+        self.assertEqual(template.chat_sep, "<end_of_sentence>\n")
+        self.assertEqual(template.suffix, ["<end_of_sentence>"])
+
 
 class TestReasoningTemplate(unittest.TestCase):
     """Tests for ReasoningTemplate."""
