@@ -1364,9 +1364,20 @@ class Trainer:
                     and self.args.zcc_save_ema_coef is not None
                     and self._is_fc_format_ema(ema_state_path)
                 ):
-                    self._ema_reshard_result = self._load_ema_with_reshard(
-                        ema_state_path, flex_ckpt_comm_method, worker_groups
-                    )
+                    with _sprof_span("ema_weight_reshard_check", collective=True):
+                        need_reshard = self.ema_weight_reshard(ema_state_path)
+                    if need_reshard:
+                        logger.info(
+                            "[EMA Reshard] EMA shard layout differs from checkpoint, performing EMA reshard..."
+                        )
+                        self._ema_reshard_result = self._load_ema_with_reshard(
+                            ema_state_path, flex_ckpt_comm_method, worker_groups
+                        )
+                        logger.info("[EMA Reshard] EMA reshard completed, results stored for subprocess")
+                    else:
+                        logger.info(
+                            "[EMA Reshard] EMA shards aligned with checkpoint, subprocess will load EMA directly from file"
+                        )
 
             with _sprof_span("opt_sharded_state_dict"):
                 optimizer_sharded_state_dict = self.optimizer.sharded_state_dict(model_sharded_state_dict)
@@ -1671,39 +1682,49 @@ class Trainer:
             return False
         return any(f.endswith(".metadata") for f in os.listdir(ema_state_path))
 
-    def _load_ema_with_reshard(self, ema_state_path, comm_method, worker_groups):
-        """Use FlexCheckpoint to reshard EMA state, return shared memory metas for subprocess."""
+    def _build_ema_target(self, allocate=True):
         model_sharded_state_dict = self.model.sharded_state_dict()
         opt_sharded = self.optimizer.sharded_state_dict(model_sharded_state_dict)
         ema_target = {}
 
         # master_weights portion: use .w_0 keys directly (same as optimizer master_weights key format)
         for k, sw in opt_sharded.items():
-            if k.endswith(".w_0"):
-                local_tensor = paddle.zeros(sw.local_tensor.shape, dtype=paddle.float32)
+            if not k.endswith(".w_0"):
+                continue
+            if allocate:
                 ema_target[k] = ShardedWeight(
                     key=sw.key,
-                    local_tensor=local_tensor,
+                    local_tensor=paddle.zeros(sw.local_tensor.shape, dtype=paddle.float32),
                     local_shape=sw.local_shape,
                     global_shape=sw.global_shape,
                     global_offset=sw.global_offset,
                     is_flattened=sw.is_flattened,
                     flattened_range=sw.flattened_range,
                 )
+            else:
+                ema_target[k] = sw
 
         # model_params portion: float32 items from model sharded state dict (no suffix change)
         for k, sw in model_sharded_state_dict.items():
-            if sw.local_tensor.dtype == paddle.float32:
-                local_tensor = paddle.zeros(sw.local_shape, dtype=paddle.float32)
+            if sw.local_tensor.dtype != paddle.float32:
+                continue
+            if allocate:
                 ema_target[k] = ShardedWeight(
                     key=sw.key,
-                    local_tensor=local_tensor,
+                    local_tensor=paddle.zeros(sw.local_shape, dtype=paddle.float32),
                     local_shape=sw.local_shape,
                     global_shape=sw.global_shape,
                     global_offset=sw.global_offset,
                     is_flattened=getattr(sw, "is_flattened", False),
                     flattened_range=getattr(sw, "flattened_range", None),
                 )
+            else:
+                ema_target[k] = sw
+        return ema_target
+
+    def _load_ema_with_reshard(self, ema_state_path, comm_method, worker_groups):
+        """Use FlexCheckpoint to reshard EMA state, return shared memory metas for subprocess."""
+        ema_target = self._build_ema_target(allocate=True)
 
         logger.info(f"[EMA Reshard] Loading {len(ema_target)} EMA tensors via dist.load_state_dict...")
         dist.load_state_dict(
@@ -1740,6 +1761,140 @@ class Trainer:
             f"shm files tracked: {len(self._ema_shm_filenames)}"
         )
         return ema_shared_result
+
+    def _ema_resumable_locally_sharded_fast(self, metadata_path, ema_state_path, ema_target, use_dist):
+        """Return True if every rank can load EMA from its own `{rank}_0.distcp`, None if undecided.
+
+        Like Paddle's check_resumable_locally_fast it never unpickles storage_metadata, but it also accepts
+        sharded tensors: each live shard must be one of `state_dict_metadata[key]`, and the rank's distcp
+        header must hold `key` with that shard's stored shape (a distcp holds one shard per key, 1-D if
+        flattened). The header records no offset, so when several shards of a key share the stored shape
+        (e.g. expert weights split by EP) the file is attributed to this rank's shard only if the parallel
+        strategy is unchanged since save (model_meta.json). Only a positive verdict is returned; anything
+        else is left to the stock checks. Issues exactly one all_gather_object whenever it gets that far.
+        """
+        try:
+            from paddle.distributed.flex_checkpoint.dcp.distcp_reader import (
+                scan_tensor_shapes,
+            )
+            from paddle.distributed.flex_checkpoint.dcp.metadata_reader import (
+                load_state_dict_metadata,
+            )
+            from paddle.distributed.flex_checkpoint.dcp.utils import (
+                extract_tensor_metadata,
+            )
+        except ImportError:
+            return None
+
+        start = time.time()
+        # Same shared file on every rank, so returning here is uniform and happens before any collective
+        state_dict_metadata = load_state_dict_metadata(metadata_path, allow_full_load=False)
+        if state_dict_metadata is None:
+            return None
+
+        def _range(meta):
+            return None if meta.flattened_range is None else tuple(meta.flattened_range)
+
+        def _shard_id(meta):
+            return (tuple(meta.global_offset), tuple(meta.local_shape), bool(meta.is_flattened), _range(meta))
+
+        def _stored_shape(meta):
+            if meta.is_flattened:
+                begin, end = meta.flattened_range
+                return (end - begin,)
+            return tuple(meta.local_shape)
+
+        rank = paddle.distributed.get_rank() if use_dist else 0
+        ckpt_file = os.path.join(ema_state_path, f"{rank}_0.distcp")
+        local_ok, num_ambiguous, reason = True, 0, None
+        try:
+            file_shapes = scan_tensor_shapes(ckpt_file)
+            for key, value in ema_target.items():
+                _, meta = extract_tensor_metadata(value)
+                if meta is None:
+                    continue
+                shards = state_dict_metadata.get(key)
+                if shards is None:
+                    local_ok, reason = False, f"'{key}' is not in the checkpoint"
+                    break
+                if not isinstance(shards, (list, tuple)):
+                    shards = [shards]
+                if _shard_id(meta) not in {_shard_id(s) for s in shards}:
+                    local_ok, reason = False, f"shard {_shard_id(meta)} of '{key}' is not in the checkpoint"
+                    break
+                want = _stored_shape(meta)
+                if file_shapes.get(key) != want:
+                    local_ok = False
+                    reason = f"'{key}' in file has shape {file_shapes.get(key)}, wanted {want}"
+                    break
+                if sum(_stored_shape(s) == want for s in shards) > 1:
+                    num_ambiguous += 1
+        except Exception as e:
+            local_ok, reason = False, f"{type(e).__name__}: {e}"
+
+        same_strategy = True
+        if local_ok and num_ambiguous > 0:
+            try:
+                checkpoint_path = os.path.dirname(os.path.normpath(ema_state_path))
+                same_strategy, err_msg = DistInfoCollectorValidator(self.args, self.hcg).check_same_strategy(
+                    checkpoint_path
+                )
+                if not same_strategy:
+                    reason = f"parallel strategy changed ({err_msg})"
+            except Exception as e:
+                same_strategy, reason = False, f"cannot verify parallel strategy: {type(e).__name__}: {e}"
+
+        if not (local_ok and same_strategy):
+            logger.info(f"[EMA Reshard][fast_check] rank {rank} cannot confirm local load: {reason}")
+
+        results = [(local_ok, same_strategy, num_ambiguous)]
+        if use_dist:
+            results = []
+            paddle.distributed.all_gather_object(results, (local_ok, same_strategy, num_ambiguous))
+        num_ok = sum(ok and same for ok, same, _ in results)
+        logger.info(
+            f"[EMA Reshard][fast_check] {num_ok}/{len(results)} ranks confirmed local load from distcp headers "
+            f"(this rank: {len(ema_target)} tensors, {num_ambiguous} matched by shape+strategy) "
+            f"in {time.time() - start:.3f}s without loading storage_metadata"
+        )
+        return True if num_ok == len(results) else None
+
+    def ema_weight_reshard(self, ema_state_path):
+        """Return True (need reshard) if any rank's EMA shards are not all found in its own `{rank}_0.distcp`."""
+        from paddle.distributed.flex_checkpoint.dcp.load_state_dict import (
+            get_checkpoint_files,
+        )
+        from paddle.distributed.flex_checkpoint.dcp.metadata_manager import (
+            MetadataManager,
+        )
+        from paddle.distributed.flex_checkpoint.dcp.utils import check_resumable_locally
+
+        try:
+            # Paddle PR #79787: decides from state_dict_metadata + distcp header, skipping the full metadata load
+            from paddle.distributed.flex_checkpoint.dcp.fast_resumable import (
+                check_resumable_locally_fast,
+            )
+        except ImportError:
+            check_resumable_locally_fast = None
+
+        metadata_files, _ = get_checkpoint_files(ema_state_path)
+        metadata_path = os.path.join(ema_state_path, metadata_files[0])
+        ema_target = self._build_ema_target(allocate=False)
+        use_dist = paddle.distributed.get_world_size() > 1
+
+        if self._ema_resumable_locally_sharded_fast(metadata_path, ema_state_path, ema_target, use_dist):
+            return False
+
+        if check_resumable_locally_fast is not None:
+            # None means the fast check does not apply (e.g. sharded tensors); the verdict is identical on all ranks
+            resumable = check_resumable_locally_fast(metadata_path, ema_state_path, ema_target, use_dist, None)
+            if resumable is not None:
+                return not resumable
+            logger.info("[EMA Reshard] fast resumable check declined, falling back to full metadata check")
+
+        metadata_manager = MetadataManager()
+        metadata_manager.set_metadata_list([paddle.load(metadata_path)])
+        return not check_resumable_locally(ema_state_path, ema_target, metadata_manager, use_dist, None)
 
     def prepare_resume_from_checkpoint(self, args, resume_from_checkpoint):
         logger.info(f"Starting training from resume_from_checkpoint : {resume_from_checkpoint}")
