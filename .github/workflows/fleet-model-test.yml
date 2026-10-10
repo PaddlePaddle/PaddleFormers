@@ -159,13 +159,13 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/release/0.4/PaddleFleet.tar --no-check-certificate
+          rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout release/0.4
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
@@ -318,13 +318,13 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/release/0.4/PaddleFleet.tar --no-check-certificate
+          rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout release/0.4
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
@@ -611,13 +611,13 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/release/0.4/PaddleFleet.tar --no-check-certificate
+          rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout release/0.4
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
