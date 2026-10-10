@@ -159,18 +159,20 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/release/0.4/PaddleFleet.tar --no-check-certificate
+          rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout release/0.4
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
           # python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          # Pin pyarrow: newer pyarrow (>=26) requires NumPy>=2.0, but paddle locks numpy to 1.26.4
+          python -m pip install pyarrow==25.0.1
           wget -q --no-proxy https://paddle-qa.bj.bcebos.com/paddleformers/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           echo "paddle commit:"
@@ -318,18 +320,20 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/release/0.4/PaddleFleet.tar --no-check-certificate
+          rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout release/0.4
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
           # python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          # Pin pyarrow: newer pyarrow (>=26) requires NumPy>=2.0, but paddle locks numpy to 1.26.4
+          python -m pip install pyarrow==25.0.1
           # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/
@@ -611,18 +615,20 @@ jobs:
           git pull --no-edit origin pull/${PR_ID}/head
           export UV_SKIP_WHEEL_FILENAME_CHECK=1
           fleet_commit=$(python scripts/ci_utils/get_fleet_commit.py)
-          git clone https://github.com/PaddlePaddle/PaddleFleet.git
+          wget -q --no-proxy https://paddle-qa.bj.bcebos.com/CodeSync/release/0.4/PaddleFleet.tar --no-check-certificate
+          rm -rf PaddleFleet && tar xf PaddleFleet.tar && rm -rf PaddleFleet.tar
           cd PaddleFleet
           git config --global --add safe.directory /workspace/PaddleFormers
           git config user.name "PaddleCI"
           git config user.email "paddle_ci@example.com"
           git config pull.rebase false
-          git checkout release/0.4
           git reset --hard $fleet_commit
           CUDA_VERSION=CUDA129 scripts/install_ops_wheel.sh
           cd ..
           # python -m pip install --pre  paddlefleet-ops --index-url https://www.paddlepaddle.org.cn/packages/nightly/cu129/ --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url https://pypi.tuna.tsinghua.edu.cn/simple
           pip install -e ".[paddlefleet]" --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/ --extra-index-url=https://www.paddlepaddle.org.cn/packages/nightly/cu129/
+          # Pin pyarrow: newer pyarrow (>=26) requires NumPy>=2.0, but paddle locks numpy to 1.26.4
+          python -m pip install pyarrow==25.0.1
           # wget -q --no-proxy --no-check-certificate https://paddle-github-action.cdn.bcebos.com/PaddleFleet/release/0.2/latest/cu129/paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl
           # pip uninstall paddlefleet -y
           # pip install paddlefleet-0.0.0-cp310-cp310-linux_x86_64.whl --extra-index-url=https://www.paddlepaddle.org.cn/packages/stable/cu129/

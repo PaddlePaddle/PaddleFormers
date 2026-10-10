@@ -145,7 +145,10 @@ install_requirements() {
         #paddlefleet_ops
         install_ops_wheel_release
     fi
-    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple 
+    python -m pip install -r tests/requirements.txt -i https://pypi.org/simple
+
+    # Pin pyarrow: newer pyarrow (>=26) requires NumPy>=2.0, but paddle locks numpy to 1.26.4
+    python -m pip install pyarrow==25.0.1 -i https://pypi.org/simple
 
     echo "paddle commit:"
     python -c "import paddle; print(paddle.version.commit)"
