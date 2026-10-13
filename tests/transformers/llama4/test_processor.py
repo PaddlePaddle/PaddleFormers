@@ -13,13 +13,20 @@
 # limitations under the License.
 
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import numpy as np
+import paddle
 from PIL import Image
 from tokenizers import Tokenizer, models, pre_tokenizers
 from transformers import PreTrainedTokenizerFast
 
-from paddleformers.datasets.template.mm_plugin import Llama4Plugin
+from paddleformers.datasets.template.mm_plugin import (
+    BasePlugin,
+    Llama4Plugin,
+    MolmoPlugin,
+)
 from paddleformers.transformers import Llama4ImageProcessor, Llama4Processor
 from paddleformers.transformers.llama4.image_processor import (
     find_supported_resolutions,
@@ -73,6 +80,39 @@ class Llama4ProcessorTest(unittest.TestCase):
     def setUp(self):
         self.tokenizer = get_tokenizer()
         self.processor = Llama4Processor(Llama4ImageProcessor(), self.tokenizer)
+
+    def test_image_plugins_keep_independent_message_handlers(self):
+        self.assertIsNot(Llama4Plugin.process_messages, BasePlugin.process_messages)
+        self.assertIsNot(MolmoPlugin.process_messages, Llama4Plugin.process_messages)
+        # Inheriting BasePlugin's dataclass does not initialize subclass fields.
+        plugin = MolmoPlugin(
+            image_token="<im_patch>", video_token=None, audio_token=None, image_start_token="<custom_start>"
+        )
+        self.assertEqual(plugin.image_start_token, "<custom_start>")
+
+    def test_molmo_image_messages_do_not_require_llama4_aspect_ratios(self):
+        tokenizer = Mock()
+        tokenizer.encode.return_value = [42]
+        tokenizer.decode.return_value = "<im_start><im_patch><im_end>"
+        processor = SimpleNamespace(tokenizer=tokenizer, image_processor=object())
+        plugin = MolmoPlugin(image_token="<im_patch>", video_token=None, audio_token=None)
+        messages = [{"role": "user", "content": "<image>What is shown?"}]
+        processed = plugin.process_messages(
+            messages, [object()], [], [], {"input_ids": paddle.to_tensor([7, 8, 9, 42])}, processor
+        )
+        self.assertEqual(processed[0]["content"], "<im_start><im_patch><im_end> User: What is shown?")
+        tokenizer.decode.assert_called_once_with([7, 8, 9], skip_special_tokens=False)
+        self.assertEqual(messages[0]["content"], "<image>What is shown?")
+
+    def test_molmo_text_messages_keep_user_prefix(self):
+        tokenizer = Mock()
+        tokenizer.encode.return_value = [42]
+        processor = SimpleNamespace(tokenizer=tokenizer, image_processor=object())
+        plugin = MolmoPlugin(image_token="<im_patch>", video_token=None, audio_token=None)
+        messages = [{"role": "user", "content": "Hello"}]
+        processed = plugin.process_messages(messages, [], [], [], {}, processor)
+        self.assertEqual(processed[0]["content"], " User: Hello")
+        self.assertEqual(messages[0]["content"], "Hello")
 
     def test_plugin_preserves_native_tile_selection(self):
         image = Image.new("RGB", (1200, 900))
