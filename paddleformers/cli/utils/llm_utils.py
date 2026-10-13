@@ -89,6 +89,15 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*gate_up_fused_proj.*",
         ]
+    elif model.config.model_type == "molmo":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*ff_proj.*",
+            ".*ff_out.*",
+        ]
     elif model.config.model_type == "opt":
         target_modules = [
             ".*project_in.*",
@@ -190,7 +199,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
             # Projector
-            ".*merger.mlp\.[02].*",
+            r".*merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "qwen3_vl":
         target_modules = [
@@ -482,7 +491,7 @@ def get_lora_target_modules(model):
             "model.visual.*up_proj.*",
             "model.visual.*down_proj.*",
             # alinger
-            "model.visual.merger.mlp\.[02].*",
+            r"model.visual.merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "glm_ocr":
         target_modules = [
