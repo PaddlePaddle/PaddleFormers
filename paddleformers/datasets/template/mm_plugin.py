@@ -1501,6 +1501,8 @@ class Llama4Plugin(BasePlugin):
         if imglens is not None:
             images = _make_batched_images(images, imglens)
         return processor.image_processor(images, return_tensors="pd")
+
+
 class MolmoPlugin(BasePlugin):
     image_start_token: str = "<im_start>"
     image_end_token: str = "<im_end>"
