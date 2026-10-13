@@ -145,6 +145,27 @@ class TestTemplate(unittest.TestCase):
         with self.assertRaises(ValueError):
             register_template(name="default")  # already registered
 
+    def test_llama4_template_uses_official_header_tokens(self):
+        template = TEMPLATES["llama4"]
+        self.assertEqual(
+            template.format_user.apply(content="hello"),
+            [("<|header_start|>user<|header_end|>\n\nhello<|eot|>" "<|header_start|>assistant<|header_end|>\n\n")],
+        )
+        self.assertEqual(
+            template.format_system.apply(content="system"),
+            ["<|header_start|>system<|header_end|>\n\nsystem<|eot|>"],
+        )
+        self.assertEqual(
+            template.format_observation.apply(content="tool output"),
+            [
+                (
+                    "<|header_start|>ipython<|header_end|>\n\ntool output<|eot|>"
+                    "<|header_start|>assistant<|header_end|>\n\n"
+                )
+            ],
+        )
+        self.assertEqual(template.suffix, ["<|eot|>"])
+
     def test_minimax_assistant_separator_is_not_duplicated(self):
         template = TEMPLATES["minimax"]
 
