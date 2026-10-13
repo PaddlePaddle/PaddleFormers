@@ -59,7 +59,7 @@ jobs:
         id: check_skip
         shell: bash
         run: |
-          echo "请前往PaddleFleet仓库开发develop分支"
+          echo "Formers 封版，请去 Fleet 开发"
           exit 1
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             labels='${{ toJson(github.event.pull_request.labels.*.name) }}'
