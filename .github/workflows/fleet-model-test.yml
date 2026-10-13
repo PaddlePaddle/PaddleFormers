@@ -102,6 +102,8 @@ jobs:
     steps:
       - name: Determine the runner
         run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
           gpu_id=$(( $(echo $PWD | awk -F'/' '{print $3}' | awk -F'-' '{print $2}') - 1 ))
           echo GPU_DEVICES="$gpu_id" >> $GITHUB_ENV
 
@@ -109,6 +111,8 @@ jobs:
         env:
           GPU_DEVICES: ${{ env.GPU_DEVICES }}
         run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> ${{ github.env }}
           docker pull $docker_image
@@ -271,6 +275,8 @@ jobs:
     steps:
       - name: Check docker image and run container
         run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> ${{ github.env }}
           docker pull $docker_image
@@ -567,6 +573,8 @@ jobs:
     steps:
       - name: Check docker image and run container
         run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
           container_name=${TASK}-$(date +%Y%m%d-%H%M%S)
           echo "container_name=${container_name}" >> ${{ github.env }}
           docker pull $docker_image

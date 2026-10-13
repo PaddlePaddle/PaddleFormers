@@ -20,6 +20,11 @@ jobs:
       repo_archive_url: ${{ steps.set_output.outputs.repo_archive_url }}
     steps:
       - name: Clone PaddleFormers
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          echo "请前往PaddleFleet仓库开发develop分支"
+          exit 1
+      - name: Checkout PaddleFormers
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'pull_request'
