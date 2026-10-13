@@ -58,6 +58,7 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
         "phi4_multimodal": ("Phi4MultimodalImageProcessor"),
         "gemma3": ("Gemma3ImageProcessor", "Gemma3ImageProcessorFast"),
+        "ovis2": ("Ovis2ImageProcessor"),
         "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
