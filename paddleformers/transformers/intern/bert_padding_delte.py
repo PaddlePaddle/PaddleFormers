@@ -83,10 +83,10 @@ def unpad_input(hidden_states, attention_mask):
         cu_seqlens: (batch + 1), the cumulative sequence lengths, used to index into hidden_states.
         max_seqlen_in_batch: int
     """
-    seqlens_in_batch = paddle.sum(attention_mask, axis=-1, dtype="int32")
+    seqlens_in_batch = paddle.sum(attention_mask, axis=-1, dtype=paddle.int32)
     indices = paddle.nonzero(attention_mask.flatten(), as_tuple=False).flatten()
     max_seqlen_in_batch = paddle.max(seqlens_in_batch).item()
-    cu_seqlens = F.pad(paddle.cumsum(seqlens_in_batch, axis=0), [1, 0])
+    cu_seqlens = F.pad(paddle.cumsum(seqlens_in_batch, axis=0, dtype=paddle.int32), [1, 0])
 
     return (
         index_first_axis(hidden_states.reshape([-1] + list(hidden_states.shape[2:])), indices),
