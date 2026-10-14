@@ -154,7 +154,7 @@ class MergeModel:
         positions = divide_positions(len(key_list), dist.get_world_size())
         local_keys = key_list[positions[rank] : positions[rank + 1]]
         for ii in range(len(positions) - 1):
-            shard_file = f"{self.merge_config.merge_prefix}-{ii+1:05d}-of-{dist.get_world_size():05d}.safetensors"
+            shard_file = f"{self.merge_config.merge_prefix}-{ii + 1:05d}-of-{dist.get_world_size():05d}.safetensors"
             for key in key_list[positions[ii] : positions[ii + 1]]:
                 index["weight_map"][key] = shard_file
                 index["metadata"]["total_size"] += int(
@@ -230,7 +230,7 @@ class MergeModel:
         # Save safetensor file
         save_file_name = os.path.join(
             self.merge_config.output_path,
-            f"{self.merge_config.merge_prefix}-{rank+1:05d}-of-{dist.get_world_size():05d}.safetensors",
+            f"{self.merge_config.merge_prefix}-{rank + 1:05d}-of-{dist.get_world_size():05d}.safetensors",
         )
         save_file(
             merge_state_dict,
@@ -361,7 +361,7 @@ class MergeModel:
             else:
                 local_keys = key_list[positions[rank] : positions[rank + 1]]
                 shard_file = (
-                    f"{self.merge_config.merge_prefix}-{rank+1:05d}-of-{dist.get_world_size():05d}.safetensors"
+                    f"{self.merge_config.merge_prefix}-{rank + 1:05d}-of-{dist.get_world_size():05d}.safetensors"
                 )
                 if self.merge_config.tensor_type == "np":
                     self.shard_merge_np(local_keys, index_list, shard_file)
@@ -370,7 +370,7 @@ class MergeModel:
 
                 for i in range(len(positions) - 1):
                     shard_file = (
-                        f"{self.merge_config.merge_prefix}-{i+1:05d}-of-{dist.get_world_size():05d}.safetensors"
+                        f"{self.merge_config.merge_prefix}-{i + 1:05d}-of-{dist.get_world_size():05d}.safetensors"
                     )
                     for k in key_list[positions[i] : positions[i + 1]]:
                         index["weight_map"][k] = shard_file
@@ -378,7 +378,7 @@ class MergeModel:
             threads = []
             for i in range(len(positions) - 1):
                 shard_file = (
-                    f"{self.merge_config.merge_prefix}-{i+1:05d}-of-{self.merge_config.n_process:05d}.safetensors"
+                    f"{self.merge_config.merge_prefix}-{i + 1:05d}-of-{self.merge_config.n_process:05d}.safetensors"
                 )
                 t = Process(
                     target=self.shard_merge_np if self.merge_config.tensor_type == "np" else self.shard_merge_pd,
@@ -688,7 +688,7 @@ class MergeModel:
                         tensor += lora_A_tensor @ lora_B_tensor * scaling
                         tensor = tensor.cpu().numpy()
             merge_state_dict[k] = tensor
-        if self.merge_config.save_to_hf and self.transpose_weight_keys is not None:
+        if self.merge_config.save_safetensors and self.transpose_weight_keys is not None:
             merge_state_dict = ConversionMixin.convert_transpose_selected_weights(
                 merge_state_dict, self.transpose_weight_keys
             )
@@ -698,7 +698,7 @@ class MergeModel:
         save_file(
             merge_state_dict,
             save_file_name,
-            metadata={"format": "pt"} if self.merge_config.save_to_hf else {"format": "np"},
+            metadata={"format": "pt"} if self.merge_config.save_safetensors else {"format": "np"},
         )
         logger.info(f"Model weights saved in {save_file_name}.")
 
@@ -760,12 +760,12 @@ class MergeModel:
                 divided_key_list = divide_lora_key_list(key_list, dist.get_world_size(), lora_config)
                 local_keys = divided_key_list[rank]
                 shard_file = (
-                    f"{self.merge_config.merge_prefix}-{rank+1:05d}-of-{dist.get_world_size():05d}.safetensors"
+                    f"{self.merge_config.merge_prefix}-{rank + 1:05d}-of-{dist.get_world_size():05d}.safetensors"
                 )
                 self.shard_lora_merge(base_index, shard_file, lora_config, file_type_list, key_list=local_keys)
                 for i in range(len(divided_key_list)):
                     shard_file = (
-                        f"{self.merge_config.merge_prefix}-{i+1:05d}-of-{dist.get_world_size():05d}.safetensors"
+                        f"{self.merge_config.merge_prefix}-{i + 1:05d}-of-{dist.get_world_size():05d}.safetensors"
                     )
                     for k in divided_key_list[i]:
                         index["weight_map"][k] = shard_file
@@ -774,7 +774,7 @@ class MergeModel:
             threads = []
             for i in range(len(divided_key_list)):
                 shard_file = (
-                    f"{self.merge_config.merge_prefix}-{i+1:05d}-of-{self.merge_config.n_process:05d}.safetensors"
+                    f"{self.merge_config.merge_prefix}-{i + 1:05d}-of-{self.merge_config.n_process:05d}.safetensors"
                 )
                 t = Process(
                     target=self.shard_lora_merge,
@@ -830,7 +830,7 @@ class MergeModel:
         key_list = list(base_state_dict.keys())
         positions = divide_positions(len(key_list), dist.get_world_size())
         for ii in range(len(positions) - 1):
-            shard_file = f"{self.merge_config.merge_prefix}-{ii+1:05d}-of-{dist.get_world_size():05d}.safetensors"
+            shard_file = f"{self.merge_config.merge_prefix}-{ii + 1:05d}-of-{dist.get_world_size():05d}.safetensors"
             for key in key_list[positions[ii] : positions[ii + 1]]:
                 index["weight_map"][key] = shard_file
                 index["metadata"]["total_size"] += int(
@@ -876,7 +876,7 @@ class MergeModel:
         # Save safetensor file
         save_file_name = os.path.join(
             self.merge_config.output_path,
-            f"{self.merge_config.merge_prefix}-{rank+1:05d}-of-{dist.get_world_size():05d}.safetensors",
+            f"{self.merge_config.merge_prefix}-{rank + 1:05d}-of-{dist.get_world_size():05d}.safetensors",
         )
         save_file(
             merge_state_dict,

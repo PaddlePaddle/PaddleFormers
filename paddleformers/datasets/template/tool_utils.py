@@ -90,6 +90,29 @@ LLAMA3_TOOL_PROMPT = (
     "Do not use variables.\n\n{tool_text}"
 )
 
+LLAMA4_TOOL_PROMPT = (
+    "You are a helpful assistant and an expert in function composition. You can answer general questions using your "
+    "internal knowledge OR invoke functions when necessary.\n"
+    "Here is a list of functions in JSON format that you can invoke:\n{tool_text}\n"
+    "Should you decide to return the function call(s), put them in the format of "
+    "[func1(param_name=param_value, ...), func2(...)].\n"
+    "Do not include any other text in the response when returning function calls."
+)
+
+SEED_OSS_TOOL_PROMPT = (
+    "You are Doubao, a helpful AI assistant. You may call one or more functions to assist with the user query."
+    "{tool_text}\n"
+    "工具调用请遵循如下格式:\n"
+    "<seed:tool_call>\n"
+    "<function=example_function_name>\n"
+    "<parameter=example_parameter_1>value_1</parameter>\n"
+    "<parameter=example_parameter_2>This is the value for the second parameter\n"
+    "that can span\n"
+    "multiple lines</parameter>\n"
+    "</function>\n"
+    "</seed:tool_call>\n"
+)
+
 
 @dataclass
 class ToolUtils(ABC):
@@ -288,6 +311,96 @@ class Llama3ToolUtils(ToolUtils):
         return json.dumps(function_objects[0] if len(function_objects) == 1 else function_objects, ensure_ascii=False)
 
 
+class Llama4ToolUtils(ToolUtils):
+    r"""Llama 4 zero-shot tool calling format.
+
+    Reference: https://github.com/meta-llama/llama-models/blob/main/models/llama4/prompt_format.md
+    """
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        normalized_tools = [tool.get("function", {}) if tool.get("type") == "function" else tool for tool in tools]
+        tool_text = json.dumps(normalized_tools, indent=4, ensure_ascii=False)
+        return LLAMA4_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_texts = []
+        for name, arguments in functions:
+            parsed_arguments = json.loads(arguments)
+            argument_text = ", ".join(
+                f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in parsed_arguments.items()
+            )
+            function_texts.append(f"{name}({argument_text})")
+
+        return "[" + ", ".join(function_texts) + "]"
+
+
+class SeedOssToolUtils(ToolUtils):
+    r"""Seed-OSS tool using template aligned with official chat_template.jinja."""
+
+    @override
+    @staticmethod
+    def tool_formatter(tools: list[dict[str, Any]]) -> str:
+        tool_text = ""
+        for tool in tools:
+            tool = tool.get("function", tool) if tool.get("type") == "function" else tool
+            if not tool:
+                continue
+
+            properties = tool.get("parameters", {}).get("properties", {})
+            required = tool.get("parameters", {}).get("required", [])
+            params = ", ".join(
+                f"{name}: {SeedOssToolUtils._py_type(spec.get('type'))}" for name, spec in properties.items()
+            )
+            tool_text += f"\n\nFunction:\ndef {tool['name']}({params}):\n    \"\"\"\n"
+            if tool.get("description", ""):
+                tool_text += f"    {tool['description'].strip()}\n\n"
+            if properties:
+                tool_text += "    Args:"
+                for name, spec in properties.items():
+                    required_text = "[必填]" if name in required else "[选填]"
+                    description = spec.get("description", "")
+                    tool_text += (
+                        f"\n    - {name} ({SeedOssToolUtils._py_type(spec.get('type'))}) "
+                        f"{required_text}: {description}"
+                    )
+                tool_text += "\n\n"
+            tool_text += '    """'
+
+        return SEED_OSS_TOOL_PROMPT.format(tool_text=tool_text)
+
+    @staticmethod
+    def _py_type(schema_type: str) -> str:
+        if schema_type == "string":
+            return "str"
+        if schema_type in ("number", "integer"):
+            return "int"
+        if schema_type == "boolean":
+            return "bool"
+        if schema_type == "array":
+            return "list"
+        return "Any"
+
+    @override
+    @staticmethod
+    def function_formatter(functions: list["FunctionCall"]) -> str:
+        function_texts = []
+        for name, arguments in functions:
+            parsed_arguments = json.loads(arguments)
+            prompt = f"<seed:tool_call>\n<function={name}>\n"
+            for key, value in parsed_arguments.items():
+                if not isinstance(value, str):
+                    value = json.dumps(value, ensure_ascii=False)
+                prompt += f"<parameter={key}>{value}</parameter>\n"
+            prompt += "</function>\n</seed:tool_call>"
+            function_texts.append(prompt)
+
+        return "".join(function_texts)
+
+
 class ERNIEToolUtils(ToolUtils):
     r"""ERNIE 4.5 tool using template."""
 
@@ -346,6 +459,8 @@ TOOLS = {
     "glm4_moe": GLM4MOEToolUtils(),
     "glm_moe_dsa": GLM_5ToolUtils(),
     "llama3": Llama3ToolUtils(),
+    "llama4": Llama4ToolUtils(),
+    "seed_oss": SeedOssToolUtils(),
 }
 
 

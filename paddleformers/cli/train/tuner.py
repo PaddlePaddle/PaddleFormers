@@ -50,7 +50,7 @@ def _training_function(config: dict[str, Any]) -> None:
 
     if model_args.stage in ["SFT", "PT", "VL-SFT", "VL-PT"]:
         with paddle.amp.auto_cast(enable=False):
-            run_sft(model_args, data_args, generating_args, finetuning_args)
+            run_sft(model_args, data_args, generating_args, finetuning_args, preprocess_args)
     elif model_args.stage == "DPO" or model_args.stage == "VL-DPO":
         with paddle.amp.auto_cast(enable=False):
             run_dpo(model_args, data_args, generating_args, finetuning_args)
