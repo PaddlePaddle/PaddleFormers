@@ -77,7 +77,7 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "bloom":
         target_modules = [".*query_key_value.*", ".*dense.*", ".*dense_h_to_4h.*", ".*dense_4h_to_h.*"]
-    elif model.config.model_type in ["llama", "jamba", "olmo2"]:
+    elif model.config.model_type in ["llama", "llama4_text", "llama4", "jamba", "olmo2", "cohere"]:
         target_modules = [
             ".*q_proj.*",
             ".*v_proj.*",
@@ -88,6 +88,15 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
             ".*up_proj.*",
             ".*gate_up_fused_proj.*",
+        ]
+    elif model.config.model_type == "molmo":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*ff_proj.*",
+            ".*ff_out.*",
         ]
     elif model.config.model_type == "opt":
         target_modules = [
@@ -144,6 +153,22 @@ def get_lora_target_modules(model):
             ".*w2.*",
             ".*w3.*",
         ]
+    elif model.config.model_type == "minimax":
+        target_modules = [
+            # Full attention
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            # Lightning attention
+            ".*qkv_proj.*",
+            ".*out_proj.*",
+            ".*output_gate.*",
+            # Sparse MoE experts; keep the router excluded from the default LoRA targets.
+            ".*block_sparse_moe.experts.*w1.*",
+            ".*block_sparse_moe.experts.*w2.*",
+            ".*block_sparse_moe.experts.*w3.*",
+        ]
     elif model.config.model_type == "mistral":
         target_modules = [
             ".*q_proj.*",
@@ -181,7 +206,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
             # Projector
-            ".*merger.mlp\.[02].*",
+            r".*merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "qwen3_vl":
         target_modules = [
@@ -296,6 +321,16 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
         ]
     elif model.config.model_type == "granite":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
+    elif model.config.model_type == "seed_oss":
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",
@@ -422,6 +457,17 @@ def get_lora_target_modules(model):
             ".*gate_up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type == "phi4_multimodal":
+        # Keep the outer PEFT adapter on the language backbone. Phi-4
+        # Multimodal already has its own vision/speech adapters, so broad
+        # patterns would either wrap the modality encoders or match those
+        # native adapter sublayers a second time.
+        target_modules = [
+            "model.layers.*.self_attn.qkv_proj",
+            "model.layers.*.self_attn.o_proj",
+            "model.layers.*.mlp.gate_up_proj",
+            "model.layers.*.mlp.down_proj",
+        ]
     elif model.config.model_type in ("phi4", "phi4flash"):
         # phi4flash: hybrid decoder (Mamba SSM + Attention), only attention layers have Wqkv/out_proj
         target_modules = [
@@ -452,7 +498,7 @@ def get_lora_target_modules(model):
             "model.visual.*up_proj.*",
             "model.visual.*down_proj.*",
             # alinger
-            "model.visual.merger.mlp\.[02].*",
+            r"model.visual.merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "glm_ocr":
         target_modules = [

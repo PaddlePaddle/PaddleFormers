@@ -63,6 +63,7 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
         ("Llama", "llama"),
+        ("Llama4", "llama4"),
         ("KimiK2", "kimi_k2"),
         ("KimiK3", "kimi_k3"),
         ("Qwen2", "qwen2"),
@@ -77,14 +78,21 @@ MAPPING_NAMES = OrderedDict(
         ("Qwen3_5", "qwen3_5"),
         ("Glm4Moe", "glm4_moe"),
         ("GlmMoeDsa", "glm_moe_dsa"),
+        ("MiniMax", "minimax"),
         ("MiniMaxM2", "minimax_m2"),
         ("MiniCPM", "minicpm"),
         ("MiniCPM4_1", "minicpm4_1"),
         ("DeepseekV4", "deepseek_v4"),
         ("GptOss", "gpt_oss"),
         ("MiniCPM3", "minicpm3"),
+        ("SeedOss", "seed_oss"),
+        ("Cohere", "cohere"),
         ("Granite", "granite"),
         ("Phi3", "phi3"),
+        ("Phi4MM", "phi4_multimodal"),
+        ("Phi4Multimodal", "phi4_multimodal"),
+        ("Phi4MultimodalAudio", "phi4_multimodal"),
+        ("Phi4MultimodalVision", "phi4_multimodal"),
         ("Phi4", "phi4"),
         ("Gemma3", "gemma3"),
         ("Gemma3Text", "gemma3_text"),
@@ -92,13 +100,21 @@ MAPPING_NAMES = OrderedDict(
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
         ("Mistral3", "mistral3"),
+        ("Molmo", "molmo"),
         ("Olmo2", "olmo2"),
         ("InternLM3", "intern_lm3"),
         ("InternLM2", "intern"),
     ]
 )
 
-MAPPING_SPACIAL_KEY = OrderedDict([("Gemma3", "Gemma3"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")])
+MAPPING_SPACIAL_KEY = OrderedDict(
+    [
+        ("Gemma3", "Gemma3"),
+        ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration"),
+        ("Llama4", "Llama4Text"),
+        ("Phi4MM", "Phi4Multimodal"),
+    ]
+)
 CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3ForConditionalGeneration")])
 
 MAPPING_TASKS = OrderedDict(
@@ -204,9 +220,9 @@ class _BaseAutoModelClass:
                 if model_flag in init_class:
                     model_name = model_flag + "Model"
                     break
-            if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
-                model_name = "PaliGemma2ForConditionalGenerationModel"
-        elif model_name is None:
+        if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
+            model_name = "PaliGemma2ForConditionalGenerationModel"
+        if model_name is None and init_class is None:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
                 if type(pretrained_model_name_or_path) is str and name in pretrained_model_name_or_path.lower():
@@ -215,6 +231,9 @@ class _BaseAutoModelClass:
         if init_class == "PaliGemmaForConditionalGeneration":
             import_class = importlib.import_module("paddleformers.transformers.paligemma2.modeling")
             return getattr(import_class, "PaliGemma2ForConditionalGeneration")
+        if init_class == "Llama4ForConditionalGeneration":
+            import_class = importlib.import_module("paddleformers.transformers.llama4.multimodal")
+            return getattr(import_class, "Llama4ForConditionalGeneration")
         if model_name is None:
             # Try to get model class from config class
             if not isinstance(config, PretrainedConfig) and pretrained_model_name_or_path is not None:
@@ -228,6 +247,9 @@ class _BaseAutoModelClass:
             )
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
+        from .configuration import SPECIAL_MODEL_TYPE_TO_MODULE_NAME
+
+        class_name = SPECIAL_MODEL_TYPE_TO_MODULE_NAME.get(class_name, class_name)
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         try:
             model_class = getattr(import_class, init_class)
