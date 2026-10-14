@@ -53,3 +53,11 @@ fp16_opt_level: O2
 unified_checkpoint: false
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
+
+weight_decay: 0.0
+adam_beta2: 0.999
+moe_router_bias_update_rate: 0.0
+moe_token_dispatcher_type: deepep
+save_safetensors: false
+overlap_p2p_comm: false
+batch_p2p_comm: true

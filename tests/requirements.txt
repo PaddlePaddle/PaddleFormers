@@ -30,3 +30,4 @@ use_triton_in_paddle
 audioread
 librosa
 jinja2
+einops

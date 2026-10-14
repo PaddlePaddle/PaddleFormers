@@ -87,7 +87,10 @@ class GLMMoEModelProvider(GPTModelProvider):
     rope_scaling: float = 1.0
     bias_dropout_fusion: bool = True
     moe_expert_fusion: bool = False
-    use_accuracy_compatible: bool = False
+    # ``False`` or a target name ("megatron" / "hf"); see
+    # ``paddleformers.utils.accuracy_target``. Both non-default values are
+    # truthy, so the ``if use_accuracy_compatible`` tests below keep working.
+    use_accuracy_compatible: Union[bool, str] = False
 
 
 def eager_attention_forward(
@@ -917,11 +920,20 @@ class Glm4MoePreTrainedModel(PretrainedModel):
             if layer_idx >= num_hidden_layers:
                 # for mtp
                 prefix_offset += ".transformer_layer"
-            aoa_config["aoa_statements"] += [
-                f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
-                f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'",
-                f"{prefix}.mlp.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
-            ]
+            use_accuracy_compatible = getattr(config, "use_accuracy_compatible", False)
+
+            if use_accuracy_compatible:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
+                    f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='bfloat16'",
+                    f"{prefix}.mlp.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
+                ]
+            else:
+                aoa_config["aoa_statements"] += [
+                    f"{prefix}.mlp.gate.e_score_correction_bias -> {prefix_offset}.mlp.gate.e_score_correction_bias",
+                    f"{prefix}.mlp.gate.weight -> {prefix_offset}.mlp.gate.weight, dtype='float32'",
+                    f"{prefix}.mlp.shared_experts.down_proj.weight^T -> {prefix_offset}.mlp.shared_experts.down_proj.weight",
+                ]
             if using_sonic_moe:
                 aoa_config["aoa_statements"] += [
                     f"{prefix}.mlp.experts.$EXPERT_ID.down_proj.weight -> {prefix_offset}.mlp.experts.$EXPERT_ID.down_proj.weight",
@@ -1425,6 +1437,9 @@ class Glm4MoeForCausalLM(Glm4MoePreTrainedModel):
         if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._keep_in_fp32_modules = (
+            ["e_score_correction_bias"] if model_provider.use_accuracy_compatible else cls._keep_in_fp32_modules
+        )
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         gpt_model.config_to_save = config
@@ -1600,6 +1615,9 @@ class Glm4MoeForCausalLMPipe(Glm4MoePreTrainedModel, GeneralModelForCausalLMPipe
         if getattr(config, "dpo_config", None):
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         gpt_model = model_provider.provide(loss_fn=loss_fn)
+        gpt_model._keep_in_fp32_modules = (
+            ["e_score_correction_bias"] if model_provider.use_accuracy_compatible else cls._keep_in_fp32_modules
+        )
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
         if not hasattr(config, "architectures"):

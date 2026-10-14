@@ -295,6 +295,70 @@ class GLM5ReasoningTemplate(ReasoningTemplate):
 
 
 @dataclass
+class SeedOssTemplate(ReasoningTemplate):
+    r"""Reasoning template for Seed-OSS using Seed added-token ids."""
+
+    seed_tokens = (
+        "<seed:bos>",
+        "<seed:eos>",
+        "<seed:pad>",
+        "<seed:think>",
+        "</seed:think>",
+        "<seed:cot_budget_reflect>",
+        "</seed:cot_budget_reflect>",
+        "<seed:tool_call>",
+        "</seed:tool_call>",
+    )
+    seed_token_pattern = re.compile("(" + "|".join(re.escape(token) for token in seed_tokens) + ")")
+
+    @override
+    def _convert_elements_to_ids(self, tokenizer: "PreTrainedTokenizer", elements: "SLOTS") -> list[int]:
+        token_ids = []
+        for elem in elements:
+            if isinstance(elem, str):
+                for part in filter(None, self.seed_token_pattern.split(elem)):
+                    if part in self.seed_tokens:
+                        token_ids += [tokenizer.convert_tokens_to_ids(part)]
+                    else:
+                        token_ids += tokenizer.encode(part, add_special_tokens=False)
+            elif isinstance(elem, dict):
+                token_ids += [tokenizer.convert_tokens_to_ids(elem.get("token"))]
+            elif isinstance(elem, set):
+                if "bos_token" in elem and tokenizer.bos_token_id is not None:
+                    token_ids += [tokenizer.bos_token_id]
+                elif "eos_token" in elem and tokenizer.eos_token_id is not None:
+                    token_ids += [tokenizer.eos_token_id]
+            else:
+                raise ValueError(f"Input must be string, set[str] or dict[str, str], got {type(elem)}")
+
+        return token_ids
+
+    def get_thought_word_ids(self, tokenizer: "PreTrainedTokenizer") -> list[int]:
+        r"""Get the Seed thought token ids without BPE splitting."""
+        return self._convert_elements_to_ids(tokenizer, [self.add_thought()])
+
+    @override
+    def encode_oneturn(
+        self,
+        tokenizer: "PreTrainedTokenizer",
+        messages: list[dict[str, str]],
+        system: Optional[str] = None,
+        tools: Optional[str] = None,
+    ) -> tuple[list[int], list[int]]:
+        return Template.encode_oneturn(self, tokenizer, messages, system, tools)
+
+    @override
+    def encode_multiturn(
+        self,
+        tokenizer: "PreTrainedTokenizer",
+        messages: list[dict[str, str]],
+        system: Optional[str] = None,
+        tools: Optional[str] = None,
+    ) -> list[tuple[list[int], list[int]]]:
+        return Template.encode_multiturn(self, tokenizer, messages, system, tools)
+
+
+@dataclass
 class Llama2Template(Template):
     r"""A template that fuse the system message to first user message."""
 
@@ -332,6 +396,59 @@ class Llama2Template(Template):
             elif message["role"] == Role.FUNCTION:
                 elements += self.format_function.apply(content=message["content"])
                 # Add chat sep to all except the last round
+                if i < len(messages) - 1:
+                    elements += [self.chat_sep]
+            else:
+                raise NotImplementedError("Unexpected role: {}".format(message["role"]))
+
+            encoded_messages.append(self._convert_elements_to_ids(tokenizer, elements))
+
+        return encoded_messages
+
+
+@dataclass
+class AyaTemplate(Template):
+    r"""Aya template aligned with ms-swift's built-in `aya` template.
+
+    Swift uses `system_prefix` instead of `prefix` when a system prompt exists.
+    The generic Template always emits `prefix + system`, which would add an
+    extra BOS token for Aya system conversations.
+    """
+
+    @override
+    def _encode(
+        self,
+        tokenizer: "PreTrainedTokenizer",
+        messages: list[dict[str, str]],
+        system: str,
+        tools: str,
+    ) -> list[list[int]]:
+        system = system or self.default_system
+        encoded_messages = []
+        for i, message in enumerate(messages):
+            elements = []
+
+            if i == 0:
+                if system or tools:
+                    tool_text = self.format_tools.apply(content=tools)[0] if tools else ""
+                    elements += self.format_system.apply(content=(system + tool_text))
+                else:
+                    elements += self.format_prefix.apply()
+
+            if message["role"] == Role.USER:
+                elements += self.format_user.apply(content=message["content"], idx=str(i // 2))
+            elif message["role"] == Role.ASSISTANT:
+                elements += self.format_assistant.apply(content=message["content"])
+                if "tool_calls" in message:
+                    elements += self.format_function.apply(
+                        content=message["tool_calls"], thought_words=self.thought_words
+                    )
+                if i < len(messages) - 1:
+                    elements += [self.chat_sep]
+            elif message["role"] == Role.OBSERVATION:
+                elements += self.format_observation.apply(content=message["content"])
+            elif message["role"] == Role.FUNCTION:
+                elements += self.format_function.apply(content=message["content"], thought_words=self.thought_words)
                 if i < len(messages) - 1:
                     elements += [self.chat_sep]
             else:
@@ -578,6 +695,40 @@ register_template(
     format_assistant=StringFormatter(slots=["{{content}}"]),
 )
 
+register_template(
+    name="molmo",
+    format_user=StringFormatter(slots=["{{content}} Assistant:"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    chat_sep="",
+    suffix=["<|endoftext|>"],
+    mm_plugin=get_mm_plugin(name="molmo", image_token="<im_patch>"),
+)
+
+register_template(
+    name="aya",
+    format_user=StringFormatter(
+        slots=[
+            (
+                "<|START_OF_TURN_TOKEN|><|USER_TOKEN|>{{content}}<|END_OF_TURN_TOKEN|>"
+                "<|START_OF_TURN_TOKEN|><|CHATBOT_TOKEN|>"
+            )
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    # Match ms-swift's current built-in Aya template exactly. Its system_prefix
+    # is missing the closing ">" in END_OF_TURN_TOKEN on the system turn.
+    format_system=StringFormatter(slots=["<|START_OF_TURN_TOKEN|><|SYSTEM_TOKEN|>{{content}}<|END_OF_TURN_TOKEN|"]),
+    format_prefix=EmptyFormatter(slots=["<BOS_TOKEN>"]),
+    default_system=(
+        "You are Aya, a brilliant, sophisticated, multilingual AI-assistant trained to assist human users by providing "
+        "thorough responses. You are able to interact and respond to questions in 23 languages and you are powered by "
+        "a multilingual model built by Cohere For AI."
+    ),
+    chat_sep="<|END_OF_TURN_TOKEN|>",
+    suffix=["<|END_OF_TURN_TOKEN|>"],
+    template_class=AyaTemplate,
+)
+
 # copied from chatml template
 register_template(
     name="ernie",
@@ -636,6 +787,22 @@ register_template(
     mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
     template_class=ReasoningTemplate,
     thought_words=("<think>\n", "\n</think>\n\n"),
+)
+
+register_template(
+    name="minimax",
+    format_user=StringFormatter(
+        slots=[
+            "<beginning_of_sentence>user name=user\n{{content}}<end_of_sentence>\n"
+            "<beginning_of_sentence>ai name=assistant\n"
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(
+        slots=["<beginning_of_sentence>system ai_setting=assistant\n{{content}}<end_of_sentence>\n"]
+    ),
+    chat_sep="<end_of_sentence>\n",
+    suffix=["<end_of_sentence>"],
 )
 
 register_template(
@@ -708,6 +875,10 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen3_5"),
     stop_words=["<|im_end|>"],
+    # ``format_assistant`` already emits ``<|im_end|>`` inline, so the dataset
+    # must not append a dynamic EOS on top of it.
+    efficient_eos=False,
+    grounding_plugin=get_grounding_plugin(name="base", norm_bbox="norm1000"),
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
     template_class=ReasoningTemplate,
 )
@@ -724,6 +895,8 @@ register_template(
     ),
     format_tools=ToolFormatter(tool_format="qwen3_5"),
     stop_words=["<|im_end|>"],
+    efficient_eos=False,
+    grounding_plugin=get_grounding_plugin(name="base", norm_bbox="norm1000"),
     mm_plugin=get_mm_plugin(name="qwen3_vl", image_token="<|image_pad|>", video_token="<|video_pad|>"),
 )
 
@@ -923,6 +1096,36 @@ register_template(
 )
 
 register_template(
+    name="seed_oss",
+    format_user=StringFormatter(
+        slots=[
+            {"token": "<seed:bos>"},
+            "user\n{{content}}",
+            {"token": "<seed:eos>"},
+            {"token": "<seed:bos>"},
+            "assistant\n",
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=[{"token": "<seed:bos>"}, "system\n{{content}}", {"token": "<seed:eos>"}]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="seed_oss"),
+    format_observation=StringFormatter(
+        slots=[
+            {"token": "<seed:bos>"},
+            "tool\n{{content}}",
+            {"token": "<seed:eos>"},
+            {"token": "<seed:bos>"},
+            "assistant\n",
+        ]
+    ),
+    format_tools=ToolFormatter(tool_format="seed_oss"),
+    chat_sep="<seed:eos>",
+    suffix=["<seed:eos>"],
+    thought_words=("<seed:think>", "</seed:think>"),
+    template_class=SeedOssTemplate,
+)
+
+register_template(
     name="llama3",
     format_user=StringFormatter(
         slots=[
@@ -949,6 +1152,46 @@ register_template(
     chat_sep="<|eot_id|>",
 )
 
+register_template(
+    name="llama4_vl",
+    format_user=StringFormatter(
+        slots=[
+            ("<|header_start|>user<|header_end|>\n\n{{content}}<|eot|>" "<|header_start|>assistant<|header_end|>\n\n")
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|header_start|>system<|header_end|>\n\n{{content}}<|eot|>"]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="llama4"),
+    format_observation=StringFormatter(
+        slots=[
+            (
+                "<|header_start|>ipython<|header_end|>\n\n{{content}}<|eot|>"
+                "<|header_start|>assistant<|header_end|>\n\n"
+            )
+        ]
+    ),
+    format_tools=ToolFormatter(tool_format="llama4"),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    suffix=["<|eot|>"],
+    chat_sep="<|eot|>",
+    mm_plugin=get_mm_plugin(
+        name="llama4",
+        image_token="<|image|>",
+        masked_tokens=[
+            "<|image|>",
+            "<|image_start|>",
+            "<|image_end|>",
+            "<|patch|>",
+            "<|tile_x_separator|>",
+            "<|tile_y_separator|>",
+        ],
+    ),
+)
+
+
+# The text-only template must not require a multimodal processor.
+TEMPLATES["llama4"] = deepcopy(TEMPLATES["llama4_vl"])
+TEMPLATES["llama4"].mm_plugin = get_mm_plugin(name="base")
 
 # copied from gemma template
 register_template(
@@ -963,6 +1206,25 @@ register_template(
     chat_sep="<end_of_turn>\n",
     suffix=["<end_of_turn>"],
     template_class=Llama2Template,
+)
+
+register_template(
+    name="granite",
+    format_user=StringFormatter(
+        slots=[
+            "<|start_of_role|>user<|end_of_role|>{{content}}<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>"
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|start_of_role|>system<|end_of_role|>{{content}}<|end_of_text|>\n"]),
+    format_observation=StringFormatter(
+        slots=[
+            "<|start_of_role|>tool_response<|end_of_role|>{{content}}<|end_of_text|>\n<|start_of_role|>assistant<|end_of_role|>"
+        ]
+    ),
+    default_system="You are Granite, developed by IBM. You are a helpful AI assistant.",
+    suffix=["<|end_of_text|>"],
+    chat_sep="<|end_of_text|>\n",
 )
 
 
@@ -997,6 +1259,24 @@ register_template(
 )
 
 register_template(
+    name="phi4_multimodal",
+    format_user=StringFormatter(slots=["<|user|>\n{{content}}<|end|>\n<|assistant|>\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|system|>\n{{content}}<|end|>\n"]),
+    format_observation=StringFormatter(
+        slots=["<|user|>\n<tool_response>\n{{content}}\n</tool_response><|end|>\n<|assistant|>\n"]
+    ),
+    suffix=["<|end|>"],
+    chat_sep="<|end|>\n",
+    auto_add_bos=False,
+    mm_plugin=get_mm_plugin(
+        name="phi4_multimodal",
+        image_token="<|endoftext10|>",
+        audio_token="<|endoftext11|>",
+    ),
+)
+
+register_template(
     name="glm_ocr",
     format_user=StringFormatter(slots=["<|user|>\n{{content}}\n"]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
@@ -1013,6 +1293,45 @@ register_template(
     format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
     suffix=["</s>"],
     efficient_eos=True,
+)
+
+# Kimi-K3 XTML chat format, non-thinking channel. One <|media_pad|> per image is
+# expanded inside the model, hence expand_mm_tokens=False.
+register_template(
+    name="kimi_k3",
+    format_system=StringFormatter(
+        slots=['<|open|>message role="system"<|sep|>{{content}}<|close|>message<|sep|><|end_of_msg|>']
+    ),
+    format_user=StringFormatter(
+        slots=[
+            '<|open|>message role="user"<|sep|>{{content}}<|close|>message<|sep|><|end_of_msg|>'
+            '<|open|>message role="assistant"<|sep|><|open|>response<|sep|>'
+        ]
+    ),
+    format_assistant=StringFormatter(
+        slots=["{{content}}<|close|>response<|sep|><|close|>message<|sep|><|end_of_msg|>"]
+    ),
+    mm_plugin=get_mm_plugin(name="kimi_k3", image_token="<|media_pad|>"),
+)
+register_template(
+    name="internlm2_5",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}<|im_end|>\n"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    enable_thinking=None,
+)
+
+register_template(
+    name="internlm3",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
 )
 
 register_template(

@@ -30,6 +30,8 @@ from paddleformers.transformers import (
     AutoModelForTokenClassification,
     LlamaConfig,
     LlamaModel,
+    Phi4MultimodalConfig,
+    Phi4MultimodalModel,
 )
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.auto.modeling import MODEL_MAPPING
@@ -50,7 +52,7 @@ class AutoModelTest(unittest.TestCase):
 
     def test_from_pretrained_local(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            self.model.save_pretrained(tmp_dir, save_to_hf=False, save_checkpoint_format="")
+            self.model.save_pretrained(tmp_dir, save_safetensors=False, save_checkpoint_format="")
             model = AutoModel.from_pretrained(tmp_dir, convert_from_hf=False, load_checkpoint_format="")
             self.assertIsInstance(model, LlamaModel)
 
@@ -59,7 +61,7 @@ class AutoModelTest(unittest.TestCase):
             model = copy.deepcopy(self.model)
             # when init_class is not found, we rely on the filename to get the import class
             model_save_path = os.path.join(tmp_dir, "tiny-random-llama")
-            model.save_pretrained(model_save_path, save_to_hf=False, save_checkpoint_format="")
+            model.save_pretrained(model_save_path, save_safetensors=False, save_checkpoint_format="")
             config = model.config.to_dict()
             config.pop("architectures")
             with open(os.path.join(model_save_path, "config.json"), "w", encoding="utf-8") as writer:
@@ -68,6 +70,14 @@ class AutoModelTest(unittest.TestCase):
                 model_save_path, convert_from_hf=False, load_checkpoint_format=""
             )
             self.assertIsInstance(reloaded_model, LlamaModel)
+
+    def test_architecture_takes_priority_over_directory_name(self):
+        model_class = AutoModel._get_model_class_from_config(
+            "/tmp/qwen2-export",
+            "unused-config.json",
+            LlamaConfig(architectures=["LlamaModel"]),
+        )
+        self.assertIs(model_class, LlamaModel)
 
     @slow
     def test_model_from_pretrained_cache_dir(self):
@@ -138,7 +148,7 @@ class AutoModelTest(unittest.TestCase):
                     self.assertIsInstance(model, CustomModel)
 
                     with tempfile.TemporaryDirectory() as tmp_dir:
-                        model.save_pretrained(tmp_dir, save_to_hf=False, save_checkpoint_format="")
+                        model.save_pretrained(tmp_dir, save_safetensors=False, save_checkpoint_format="")
                         new_model = auto_class.from_pretrained(
                             tmp_dir, convert_from_hf=False, load_checkpoint_format=""
                         )
@@ -151,3 +161,6 @@ class AutoModelTest(unittest.TestCase):
             for mapping in (MODEL_MAPPING,):
                 if CustomConfig in mapping._extra_content:
                     del mapping._extra_content[CustomConfig]
+
+    def test_phi4_multimodal_model_mapping(self):
+        self.assertIs(MODEL_MAPPING[Phi4MultimodalConfig], Phi4MultimodalModel)
