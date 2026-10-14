@@ -63,6 +63,7 @@ bf16: true
 fp16_opt_level: O2
 use_expert_parallel: true
 expert_model_parallel_size: 4
+moe_token_dispatcher_type: deepep
 
 # sharding_parallel_config
 split_param: true
@@ -75,3 +76,9 @@ sync_grad: true
 
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
+
+weight_decay: 0.0
+adam_beta2: 0.999
+moe_router_bias_update_rate: 0.0
+save_safetensors: false
+overlap_p2p_comm: false

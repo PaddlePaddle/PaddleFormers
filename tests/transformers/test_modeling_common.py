@@ -261,7 +261,7 @@ class ModelTesterMixin:
                 first = model(**self._prepare_for_class(inputs_dict, model_class))[0]
 
             with tempfile.TemporaryDirectory() as tmpdirname:
-                model.save_pretrained(tmpdirname, save_to_hf=False, save_checkpoint_format="")
+                model.save_pretrained(tmpdirname, save_safetensors=False, save_checkpoint_format="")
                 model = model_class.from_pretrained(tmpdirname, convert_from_hf=False, load_checkpoint_format="")
                 model.eval()
                 with paddle.no_grad():
@@ -727,7 +727,7 @@ class ModelTesterMixin:
                 new_value = getattr(model.config, new_attribute)
 
                 # eg: dropout can be an instance of nn.Dropout, so we should check it attribute
-                if type(new_value) != type(old_value):
+                if type(new_value) is not type(old_value):
                     continue
 
                 self.assertEqual(old_value, new_value)
@@ -844,7 +844,7 @@ class ModelTesterPretrainedMixin:
             # 1. save and load
             with tempfile.TemporaryDirectory() as tempdir:
                 tempdirname = str(tempdir)
-                model.save_pretrained(tempdirname, save_to_hf=False, save_checkpoint_format="")
+                model.save_pretrained(tempdirname, save_safetensors=False, save_checkpoint_format="")
 
                 loaded_model = self.base_model_class.from_pretrained(
                     tempdirname, convert_from_hf=False, load_checkpoint_format=""

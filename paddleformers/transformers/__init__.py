@@ -92,9 +92,19 @@ import_structure = {
         "TruncationStrategy",
     ],
     "auto.processing": ["AutoProcessor"],
+    "paligemma2.image_processor": ["PaliGemmaImageProcessor"],
+    "paligemma2.processor": ["PaliGemmaProcessor"],
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
+    "diff_transformer.configuration": ["DiffTransformerConfig"],
+    "diff_transformer.modeling": [
+        "DiffTransformerModel",
+        "DiffTransformerForCausalLM",
+        "DiffTransformerPreTrainedModel",
+    ],
+    "diff_transformer.tokenizer": ["DiffTransformerTokenizer"],
+    "diff_transformer": [],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v32.configuration": ["DeepseekV32Config"],
     "deepseek_v32.modeling": [
@@ -163,20 +173,106 @@ import_structure = {
     "paddleocr_vl.processor": ["PaddleOCRVLProcessor"],
     "gpt_oss.configuration": ["GptOssConfig"],
     "gpt_oss.modeling": ["GptOssModel", "GptOssForCausalLM", "GptOssForCausalLMPipe"],
+    "minicpm3.configuration": ["MiniCPM3Config"],
+    "minicpm3.modeling": [
+        "MiniCPMDecoderLayer",
+        "MiniCPM3ForCausalLM",
+        "MiniCPM3ForSequenceClassification",
+        "MiniCPM3Model",
+        "MiniCPM3PreTrainedModel",
+    ],
+    "granite.configuration": ["GraniteConfig"],
+    "granite.modeling": [
+        "GraniteDecoderLayer",
+        "GraniteModel",
+        "GranitePretrainedModel",
+        "GraniteForCausalLM",
+        "GraniteForCausalLMPipe",
+    ],
+    "cohere.configuration": ["CohereConfig"],
+    "cohere.modeling": [
+        "CohereAttention",
+        "CohereDecoderLayer",
+        "CohereForCausalLM",
+        "CohereForCausalLMPipe",
+        "CohereLayerNorm",
+        "CohereModel",
+        "CoherePretrainedModel",
+        "CohereRotaryEmbedding",
+    ],
+    "seed_oss.configuration": ["SeedOssConfig"],
+    "seed_oss.modeling": [
+        "SeedOssModel",
+        "SeedOssPretrainedModel",
+        "SeedOssForCausalLM",
+        "SeedOssForCausalLMPipe",
+        "SeedOssForSequenceClassification",
+        "SeedOssForTokenClassification",
+        "SeedOssForQuestionAnswering",
+    ],
+    "seed_oss": [],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
     "gemma3_text.configuration": ["Gemma3Config", "Gemma3TextConfig"],
     "gemma3_text.modeling": ["Gemma3TextModel", "Gemma3ForCausalLM", "Gemma3ForCausalLMPipe"],
+    "gemma3.configuration": ["Gemma3Config"],
+    "gemma3.image_processor": ["Gemma3ImageProcessor", "Gemma3ImageProcessorKwargs"],
+    "gemma3.image_processor_fast": ["Gemma3ImageProcessorFast"],
+    "gemma3.processor": ["Gemma3Processor", "Gemma3ProcessorKwargs"],
+    "gemma3.modeling": [
+        "Gemma3ModelOutputWithPast",
+        "Gemma3CausalLMOutputWithPast",
+        "Gemma3MultiModalProjector",
+        "Gemma3PreTrainedModel",
+        "Gemma3Model",
+        "Gemma3ForConditionalGeneration",
+    ],
+    "shieldgemma2.configuration": ["ShieldGemma2Config", "ShieldGemma2VisionConfig"],
+    "shieldgemma2.modeling": [
+        "ShieldGemma2ForImageClassification",
+        "ShieldGemma2ImageClassifierOutputWithNoAttention",
+    ],
+    "shieldgemma2.processor": [
+        "DEFAULT_SHIELDGEMMA2_POLICIES",
+        "ShieldGemma2Processor",
+        "ShieldGemma2ProcessorKwargs",
+    ],
     "kimi_k2.configuration": ["KimiK2Config"],
     "kimi_k2.modeling": ["KimiK2ForCausalLM", "KimiK2ForCausalLMPipe"],
     "kimi_k2.tokenizer": ["KimiK2TikTokenTokenizer"],
+    "kimi_k3.configuration": [
+        "KimiK3Config",
+        "KimiK3TextConfig",
+        "KimiK3VisionConfig",
+    ],
+    "kimi_k3.modeling": [
+        "KimiK3Model",
+        "KimiK3ForCausalLM",
+        "KimiK3ForCausalLMPipe",
+        "KimiK3ForConditionalGeneration",
+        "KimiK3ModelProvider",
+    ],
+    "kimi_k3.tokenizer": ["KimiK3TikTokenTokenizer"],
+    "kimi_k3.vision_processor": ["KimiK3VisionProcessor"],
+    "kimi_k3.processor": ["KimiK3Processor"],
     "llama.configuration": [
         "LlamaConfig",
     ],
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "llama4.configuration": ["Llama4Config", "Llama4TextConfig", "Llama4VisionConfig"],
+    "llama4.image_processor": ["Llama4ImageProcessor", "Llama4ImageProcessorKwargs"],
+    "llama4.image_processor_fast": ["Llama4ImageProcessorFast"],
+    "llama4.modeling": [
+        "Llama4ForCausalLM",
+        "Llama4TextDecoderLayer",
+        "Llama4TextModel",
+        "Llama4TextPretrainedModel",
+    ],
+    "llama4.multimodal": ["Llama4ForConditionalGeneration", "Llama4VisionEncoderLayer", "Llama4VisionModel"],
+    "llama4.processor": ["Llama4Processor", "Llama4ProcessorKwargs"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -287,7 +383,16 @@ import_structure = {
         "Qwen3NextForCausalLMPipe",
         "Qwen3NextPretrainingCriterion",
     ],
+    "molmo.configuration": ["MolmoConfig"],
+    "molmo.image_processing": ["MolmoImageProcessor"],
+    "molmo.modeling": [
+        "MolmoModel",
+        "MolmoPretrainedModel",
+        "MolmoForCausalLM",
+    ],
+    "molmo.processing": ["MolmoProcessor"],
     "llama": [],
+    "llama4": [],
     "qwen2": [],
     "glm_ocr": [],
     "qwen3": [],
@@ -300,15 +405,19 @@ import_structure = {
     "qwen3_vl": [],
     "qwen3_5": [],
     "qwen3_vl_moe": [],
+    "molmo": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
+    "cohere": [],
+    "minicpm3": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
+    "granite": [],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
     "minicpm.configuration": ["MiniCPMConfig"],
@@ -319,8 +428,18 @@ import_structure = {
         "MiniCPMForSequenceClassification",
     ],
     "minicpm": [],
+    "minicpm4_1.configuration": ["MiniCPM4_1Config"],
+    "minicpm4_1.modeling": [
+        "MiniCPM4_1Model",
+        "MiniCPM4_1ForCausalLM",
+        "MiniCPM4_1ForCausalLMPipe",
+        "MiniCPM4_1ForSequenceClassification",
+    ],
+    "minicpm4_1": [],
     "deepseek_v4.configuration": ["DeepseekV4Config"],
     "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
+    "minimax.configuration": ["MiniMaxConfig"],
+    "minimax": ["MiniMaxModel", "MiniMaxForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -329,6 +448,24 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "phi4_multimodal.configuration": [
+        "Phi4MultimodalAudioConfig",
+        "Phi4MultimodalConfig",
+        "Phi4MultimodalVisionConfig",
+    ],
+    "phi4_multimodal.feature_extraction": ["Phi4MultimodalFeatureExtractor"],
+    "phi4_multimodal.image_processor": ["Phi4MultimodalImageProcessor"],
+    "phi4_multimodal.modeling": [
+        "Phi4MMForCausalLM",
+        "Phi4MMForConditionalGeneration",
+        "Phi4MultimodalAudioModel",
+        "Phi4MultimodalForCausalLM",
+        "Phi4MultimodalForConditionalGeneration",
+        "Phi4MultimodalModel",
+        "Phi4MultimodalPreTrainedModel",
+        "Phi4MultimodalVisionModel",
+    ],
+    "phi4_multimodal.processor": ["Phi4MultimodalProcessor"],
     "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
     "glm4v_moe.modeling": [
         "Glm4vMoeForConditionalGeneration",
@@ -350,11 +487,13 @@ import_structure = {
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
     "olmo2.configuration": ["Olmo2Config"],
     "olmo2.modeling": [
+        "Olmo2DecoderLayer",
         "Olmo2Model",
         "Olmo2PretrainedModel",
         "Olmo2ForCausalLM",
         "Olmo2ForCausalLMPipe",
     ],
+    "olmo2": [],
     "olmo3.tokenizer": ["Olmo3Tokenizer"],
     "olmo3.configuration": ["Olmo3Config"],
     "olmo3.modeling": [
@@ -363,6 +502,34 @@ import_structure = {
         "Olmo3ForCausalLM",
         "Olmo3ForCausalLMPipe",
     ],
+    "intern_lm3.configuration": ["InternLM3Config"],
+    "intern_lm3.modeling": [
+        "InternLM3Model",
+        "InternLM3ForCausalLM",
+        "InternLM3ForCausalLMPipe",
+    ],
+    "intern_lm3.tokenizer": ["InternLM3Tokenizer"],
+    "intern_lm2_5.configuration": ["InternLM25Config"],
+    "intern_lm2_5.modeling": [
+        "InternLM25DecoderLayer",
+        "InternLM25Model",
+        "InternLM25ForCausalLM",
+        "InternLM25PretrainedModel",
+        "InternLM25ForSequenceClassification",
+        "InternLM25ForQuestionAnswering",
+        "InternLM25ForTokenClassification",
+    ],
+    "intern_lm2_5.tokenizer": ["InternLM25Tokenizer"],
+    "intern.configuration": ["InternLM2Config"],
+    "intern.modeling": [
+        "InternLM2PretrainedModel",
+        "InternLM2Model",
+        "InternLM2ForCausalLM",
+        "InternLM2ForSequenceClassification",
+        "InternLM2ForQuestionAnswering",
+        "InternLM2ForTokenClassification",
+    ],
+    "intern_lm2.tokenizer": ["InternLM2Tokenizer"],
     "gemma4_moe.configuration": ["Gemma4MoeConfig"],
     "gemma4_moe.modeling": ["Gemma4MoeForCausalLM"],
     "gemma4_moe": [],
@@ -418,12 +585,14 @@ if TYPE_CHECKING:
     from .auto.processing import *
     from .auto.tokenizer import *
     from .auto.video_processing import *
+    from .diff_transformer import *
     from .deepseek_v3 import *
     from .ernie4_5 import *
     from .ernie4_5_moe import *
     from .ernie4_5_moe_vl import *
     from .kimi_k25 import *
     from .kimi_k2 import *
+    from .kimi_k3 import *
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
@@ -443,13 +612,27 @@ if TYPE_CHECKING:
     from .glm_moe_dsa import *
     from .minimax_m2 import *
     from .minicpm import *
+    from .minicpm4_1 import *
     from .deepseek_v4 import *
+    from .minimax import *
     from .gpt_oss import *
+    from .minicpm3 import *
+    from .cohere import *
+    from .granite import *
+    from .seed_oss import *
     from .phi3 import *
+    from .phi4_multimodal import *
     from .gemma3_text import *
+    from .gemma3 import *
+    from .shieldgemma2 import *
     from .glm_ocr import *
+    from .molmo import *
     from .olmo2 import *
     from .olmo3 import *
+    from .intern_lm3 import *
+    from .intern_lm2_5 import *
+    from .intern import *
+    from .intern_lm2 import InternLM2Tokenizer
     from .gemma4_moe import *
     from .phi4 import *
 else:

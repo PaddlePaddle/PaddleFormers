@@ -11,7 +11,8 @@ on:
 
 jobs:
   validate:
-    runs-on: 'ernie-cpu'
+    runs-on:
+      group: APPROVAL
     steps:
       - uses: actions/checkout@v4
       - name: Check if PR description contains dev PR link
