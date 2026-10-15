@@ -69,6 +69,11 @@ class Olmo2Attention(nn.Layer):
 
     def __init__(self, config: Olmo2Config, layer_idx: int):
         super().__init__()
+        if config.tensor_model_parallel_size > 1:
+            raise NotImplementedError(
+                "OLMo2/OLMo3 QK-norm requires RMS statistics over the full query/key projection. "
+                "Tensor parallelism is not supported yet; set tensor_model_parallel_size=1."
+            )
         self.config = config
         self.layer_idx = layer_idx
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
@@ -80,12 +85,6 @@ class Olmo2Attention(nn.Layer):
 
         q_hidden_size = self.head_dim * config.num_attention_heads
         kv_hidden_size = self.head_dim * config.num_key_value_heads
-
-        if config.tensor_model_parallel_size > 1:
-            assert self.num_heads % config.tensor_model_parallel_size == 0
-            self.num_heads = self.num_heads // config.tensor_model_parallel_size
-            assert self.num_key_value_heads % config.tensor_model_parallel_size == 0
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
         self.q_proj = GeneralLinear.create(
             config.hidden_size,
@@ -116,19 +115,18 @@ class Olmo2Attention(nn.Layer):
             tp_plan="rowwise",
         )
 
-        # QK-norm: RMSNorm applied to query and key after projection.
-        # Uses local head count to match column-parallel projection output dimension.
+        # QK-norm spans the full projection, not each head independently.
         self.q_norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
-            hidden_size=self.head_dim * self.num_heads,
+            hidden_size=q_hidden_size,
             has_bias=False,
             norm_eps=config.rms_norm_eps,
         )
         self.k_norm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
-            hidden_size=self.head_dim * self.num_key_value_heads,
+            hidden_size=kv_hidden_size,
             has_bias=False,
             norm_eps=config.rms_norm_eps,
         )
@@ -165,7 +163,11 @@ class Olmo2Attention(nn.Layer):
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        backend = self.config._attn_implementation
+        # Flashmask only consumes sparse row indices; preserve dense mask semantics.
+        if backend == "flashmask" and attention_mask is not None:
+            backend = "eager"
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[backend]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -375,6 +377,11 @@ class Olmo2PretrainedModel(PretrainedModel):
 
         # Projection weights are loaded with transpose for unified PT-oriented layout.
         proj_names = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        if config.attention_bias:
+            aoa_statements.extend(
+                f"model.layers.$LAYER_ID.self_attn.{name}.bias -> {model_prefix}layers.$LAYER_ID.self_attn.{name}.bias"
+                for name in proj_names
+            )
         aoa_statements.extend(
             [
                 f"model.layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{proj_name}.weight"
@@ -421,6 +428,12 @@ class Olmo2PretrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight -> model.layers.$LAYER_ID.post_feedforward_layernorm.weight",
         ]
+
+        if config.attention_bias:
+            aoa_statements.extend(
+                f"{model_prefix}layers.$LAYER_ID.self_attn.{name}.bias -> model.layers.$LAYER_ID.self_attn.{name}.bias"
+                for name in ["q_proj", "k_proj", "v_proj", "o_proj"]
+            )
 
         aoa_statements.extend(
             [
@@ -477,8 +490,6 @@ class Olmo2PretrainedModel(PretrainedModel):
                     f"{prefix}.self_attn.k_proj.weight": partial(fn, is_column=True),
                     f"{prefix}.self_attn.v_proj.weight": partial(fn, is_column=True),
                     f"{prefix}.self_attn.o_proj.weight": partial(fn, is_column=False),
-                    f"{prefix}.self_attn.q_norm.weight": partial(fn, is_column=True),
-                    f"{prefix}.self_attn.k_norm.weight": partial(fn, is_column=True),
                     f"{prefix}.mlp.gate_proj.weight": partial(fn, is_column=True),
                     f"{prefix}.mlp.up_proj.weight": partial(fn, is_column=True),
                     f"{prefix}.mlp.down_proj.weight": partial(fn, is_column=False),
@@ -530,9 +541,6 @@ class Olmo2Model(Olmo2PretrainedModel):
         output_hidden_states: bool | None = None,
         return_dict: bool | None = False,
     ):
-        # Diff alignment mode: run entire model in float32 for precise comparison
-        diff_align_f32 = getattr(self.config, "diff_align_float32", False)
-
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
@@ -544,10 +552,6 @@ class Olmo2Model(Olmo2PretrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         inputs_embeds = cast(paddle.Tensor, inputs_embeds)
-
-        # Diff alignment mode: cast to float32 for precise numerical comparison
-        if diff_align_f32:
-            inputs_embeds = inputs_embeds.astype(paddle.float32)
 
         bsz, seq_length, _ = inputs_embeds.shape
 
@@ -621,6 +625,8 @@ class Olmo2Model(Olmo2PretrainedModel):
         if not return_dict:
             outputs = []
             outputs.append(hidden_states)
+            if past_key_values is not None:
+                outputs.append(past_key_values)
             if output_hidden_states:
                 outputs.append(all_hidden_states)
             return tuple(outputs)
@@ -649,7 +655,7 @@ class Olmo2ForCausalLM(Olmo2PretrainedModel):
 
     def forward(
         self,
-        input_ids: paddle.Tensor,
+        input_ids: paddle.Tensor | None = None,
         position_ids: paddle.Tensor | None = None,
         attention_mask: paddle.Tensor | None = None,
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
@@ -669,7 +675,11 @@ class Olmo2ForCausalLM(Olmo2PretrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if attention_mask is not None and attention_mask.dtype != paddle.bool:
+        if (
+            isinstance(attention_mask, paddle.Tensor)
+            and attention_mask.ndim == 2
+            and attention_mask.dtype != paddle.bool
+        ):
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
         if attn_mask_startend_row_indices is not None and attention_mask is not None:
@@ -696,7 +706,7 @@ class Olmo2ForCausalLM(Olmo2PretrainedModel):
 
         loss = None
         if labels is not None:
-            loss, _ = self.criterion(logits, labels)
+            loss, _ = self.criterion(logits, labels, loss_mask=loss_mask)
 
         if not return_dict:
             output = (logits,) + outputs[1:]

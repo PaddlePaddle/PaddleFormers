@@ -182,6 +182,36 @@ class Olmo3Model(Olmo3PretrainedModel):
                 "full_attention": create_causal_mask_and_row_indices(**mask_kwargs),
                 "sliding_attention": create_sliding_window_causal_mask_and_row_indices(**mask_kwargs),
             }
+            if attn_mask_startend_row_indices is None and (
+                self.config._attn_implementation == "flashmask" or (kv_seq_len and seq_length > 1)
+            ):
+                # Cached multi-token chunks need a bottom-right aligned causal mask.
+                full_mask = self._prepare_decoder_attention_mask(
+                    attention_mask=(
+                        paddle.ones([bsz, kv_seq_len + seq_length], dtype="bool")
+                        if attention_mask is None
+                        else attention_mask
+                    ),
+                    input_shape=(bsz, seq_length),
+                    past_key_values_length=kv_seq_len,
+                    dtype=inputs_embeds.dtype,
+                )
+                causal_mask_mapping["full_attention"] = (full_mask, None)
+            if past_key_values is not None:
+                cache_position = paddle.arange(kv_seq_len, kv_seq_len + seq_length, dtype="int64")
+                for attention_type in set(self.config.layer_types):
+                    layer_idx = self.config.layer_types.index(attention_type)
+                    kv_length, kv_offset = past_key_values.get_mask_sizes(cache_position, layer_idx)
+                    mask, row_indices = causal_mask_mapping[attention_type]
+                    if kv_offset:
+                        if row_indices is not None:
+                            raise NotImplementedError(
+                                "Cached sliding-window decoding with sparse row indices is not supported. "
+                                "Pass a dense attention_mask instead."
+                            )
+                        if mask is not None:
+                            mask = mask[..., kv_offset : kv_offset + kv_length]
+                        causal_mask_mapping[attention_type] = (mask, row_indices)
 
         hidden_states = inputs_embeds
 
@@ -250,6 +280,8 @@ class Olmo3Model(Olmo3PretrainedModel):
         if not return_dict:
             outputs = []
             outputs.append(hidden_states)
+            if past_key_values is not None:
+                outputs.append(past_key_values)
             if output_hidden_states:
                 outputs.append(all_hidden_states)
             return tuple(outputs)
@@ -279,3 +311,9 @@ class Olmo3ForCausalLMPipe(Olmo2ForCausalLMPipe):
     config_class = Olmo3Config
     _decoder_layer_cls = Olmo3DecoderLayer
     _gen_aoa_config = Olmo2ForCausalLM._gen_aoa_config
+
+    def __init__(self, config):
+        raise NotImplementedError(
+            "OLMo3 pipeline parallelism is not supported yet: it requires per-layer sliding masks and RoPE. "
+            "Use Olmo3ForCausalLM instead."
+        )

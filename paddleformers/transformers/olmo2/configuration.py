@@ -65,6 +65,8 @@ class Olmo2Config(PretrainedConfig):
             The dropout ratio for the attention probabilities.
         rms_norm_eps (`float`, *optional*, defaults to 1e-05):
             The epsilon used by the rms normalization layers.
+        head_dim (`int`, *optional*):
+            Dimension of each attention head. Defaults to hidden_size // num_attention_heads.
     """
 
     model_type = "olmo2"
@@ -91,6 +93,7 @@ class Olmo2Config(PretrainedConfig):
         attention_bias=False,
         attention_dropout=0.0,
         rms_norm_eps=1e-5,
+        head_dim=None,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -110,8 +113,7 @@ class Olmo2Config(PretrainedConfig):
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
         self.rms_norm_eps = rms_norm_eps
-
-        self.diff_align_float32 = kwargs.pop("diff_align_float32", False)
+        self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
 
         self.rope_theta = rope_theta
         self.rope_scaling = rope_scaling
@@ -128,21 +130,3 @@ class Olmo2Config(PretrainedConfig):
             tie_word_embeddings=tie_word_embeddings,
             **kwargs,
         )
-
-    def _rope_scaling_validation(self):
-        """Validate the `rope_scaling` configuration."""
-        if self.rope_scaling is None:
-            return
-
-        if not isinstance(self.rope_scaling, dict) or len(self.rope_scaling) != 2:
-            raise ValueError(
-                f"`rope_scaling` must be a dictionary with two fields, `type` and `factor`, got {self.rope_scaling}"
-            )
-        rope_scaling_type = self.rope_scaling.get("type", None)
-        rope_scaling_factor = self.rope_scaling.get("factor", None)
-        if rope_scaling_type is None or rope_scaling_type not in ["linear", "dynamic"]:
-            raise ValueError(
-                f"`rope_scaling`'s type field must be one of ['linear', 'dynamic'], got {rope_scaling_type}"
-            )
-        if rope_scaling_factor is None or not isinstance(rope_scaling_factor, float) or rope_scaling_factor <= 1.0:
-            raise ValueError(f"`rope_scaling`'s factor field must be a float > 1, got {rope_scaling_factor}")
