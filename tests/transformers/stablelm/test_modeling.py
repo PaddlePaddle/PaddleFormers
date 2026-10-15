@@ -13,10 +13,12 @@
 # limitations under the License.
 from __future__ import annotations
 
+import itertools
 import tempfile
 import unittest
 
 import paddle
+from parameterized import parameterized
 
 from paddleformers.transformers import (
     StableLmConfig,
@@ -24,7 +26,33 @@ from paddleformers.transformers import (
     StableLmModel,
     StableLmTokenizer,
 )
+from paddleformers.transformers.stablelm.modeling import (
+    StableLmAttention,
+    StableLmDecoderLayer,
+    StableLmLayerNormPerHead,
+    StableLmRotaryEmbedding,
+)
 from tests.testing_utils import gpu_device_initializer, require_package, slow
+
+
+class StableLmLayerNormPerHeadTest(unittest.TestCase):
+    @parameterized.expand([(1, False), (2, False), (4, False), (4, True)])
+    def test_per_head_normalization(self, num_heads, bias):
+        layer = StableLmLayerNormPerHead(8, num_heads, bias=bias)
+        hidden_states = paddle.randn([2, num_heads, 3, 8])
+        expected_heads = []
+        for head, norm in enumerate(layer.norms):
+            norm.weight.set_value(paddle.full([8], float(head + 1)))
+            if bias:
+                norm.bias.set_value(paddle.full([8], float(head) / 10))
+            states = hidden_states[:, head : head + 1]
+            centered = states - states.mean(axis=-1, keepdim=True)
+            expected = centered / paddle.sqrt((centered * centered).mean(axis=-1, keepdim=True) + 1e-5)
+            expected = expected * norm.weight
+            if bias:
+                expected = expected + norm.bias
+            expected_heads.append(expected)
+        paddle.testing.assert_close(layer(hidden_states), paddle.concat(expected_heads, axis=1), rtol=1e-5, atol=1e-6)
 
 
 class StableLmModelTester:
@@ -103,6 +131,82 @@ class StableLmModelTest(unittest.TestCase):
         self.model_tester = StableLmModelTester(self)
         self.config = self.model_tester.get_config()
 
+    def test_qk_layernorm_rejects_tensor_parallelism(self):
+        self.config.qk_layernorm = True
+        self.config.tensor_model_parallel_size = 2
+        with self.assertRaisesRegex(ValueError, "does not support tensor parallelism"):
+            StableLmAttention(self.config)
+
+    @parameterized.expand([("linear",), ("dynamic",)])
+    def test_legacy_rope_scaling(self, rope_type):
+        scaling = {"type": rope_type, "factor": 2.0}
+        config = StableLmConfig(rope_scaling=scaling)
+        self.assertEqual(config.rope_parameters["rope_type"], rope_type)
+        self.assertEqual(config.rope_parameters["factor"], 2.0)
+        self.assertEqual(scaling, {"type": rope_type, "factor": 2.0})
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config.save_pretrained(tmpdir)
+            loaded = StableLmConfig.from_pretrained(tmpdir)
+        self.assertEqual(loaded.rope_parameters, config.rope_parameters)
+
+    def test_rope_parameters_take_precedence(self):
+        config = StableLmConfig(
+            rope_parameters={"rope_type": "linear", "factor": 3.0},
+            rope_scaling={"type": "linear", "factor": 2.0},
+        )
+        self.assertEqual(config.rope_parameters["factor"], 3.0)
+
+    @parameterized.expand([(False,), (True,)])
+    @gpu_device_initializer(log_prefix="StableLmModelTest")
+    def test_residual_formula(self, parallel):
+        config = StableLmConfig(
+            hidden_size=64,
+            intermediate_size=128,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            use_parallel_residual=parallel,
+            qk_layernorm=True,
+        )
+        layer = StableLmDecoderLayer(config, 0)
+        layer.eval()
+        hidden_states = paddle.randn([2, 4, 64])
+        position_ids = paddle.arange(4).unsqueeze(0)
+        with paddle.no_grad():
+            position_embeddings = StableLmRotaryEmbedding(config)(hidden_states, position_ids)
+            normalized = layer.input_layernorm(hidden_states)
+            attention_output, _ = layer.self_attn(normalized, position_embeddings=position_embeddings)
+            if parallel:
+                expected = hidden_states + attention_output + layer.mlp(normalized)
+            else:
+                residual = hidden_states + attention_output
+                expected = residual + layer.mlp(layer.post_attention_layernorm(residual))
+            actual = layer(hidden_states, position_embeddings=position_embeddings)
+        paddle.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
+
+    @gpu_device_initializer(log_prefix="StableLmModelTest")
+    def test_loss_mask(self):
+        config = StableLmConfig(
+            vocab_size=32,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+        )
+        model = StableLmForCausalLM(config)
+        model.eval()
+        input_ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
+        labels = paddle.to_tensor([[2, 3, 4, 5]], dtype="int64")
+        loss_mask = paddle.to_tensor([[1.0, 0.0, 0.5, 0.0]])
+        with paddle.no_grad():
+            outputs = model(input_ids, labels=labels, loss_mask=loss_mask, return_dict=True)
+            token_loss = paddle.nn.functional.cross_entropy(outputs.logits, labels, reduction="none")
+            expected = (token_loss * loss_mask).sum() / loss_mask.sum()
+            changed_labels = paddle.to_tensor([[2, 8, 4, 9]], dtype="int64")
+            changed = model(input_ids, labels=changed_labels, loss_mask=loss_mask, return_dict=True)
+        paddle.testing.assert_close(outputs.loss, expected, rtol=1e-5, atol=1e-6)
+        paddle.testing.assert_close(changed.loss, outputs.loss, rtol=0.0, atol=0.0)
+
     @gpu_device_initializer(log_prefix="StableLmModelTest")
     def test_config(self):
         config = StableLmConfig()
@@ -139,6 +243,45 @@ class StableLmModelTest(unittest.TestCase):
         with paddle.no_grad():
             outputs = model(input_ids, return_dict=True)
         self.assertEqual(outputs.logits.shape, [1, 8, self.config.vocab_size])
+
+    @parameterized.expand(list(itertools.product([False, True], repeat=3)))
+    @gpu_device_initializer(log_prefix="StableLmModelTest")
+    def test_optional_branches_roundtrip(self, use_qkv_bias, qk_layernorm, use_parallel_residual):
+        config = StableLmConfig(
+            vocab_size=128,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            use_qkv_bias=use_qkv_bias,
+            qk_layernorm=qk_layernorm,
+            use_parallel_residual=use_parallel_residual,
+            hidden_dropout=0.0,
+            attention_dropout=0.0,
+        )
+        model = StableLmForCausalLM(config)
+        model.eval()
+        with paddle.no_grad():
+            for name, param in model.named_parameters():
+                if "layernorm.norms." in name or name.endswith(".bias"):
+                    param.set_value(paddle.randn(param.shape) * 0.1)
+        input_ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
+        with paddle.no_grad():
+            expected = model(input_ids, return_dict=True).logits
+        self.assertTrue(paddle.isfinite(expected).all().item())
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir)
+            loaded = StableLmForCausalLM.from_pretrained(
+                tmpdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
+            loaded.eval()
+            self.assertEqual(set(model.state_dict()), set(loaded.state_dict()))
+            for name, value in model.state_dict().items():
+                paddle.testing.assert_close(value, loaded.state_dict()[name], rtol=0.0, atol=0.0)
+            with paddle.no_grad():
+                actual = loaded(input_ids, return_dict=True).logits
+            paddle.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
 
     @gpu_device_initializer(log_prefix="StableLmModelTest")
     def test_tiny_model_init_and_delete(self):

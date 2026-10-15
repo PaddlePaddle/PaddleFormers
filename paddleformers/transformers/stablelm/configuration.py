@@ -69,7 +69,12 @@ class StableLmConfig(PretrainedConfig):
         self.partial_rotary_factor = partial_rotary_factor
         if rope_parameters is not None and not isinstance(rope_parameters, dict):
             raise ValueError("rope_parameters must be a dict or None")
-        self.rope_parameters = rope_parameters
+        rope_scaling = kwargs.pop("rope_scaling", None)
+        if rope_parameters is None:
+            rope_parameters = rope_scaling
+        if rope_parameters is not None and not isinstance(rope_parameters, dict):
+            raise ValueError("rope_parameters and rope_scaling must be dicts or None")
+        self.rope_parameters = dict(rope_parameters) if rope_parameters is not None else None
         standardize_rope_params(self, rope_theta=self.rope_theta)
         if self.partial_rotary_factor is not None and isinstance(self.rope_parameters, dict):
             self.rope_parameters["partial_rotary_factor"] = self.partial_rotary_factor

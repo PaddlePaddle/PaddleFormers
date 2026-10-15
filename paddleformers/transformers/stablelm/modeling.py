@@ -102,7 +102,7 @@ class StableLmLayerNormPerHead(nn.Layer):
         self.norms = nn.LayerList([nn.LayerNorm(dim, epsilon=eps, bias_attr=bias) for _ in range(self.num_heads)])
 
     def forward(self, hidden_states: paddle.Tensor):
-        states_per_heads = paddle.split(hidden_states, 1, axis=1)
+        states_per_heads = paddle.split(hidden_states, self.num_heads, axis=1)
         return paddle.concat(
             [norm(hidden_states) for norm, hidden_states in zip(self.norms, states_per_heads)],
             axis=1,
@@ -122,6 +122,8 @@ class StableLmAttention(nn.Layer):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
+        if config.qk_layernorm and config.tensor_model_parallel_size > 1:
+            raise ValueError("StableLM per-head QK LayerNorm does not support tensor parallelism yet")
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
@@ -617,7 +619,7 @@ class StableLmForCausalLM(StableLmPretrainedModel):
 
         loss = None
         if labels is not None:
-            loss, _ = self.criterion(logits, labels)
+            loss, _ = self.criterion(logits, labels, loss_mask=loss_mask)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
