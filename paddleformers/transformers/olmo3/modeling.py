@@ -182,9 +182,7 @@ class Olmo3Model(Olmo3PretrainedModel):
                 "full_attention": create_causal_mask_and_row_indices(**mask_kwargs),
                 "sliding_attention": create_sliding_window_causal_mask_and_row_indices(**mask_kwargs),
             }
-            if attn_mask_startend_row_indices is None and (
-                self.config._attn_implementation == "flashmask" or (kv_seq_len and seq_length > 1)
-            ):
+            if attn_mask_startend_row_indices is None and kv_seq_len and seq_length > 1:
                 # Cached multi-token chunks need a bottom-right aligned causal mask.
                 full_mask = self._prepare_decoder_attention_mask(
                     attention_mask=(

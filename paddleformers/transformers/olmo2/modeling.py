@@ -166,6 +166,11 @@ class Olmo2Attention(nn.Layer):
         backend = self.config._attn_implementation
         # Flashmask only consumes sparse row indices; preserve dense mask semantics.
         if backend == "flashmask" and attention_mask is not None:
+            logger.warning_once(
+                "OLMo2/OLMo3 is falling back from flashmask to eager attention because a dense attention mask "
+                "is required. This can increase memory usage and runtime for long sequences. "
+                "Use supported attn_mask_startend_row_indices to retain flashmask execution."
+            )
             backend = "eager"
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[backend]
 
