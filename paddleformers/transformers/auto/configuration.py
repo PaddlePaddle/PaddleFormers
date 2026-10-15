@@ -83,6 +83,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("molmo", "MolmoConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("stablelm", "StableLmConfig"),
         ("olmo2", "Olmo2Config"),
         ("internlm3", "InternLM3Config"),
         ("internlm2", "InternLM2Config"),

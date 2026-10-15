@@ -508,6 +508,16 @@ def get_lora_target_modules(model):
             "model.visual.blocks.*mlp.up_proj.*",
             "model.visual.blocks.*mlp.down_proj.*",
         ]
+    elif model.config.model_type == "stablelm":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "internlm2":
         # Covers both InternLM2 2.0 and 2.5: both route through the unified
         # `intern/` proxy with `model_type = "internlm2"` and share the same
