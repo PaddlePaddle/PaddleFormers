@@ -1,8 +1,8 @@
-model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/huggingface/GLM-4.5-Air
-train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/qwen/sft_data_0924v1_qwen_format_2000_reduplicative_converted.jsonl
+model_name_or_path: /root/afs_ro/cnn-bd-main.afs.baidu.com/user/erine/lizhenxing02/GLM-4.5-Air
+train_dataset_path: /root/afs_ro/cnn-bd-main.afs.baidu.com/user/erine/lizhenxing02/dataset/sft_data_0924v1_qwen_format_2000_reduplicative_converted.jsonl
 train_dataset_prob: '1.0'
 train_dataset_type: messages
-eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/efficient_benchmark/dataset/qwen/sft_data_0924v1_qwen_format_2000_reduplicative_converted.jsonl
+eval_dataset_path: /root/afs_ro/cnn-bd-main.afs.baidu.com/user/erine/lizhenxing02/dataset/sft_data_0924v1_qwen_format_2000_reduplicative_converted.jsonl
 eval_dataset_prob: '1.0'
 eval_dataset_type: messages
 max_seq_len: 8192
