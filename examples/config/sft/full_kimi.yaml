@@ -1,0 +1,95 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/data/alignment_data/train_single.jsonl
+#train_dataset_path: ./tests/fixtures/dummy/sft/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: /root/paddlejob/share-storage/gpfs/system-public/huangjiyi/data/sft/train.jsonl
+#eval_dataset_path: ./tests/fixtures/dummy/sft/train.jsonl
+max_seq_len: 8192
+mix_strategy: concat
+template_backend: custom
+template: kimi_k2
+# truncation_strategy: right
+dataloader_num_workers: 1
+dataset_num_proc: 1
+
+### model
+# model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/wangruting/moonshotai/Kimi-K2-Base-BF16
+# model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/moonshotai/Kimi-K2-Base-BF16-paddle
+model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/moonshotai/kimi_sft_ckps_4_paddle
+# model_name_or_path: /root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/PaddleFormers-test/checkpoints/kimi_sft_ckps/checkpoint-2
+# resume_from_checkpoint: /root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/PaddleFormers-test/checkpoints/kimi_sft_ckps/checkpoint-2
+# resume_from_checkpoint: /root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/PaddleFormers-test/checkpoints/kimi_sft_ckps_3
+_attn_implementation: eager
+#use_attn_mask_startend_row_indices: false
+
+### finetuning
+# base
+stage: SFT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 1
+eval_steps: 200
+evaluation_strategy: steps
+save_steps: 200
+save_strategy: steps
+logging_steps: 1
+gradient_accumulation_steps: 2
+logging_dir: ./vdl_log
+output_dir: /root/paddlejob/share-storage/gpfs/system-public/dengsiwei02/PaddleFormers-test/checkpoints/kimi_sft_ckps_5
+disable_tqdm: true
+eval_accumulation_steps: 16
+#
+# train
+# warmup_steps: 20
+learning_rate: 1.0e-5
+
+# performance - 对齐 ms-swift TP=8, PP=4, EP=8
+tensor_model_parallel_size: 8
+sequence_parallel: true
+pipeline_model_parallel_size: 1
+expert_model_parallel_size: 8
+use_expert_parallel: true
+sharding: stage1
+recompute_granularity: "full"
+recompute_method: uniform
+recompute_num_layers: 1
+bf16: true
+fp16_opt_level: O2
+amp_master_grad: false  # 禁用 master_grad，梯度存储为 bfloat16，与 MG 对齐
+unified_checkpoint: false
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+continue_training: true
+tensorwise_offload_optimizer: true
+# gradient_accumulation_fusion: false  # PF不支持此参数，gradient_accumulation_fusion在PF中由模型内部决定
+# moe_grouped_gemm: true
+# moe_token_dispatcher_type: flex
+# moe_token_dispatcher_type: deepep
+moe_use_fusion_node: true
+moe_expert_fusion: false  # 对齐: 强制走 per-expert F.linear+concat, 与更新前 (moe_grouped_gemm=False) 同算子
+moe_shared_expert_overlap: false
+
+# moe_aux_loss_coeff: 0
+# moe_deep_gemm: true
+# moe_enable_deepep: false
+# Other performance configs
+# overlap_grad_reduce: true
+# overlap_param_gather: true
+# cross_entropy_loss_fusion: true
+# num_empty_layers_add_in_tail: 3
+num_hidden_layers: 2
+dataset_type: map
+packing: false
+random_shuffle: false
+dataloader_shuffle: false
+use_template: false
+truncation_strategy: delete
+padding_free: true
+# enable_dynamic_shape: true
