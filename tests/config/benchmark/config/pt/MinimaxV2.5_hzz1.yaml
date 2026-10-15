@@ -121,3 +121,4 @@ save_total_limit: 2
 # fp8: e4m3
 # offload_fp8_expert_master_weight: false
 # num_hidden_layers: 30
+moe_token_dispatcher_type: deepep
