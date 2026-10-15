@@ -84,6 +84,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
         ("olmo2", "Olmo2Config"),
+        ("olmo3", "Olmo3Config"),
         ("internlm3", "InternLM3Config"),
         ("internlm2", "InternLM2Config"),
         # TODO(VL): When Gemma4 VL is implemented, "gemma4" should point to Gemma4Config (VL wrapper)

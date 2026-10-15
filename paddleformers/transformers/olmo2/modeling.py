@@ -11,17 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Paddle OLMo2 model."""
+
+"""OLMo2 model implementation for PaddlePaddle.
+
+Migrated from transformers.models.olmo2.modeling_olmo2
+"""
 
 from typing import Callable, Optional, cast
 
 import paddle
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
-from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-    ScatterOp,
-    mark_as_sequence_parallel_parameter,
-)
+from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -29,6 +30,7 @@ from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
+from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
@@ -39,66 +41,44 @@ from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Olmo2Config
 
 
-class Olmo2RMSNorm(nn.Layer):
-    def __init__(self, hidden_size: int, eps: float = 1e-6, input_is_parallel: bool = False):
-        super().__init__()
-        self.weight = paddle.create_parameter(
-            shape=[hidden_size],
-            dtype=paddle.get_default_dtype(),
-            default_initializer=nn.initializer.Constant(1.0),
-        )
-        self.variance_epsilon = eps
-        if input_is_parallel:
-            mark_as_sequence_parallel_parameter(self.weight)
-
-    def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
-        input_dtype = hidden_states.dtype
-        hidden_states_fp32 = hidden_states.astype("float32")
-        variance = hidden_states_fp32.pow(2).mean(-1, keepdim=True)
-        hidden_states_fp32 = hidden_states_fp32 * paddle.rsqrt(variance + self.variance_epsilon)
-        return (self.weight.astype("float32") * hidden_states_fp32).astype(input_dtype)
-
-
 def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
+    """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return paddle.cat((-x2, x1), axis=-1)
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
+    """Applies rotary positional embedding to query and key tensors.
+
+    NOTE: Keep computation in the original dtype (bf16) to match PyTorch's
+    behavior exactly, avoiding float32-induced precision differences that
+    accumulate across layers.
+    """
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
 
-    q_type, k_type = q.dtype, k.dtype
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
 
-    return q_embed.astype(q_type), k_embed.astype(k_type)
+    return q_embed, k_embed
 
 
 class Olmo2Attention(nn.Layer):
+    """Multi-headed attention with QK-norm (unique to OLMo2/3)."""
+
     def __init__(self, config: Olmo2Config, layer_idx: int):
         super().__init__()
+        if config.tensor_model_parallel_size > 1:
+            raise NotImplementedError(
+                "OLMo2/OLMo3 QK-norm requires RMS statistics over the full query/key projection. "
+                "Tensor parallelism is not supported yet; set tensor_model_parallel_size=1."
+            )
         self.config = config
         self.layer_idx = layer_idx
+        self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
-        if hasattr(config, "head_dim"):
-            self.head_dim = config.head_dim
-        else:
-            self.head_dim = config.hidden_size // config.num_attention_heads
-
-        if config.tensor_model_parallel_size > 1:
-            assert (
-                self.num_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            self.num_heads = self.num_heads // config.tensor_model_parallel_size
-
-            assert (
-                self.num_key_value_heads % config.tensor_model_parallel_size == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
-
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
@@ -112,7 +92,6 @@ class Olmo2Attention(nn.Layer):
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
-            gather_output=True,
         )
         self.k_proj = GeneralLinear.create(
             config.hidden_size,
@@ -120,7 +99,6 @@ class Olmo2Attention(nn.Layer):
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
-            gather_output=True,
         )
         self.v_proj = GeneralLinear.create(
             config.hidden_size,
@@ -128,7 +106,6 @@ class Olmo2Attention(nn.Layer):
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
-            gather_output=True,
         )
         self.o_proj = GeneralLinear.create(
             q_hidden_size,
@@ -136,18 +113,22 @@ class Olmo2Attention(nn.Layer):
             has_bias=config.attention_bias,
             config=config,
             tp_plan="rowwise",
-            input_is_parallel=False,
         )
 
-        self.q_norm = Olmo2RMSNorm(
-            q_hidden_size,
-            eps=config.rms_norm_eps,
-            input_is_parallel=config.sequence_parallel,
+        # QK-norm spans the full projection, not each head independently.
+        self.q_norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=q_hidden_size,
+            has_bias=False,
+            norm_eps=config.rms_norm_eps,
         )
-        self.k_norm = Olmo2RMSNorm(
-            kv_hidden_size,
-            eps=config.rms_norm_eps,
-            input_is_parallel=config.sequence_parallel,
+        self.k_norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=kv_hidden_size,
+            has_bias=False,
+            norm_eps=config.rms_norm_eps,
         )
 
     def forward(
@@ -182,7 +163,16 @@ class Olmo2Attention(nn.Layer):
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        backend = self.config._attn_implementation
+        # Flashmask only consumes sparse row indices; preserve dense mask semantics.
+        if backend == "flashmask" and attention_mask is not None:
+            logger.warning_once(
+                "OLMo2/OLMo3 is falling back from flashmask to eager attention because a dense attention mask "
+                "is required. This can increase memory usage and runtime for long sequences. "
+                "Use supported attn_mask_startend_row_indices to retain flashmask execution."
+            )
+            backend = "eager"
+        attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[backend]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -201,21 +191,37 @@ class Olmo2Attention(nn.Layer):
 
 
 class Olmo2DecoderLayer(nn.Layer):
+    """OLMo2 decoder layer with post-norm structure.
+
+    Post-norm structure (vs Llama's pre-norm):
+    - attn -> post_attention_layernorm -> residual -> mlp -> post_feedforward_layernorm -> residual
+    """
+
+    _attention_cls = Olmo2Attention
+
     def __init__(self, config: Olmo2Config, layer_idx: int):
         super().__init__()
         self.config = config
         self.hidden_size = config.hidden_size
-        self.self_attn = Olmo2Attention(config=config, layer_idx=layer_idx)
+        self.self_attn = self._attention_cls(config=config, layer_idx=layer_idx)
+
         self.mlp = MLP(config)
 
-        self.post_attention_layernorm = Olmo2RMSNorm(
-            config.hidden_size,
-            eps=config.rms_norm_eps,
+        # Post-norm: applied AFTER attention and MLP
+        self.post_attention_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=False,
+            norm_eps=config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
-        self.post_feedforward_layernorm = Olmo2RMSNorm(
-            config.hidden_size,
-            eps=config.rms_norm_eps,
+        self.post_feedforward_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=False,
+            norm_eps=config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
 
@@ -228,8 +234,9 @@ class Olmo2DecoderLayer(nn.Layer):
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
         past_key_values: Cache | None = None,
         use_cache: bool = False,
-    ) -> (tuple[paddle.Tensor] | tuple[paddle.Tensor, paddle.Tensor]):
+    ) -> tuple[paddle.Tensor] | tuple[paddle.Tensor, paddle.Tensor]:
         residual = hidden_states
+
         hidden_states, _ = self.self_attn(
             hidden_states=hidden_states,
             attention_mask=attention_mask,
@@ -246,20 +253,29 @@ class Olmo2DecoderLayer(nn.Layer):
         hidden_states = self.post_feedforward_layernorm(hidden_states)
         hidden_states = residual + hidden_states
 
-        return hidden_states
+        outputs = (hidden_states,)
+        if len(outputs) == 1 and isinstance(outputs, tuple):
+            outputs = outputs[0]
+
+        return outputs  # type: ignore[return-value]
 
 
 class Olmo2RotaryEmbedding(nn.Layer):
-    def __init__(self, config):
+    """Rotary position embedding."""
+
+    def __init__(self, config: Olmo2Config, rope_type: Optional[str] = None):
         super().__init__()
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
         self.config = config
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 
-        self.rope_type = "default"
-        if hasattr(config, "rope_parameters") and isinstance(config.rope_parameters, dict):
+        if rope_type is not None:
+            self.rope_type = rope_type
+        elif hasattr(config, "rope_parameters") and isinstance(config.rope_parameters, dict):
             self.rope_type = config.rope_parameters.get("rope_type", "default")
+        else:
+            self.rope_type = "default"
 
         rope_init_fn = self.compute_default_rope_parameters
         if self.rope_type != "default":
@@ -273,7 +289,8 @@ class Olmo2RotaryEmbedding(nn.Layer):
     def compute_default_rope_parameters(
         config: Optional[Olmo2Config] = None,
         seq_len: Optional[int] = None,
-    ) -> tuple["paddle.Tensor", float]:
+    ) -> tuple[paddle.Tensor, float]:
+        """Computes the inverse frequencies for RoPE."""
         base = config.rope_parameters["rope_theta"]
         dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
 
@@ -290,14 +307,15 @@ class Olmo2RotaryEmbedding(nn.Layer):
 
             freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
             emb = paddle.concat((freqs, freqs), axis=-1)
-
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
 
-        return cos, sin
+        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
 
 class Olmo2PretrainedModel(PretrainedModel):
+    """Base class for OLMo2 models."""
+
     config_class = Olmo2Config
     base_model_prefix = "model"
     transpose_weight_keys = [
@@ -310,26 +328,71 @@ class Olmo2PretrainedModel(PretrainedModel):
         "down_proj",
     ]
 
+    @paddle.jit.not_to_static
+    def recompute_training(
+        self,
+        layer_module: nn.Layer,
+        hidden_states: paddle.Tensor,
+        attention_mask: paddle.Tensor | None,
+        attn_mask_startend_row_indices: paddle.Tensor | None,
+        position_ids: paddle.Tensor,
+        position_embeddings: paddle.Tensor,
+        past_key_values: Cache | None,
+        use_cache: bool,
+    ):
+        """Shared recompute training method for Olmo2 and Olmo3 models."""
+        cos, sin = position_embeddings
+        cos = cos.clone()
+        sin = sin.clone()
+
+        position_embeddings_safe = (cos, sin)
+
+        hidden_states = recompute(
+            layer_module,
+            hidden_states,
+            attention_mask,
+            attn_mask_startend_row_indices,
+            position_ids,
+            position_embeddings_safe,
+            past_key_values,
+            use_cache,
+        )
+        return hidden_states
+
     @classmethod
     def _gen_aoa_config(cls, config: Olmo2Config):
-        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        """Generate AOA config for weight conversion.
+
+        Note: OLMo2 uses post-norm structure:
+        - post_attention_layernorm (not input_layernorm)
+        - post_feedforward_layernorm (not post_attention_layernorm)
+
+        OLMo2 follows PT-oriented checkpoint layout for projection/MLP matrices,
+        so both PT and PD checkpoints use ^T mapping for these weights.
+        """
+        model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
 
         aoa_statements = [
             f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
             f"model.norm.weight -> {model_prefix}norm.weight",
             f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
             f"model.layers.$LAYER_ID.post_feedforward_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight",
-            f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
-            f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
         ]
 
+        # Projection weights are loaded with transpose for unified PT-oriented layout.
+        proj_names = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        if config.attention_bias:
+            aoa_statements.extend(
+                f"model.layers.$LAYER_ID.self_attn.{name}.bias -> {model_prefix}layers.$LAYER_ID.self_attn.{name}.bias"
+                for name in proj_names
+            )
         aoa_statements.extend(
             [
                 f"model.layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{proj_name}.weight"
-                for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]
+                for proj_name in proj_names
             ]
         )
-
         aoa_statements.extend(
             [
                 f"model.layers.$LAYER_ID.mlp.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{proj_name}.weight"
@@ -337,31 +400,57 @@ class Olmo2PretrainedModel(PretrainedModel):
             ]
         )
 
+        aoa_statements.extend(
+            [
+                f"model.layers.$LAYER_ID.self_attn.q_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"model.layers.$LAYER_ID.self_attn.k_norm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
+            ]
+        )
+
         if cls != cls.base_model_class:
             if config.tie_word_embeddings:
-                aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
+                if is_fleet:
+                    aoa_statements.append(f"model.embed_tokens.weight -> {model_prefix}lm_head.weight")
+                else:
+                    aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
             else:
-                aoa_statements.append("lm_head.weight -> lm_head.weight")
+                if is_fleet:
+                    aoa_statements.append(f"lm_head.weight -> {model_prefix}lm_head.weight")
+                else:
+                    aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
 
     @classmethod
     def _gen_inv_aoa_config(cls, config: Olmo2Config):
-        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        """Generate inverse AOA config for weight export."""
+        model_prefix = "" if cls == cls.base_model_class else "model."
+        is_fleet = getattr(cls, "is_fleet", False)
 
         aoa_statements = [
             f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_feedforward_layernorm.weight -> model.layers.$LAYER_ID.post_feedforward_layernorm.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
-            f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
         ]
+
+        if config.attention_bias:
+            aoa_statements.extend(
+                f"{model_prefix}layers.$LAYER_ID.self_attn.{name}.bias -> model.layers.$LAYER_ID.self_attn.{name}.bias"
+                for name in ["q_proj", "k_proj", "v_proj", "o_proj"]
+            )
 
         aoa_statements.extend(
             [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> model.layers.$LAYER_ID.self_attn.{proj_name}.weight"
                 for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]
+            ]
+        )
+
+        aoa_statements.extend(
+            [
+                f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
         )
 
@@ -373,13 +462,52 @@ class Olmo2PretrainedModel(PretrainedModel):
         )
 
         if not config.tie_word_embeddings and cls != cls.base_model_class:
-            aoa_statements.append("lm_head.weight -> lm_head.weight")
+            if is_fleet:
+                aoa_statements.append(f"lm_head.weight -> {model_prefix}lm_head.weight")
+            else:
+                aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
+
+    @classmethod
+    def _get_tensor_parallel_mappings(cls, config, is_split=True):
+        from functools import partial
+
+        from ..conversion_utils import split_or_merge_func
+
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
+            tensor_parallel_rank=config.tensor_parallel_rank,
+            num_attention_heads=config.num_attention_heads,
+        )
+
+        actions = {
+            "embed_tokens.weight": partial(fn, is_column=False),
+            "lm_head.weight": partial(fn, is_column=False),
+        }
+
+        for layer_idx in range(config.num_hidden_layers):
+            prefix = f"{cls.base_model_prefix}.layers.{layer_idx}"
+            actions.update(
+                {
+                    f"{prefix}.self_attn.q_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.self_attn.k_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.self_attn.v_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.self_attn.o_proj.weight": partial(fn, is_column=False),
+                    f"{prefix}.mlp.gate_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.mlp.up_proj.weight": partial(fn, is_column=True),
+                    f"{prefix}.mlp.down_proj.weight": partial(fn, is_column=False),
+                }
+            )
+
+        return actions
 
 
 @register_base_model
 class Olmo2Model(Olmo2PretrainedModel):
+    """OLMo2 model (base model without LM head)."""
+
     def __init__(self, config: Olmo2Config):
         super().__init__(config)
         self.config = config
@@ -391,16 +519,17 @@ class Olmo2Model(Olmo2PretrainedModel):
             config=config,
             num_embeddings=self.vocab_size,
             embedding_dim=self.hidden_size,
-            # Paddle masks padding_idx to zeros during forward, so keep it unset
-            # to preserve the loaded embedding row for migrated checkpoints.
-            padding_idx=None,
+            padding_idx=self.padding_idx,
         )
         self.layers = nn.LayerList(
             [Olmo2DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
         )
-        self.norm = Olmo2RMSNorm(
-            config.hidden_size,
-            eps=config.rms_norm_eps,
+        self.norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            has_bias=False,
+            norm_eps=config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = Olmo2RotaryEmbedding(config=config)
@@ -428,6 +557,7 @@ class Olmo2Model(Olmo2PretrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
         inputs_embeds = cast(paddle.Tensor, inputs_embeds)
+
         bsz, seq_length, _ = inputs_embeds.shape
 
         if self.config.sequence_parallel:
@@ -458,7 +588,7 @@ class Olmo2Model(Olmo2PretrainedModel):
         all_hidden_states = [] if output_hidden_states else None
 
         hidden_states = inputs_embeds
-        for idx, decoder_layer in enumerate(self.layers):
+        for idx, decoder_layer in enumerate(self.layers[: self.config.num_hidden_layers]):
             if output_hidden_states:
                 all_hidden_states.append(hidden_states)
             has_gradient = not hidden_states.stop_gradient
@@ -500,6 +630,8 @@ class Olmo2Model(Olmo2PretrainedModel):
         if not return_dict:
             outputs = []
             outputs.append(hidden_states)
+            if past_key_values is not None:
+                outputs.append(past_key_values)
             if output_hidden_states:
                 outputs.append(all_hidden_states)
             return tuple(outputs)
@@ -510,50 +642,25 @@ class Olmo2Model(Olmo2PretrainedModel):
             hidden_states=all_hidden_states,
         )
 
-    @paddle.jit.not_to_static
-    def recompute_training(
-        self,
-        layer_module: nn.Layer,
-        hidden_states: paddle.Tensor,
-        attention_mask: paddle.Tensor | None,
-        attn_mask_startend_row_indices: paddle.Tensor | None,
-        position_ids: paddle.Tensor,
-        position_embeddings: paddle.Tensor,
-        past_key_values: Cache | None,
-        use_cache: bool,
-    ):
-        cos, sin = position_embeddings
-        cos = cos.clone()
-        sin = sin.clone()
-        position_embeddings_safe = (cos, sin)
-
-        hidden_states = recompute(
-            layer_module,
-            hidden_states,
-            attention_mask,
-            attn_mask_startend_row_indices,
-            position_ids,
-            position_embeddings_safe,
-            past_key_values,
-            use_cache,
-        )
-        return hidden_states
-
 
 class Olmo2ForCausalLM(Olmo2PretrainedModel):
+    """OLMo2 model for causal language modeling."""
+
     _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
+    _model_cls = Olmo2Model
 
     def __init__(self, config: Olmo2Config):
         super().__init__(config)
         self.config = config
-        self.model = Olmo2Model(config)
+        self.model = self._model_cls(config)
+        self.vocab_size = config.vocab_size
         self.lm_head = GeneralLMHead(config)
         self.criterion = CriterionLayer(config)
         self.tie_weights()
 
     def forward(
         self,
-        input_ids: paddle.Tensor,
+        input_ids: paddle.Tensor | None = None,
         position_ids: paddle.Tensor | None = None,
         attention_mask: paddle.Tensor | None = None,
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
@@ -573,7 +680,11 @@ class Olmo2ForCausalLM(Olmo2PretrainedModel):
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if attention_mask is not None and attention_mask.dtype != paddle.bool:
+        if (
+            isinstance(attention_mask, paddle.Tensor)
+            and attention_mask.ndim == 2
+            and attention_mask.dtype != paddle.bool
+        ):
             attention_mask = paddle.cast(attention_mask, paddle.bool)
 
         if attn_mask_startend_row_indices is not None and attention_mask is not None:
@@ -600,7 +711,7 @@ class Olmo2ForCausalLM(Olmo2PretrainedModel):
 
         loss = None
         if labels is not None:
-            loss, _ = self.criterion(logits, labels)
+            loss, _ = self.criterion(logits, labels, loss_mask=loss_mask)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -616,6 +727,8 @@ class Olmo2ForCausalLM(Olmo2PretrainedModel):
 
 
 class Olmo2ForCausalLMPipe(GeneralModelForCausalLMPipe):
+    """OLMo2 model for pipeline parallel training."""
+
     config_class = Olmo2Config
     _decoder_layer_cls = Olmo2DecoderLayer
     _get_tensor_parallel_mappings = Olmo2Model._get_tensor_parallel_mappings
@@ -625,11 +738,3 @@ class Olmo2ForCausalLMPipe(GeneralModelForCausalLMPipe):
     transpose_weight_keys = Olmo2Model.transpose_weight_keys
     _gen_aoa_config = Olmo2ForCausalLM._gen_aoa_config
     _gen_inv_aoa_config = Olmo2ForCausalLM._gen_inv_aoa_config
-
-
-__all__ = [
-    "Olmo2Model",
-    "Olmo2PretrainedModel",
-    "Olmo2ForCausalLM",
-    "Olmo2ForCausalLMPipe",
-]

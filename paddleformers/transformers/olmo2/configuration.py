@@ -17,29 +17,83 @@ from ..modeling_rope_utils import rope_config_validation, standardize_rope_param
 
 
 class Olmo2Config(PretrainedConfig):
+    r"""
+    This is the configuration class to store the configuration of a [`Olmo2Model`].
+    It is used to instantiate an OLMo2 model according to the specified arguments,
+    defining the model architecture.
+
+    Configuration objects inherit from [`PretrainedConfig`] and can be used to
+    control the model outputs. Read the documentation from [`PretrainedConfig`]
+    for more information.
+
+    Args:
+        vocab_size (`int`, *optional*, defaults to 50304):
+            Vocabulary size of the Olmo2 model.
+        hidden_size (`int`, *optional*, defaults to 4096):
+            Dimension of the hidden representations.
+        intermediate_size (`int`, *optional*, defaults to 11008):
+            Dimension of the MLP representations.
+        num_hidden_layers (`int`, *optional*, defaults to 32):
+            Number of hidden layers in the Transformer decoder.
+        num_attention_heads (`int`, *optional*, defaults to 32):
+            Number of attention heads for each attention layer.
+        num_key_value_heads (`int`, *optional*):
+            Number of key_value heads for Grouped Query Attention.
+        hidden_act (`str`, *optional*, defaults to `"silu"`):
+            The non-linear activation function in the decoder.
+        max_position_embeddings (`int`, *optional*, defaults to 2048):
+            The maximum sequence length.
+        initializer_range (`float`, *optional*, defaults to 0.02):
+            The standard deviation of the truncated_normal_initializer.
+        use_cache (`bool`, *optional*, defaults to `True`):
+            Whether or not the model should return last key/values attentions.
+        pad_token_id (`int`, *optional*, defaults to 1):
+            Padding token id.
+        bos_token_id (`int`, *optional*):
+            Beginning of stream token id.
+        eos_token_id (`int`, *optional*, defaults to 50279):
+            End of stream token id.
+        tie_word_embeddings (`bool`, *optional*, defaults to `False`):
+            Whether to tie weight embeddings.
+        rope_theta (`float`, *optional*, defaults to 10000.0):
+            The base period of the RoPE embeddings.
+        rope_scaling (`Dict`, *optional*):
+            Dictionary containing the scaling configuration for the RoPE embeddings.
+        attention_bias (`bool`, *optional*, defaults to `False`):
+            Whether to use a bias in the attention projection layers.
+        attention_dropout (`float`, *optional*, defaults to 0.0):
+            The dropout ratio for the attention probabilities.
+        rms_norm_eps (`float`, *optional*, defaults to 1e-05):
+            The epsilon used by the rms normalization layers.
+        head_dim (`int`, *optional*):
+            Dimension of each attention head. Defaults to hidden_size // num_attention_heads.
+    """
+
     model_type = "olmo2"
+    keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
         self,
         vocab_size=50304,
         hidden_size=4096,
         intermediate_size=11008,
-        max_position_embeddings=2048,
         num_hidden_layers=32,
         num_attention_heads=32,
+        num_key_value_heads=None,
+        hidden_act="silu",
+        max_position_embeddings=2048,
         initializer_range=0.02,
-        rms_norm_eps=1e-5,
         use_cache=True,
         pad_token_id=1,
         bos_token_id=None,
         eos_token_id=50279,
-        hidden_act="silu",
-        num_key_value_heads=None,
+        tie_word_embeddings=False,
+        rope_theta=10000.0,
+        rope_scaling=None,
         attention_bias=False,
         attention_dropout=0.0,
-        tie_word_embeddings=False,
+        rms_norm_eps=1e-5,
         head_dim=None,
-        rope_theta=10000.0,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -55,14 +109,14 @@ class Olmo2Config(PretrainedConfig):
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
         self.initializer_range = initializer_range
-        self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
         self.attention_bias = attention_bias
         self.attention_dropout = attention_dropout
-        self.head_dim = head_dim if head_dim is not None else self.hidden_size // self.num_attention_heads
+        self.rms_norm_eps = rms_norm_eps
+        self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
 
         self.rope_theta = rope_theta
-        self.rope_scaling = kwargs.pop("rope_scaling", None)
+        self.rope_scaling = rope_scaling
         if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
         self.rope_parameters = self.rope_scaling

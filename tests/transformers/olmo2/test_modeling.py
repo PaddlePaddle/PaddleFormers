@@ -11,7 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from __future__ import annotations
+
+"""OLMo2 functional, HF compatibility, QK-norm and TP mapping regression tests.
+
+Covers the load path exercised when sharding a non-TP checkpoint onto
+``tensor_model_parallel_size > 1``. The lm_head is vocab-parallel: its weight
+has shape ``[vocab_size / tp, hidden_size]`` with ``split_axis = 0``, so the
+split action must slice the vocabulary dimension (``is_column=False``), not the
+hidden dimension. This test guards against that regression.
+"""
 
 import tempfile
 import unittest
@@ -24,10 +32,36 @@ from paddleformers.transformers import (
     Olmo2Config,
     Olmo2ForCausalLM,
     Olmo2Model,
+    Olmo3Config,
 )
+from paddleformers.transformers.olmo2.modeling import Olmo2Attention
+from paddleformers.transformers.olmo3.modeling import Olmo3Attention
 from tests.testing_utils import gpu_device_initializer, require_package
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import ModelTesterMixin, ids_tensor
+
+
+def _make_tp_config(tp_size, tensor_parallel_rank):
+    config = Olmo2Config(
+        vocab_size=64,
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        max_position_embeddings=32,
+        tie_word_embeddings=False,
+        dtype="float32",
+    )
+    config.tensor_model_parallel_size = tp_size
+    config.tensor_parallel_rank = tensor_parallel_rank
+    config.tensor_parallel_output = True
+    config.sequence_parallel = False
+    return config
+
+
+def _get_split_actions(config):
+    return Olmo2ForCausalLM._get_tensor_parallel_mappings(config, is_split=True)
 
 
 class Olmo2ModelTester:
@@ -180,6 +214,24 @@ class Olmo2ModelTest(ModelTesterMixin, unittest.TestCase):
         model = AutoModelForCausalLM.from_config(config)
         self.assertIsInstance(model, Olmo2ForCausalLM)
 
+    def test_head_dim_config_roundtrip_and_forward(self):
+        for head_dim in (None, 4):
+            with self.subTest(head_dim=head_dim):
+                config = self.model_tester.get_config()
+                config = Olmo2Config.from_dict({**config.to_dict(), "head_dim": head_dim})
+                expected = 8 if head_dim is None else head_dim
+                self.assertEqual(config.head_dim, expected)
+                restored = Olmo2Config.from_dict(config.to_dict())
+                self.assertEqual(restored.head_dim, expected)
+                attention = Olmo2Attention(restored, layer_idx=0)
+                self.assertEqual(list(attention.q_proj.weight.shape), [32, 4 * expected])
+                self.assertEqual(list(attention.k_proj.weight.shape), [32, 2 * expected])
+                self.model_tester.create_and_check_model(
+                    restored,
+                    ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size),
+                    None,
+                )
+
     def test_model_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
@@ -201,7 +253,9 @@ class Olmo2CompatibilityTest(unittest.TestCase):
         from transformers import Olmo2Config as HFOlmo2Config
         from transformers import Olmo2ForCausalLM as HFOlmo2ForCausalLM
 
-        cls.torch_model_path = tempfile.TemporaryDirectory().name
+        cls.torch_model_dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.torch_model_dir.cleanup)
+        cls.torch_model_path = cls.torch_model_dir.name
         torch.manual_seed(0)
         config = HFOlmo2Config(
             vocab_size=128,
@@ -254,6 +308,112 @@ class Olmo2CompatibilityTest(unittest.TestCase):
                 rtol=1e-4,
             )
         )
+
+
+class OlmoQKNormTest(unittest.TestCase):
+    def test_tensor_parallel_attention_rejected(self):
+        for config_cls, attention_cls in ((Olmo2Config, Olmo2Attention), (Olmo3Config, Olmo3Attention)):
+            for kv_heads in (4, 2):
+                for sequence_parallel in (False, True):
+                    with self.subTest(model=config_cls.__name__, kv_heads=kv_heads, sp=sequence_parallel):
+                        config = config_cls(**_make_tp_config(2, 0).to_dict())
+                        config.num_key_value_heads = kv_heads
+                        config.sequence_parallel = sequence_parallel
+                        with self.assertRaisesRegex(NotImplementedError, "set tensor_model_parallel_size=1"):
+                            attention_cls(config, layer_idx=0)
+
+    def test_single_rank_norm_spans_full_projection(self):
+        for config_cls, attention_cls in ((Olmo2Config, Olmo2Attention), (Olmo3Config, Olmo3Attention)):
+            for kv_heads in (4, 2):
+                with self.subTest(model=config_cls.__name__, kv_heads=kv_heads):
+                    config = config_cls(**_make_tp_config(1, 0).to_dict())
+                    config.num_key_value_heads = kv_heads
+                    config.fuse_rms_norm = False
+                    attention = attention_cls(config, layer_idx=0)
+                    for norm, heads in ((attention.q_norm, 4), (attention.k_norm, kv_heads)):
+                        width = heads * attention.head_dim
+                        values = np.arange(1, 2 * width + 1, dtype=np.float32).reshape(1, 2, width)
+                        weights = np.linspace(0.5, 1.5, width, dtype=np.float32)
+                        norm.weight.set_value(weights)
+                        expected = values / np.sqrt(np.mean(values**2, axis=-1, keepdims=True) + config.rms_norm_eps)
+                        expected *= weights
+                        np.testing.assert_allclose(norm(paddle.to_tensor(values)).numpy(), expected, rtol=1e-6, atol=1e-6)
+
+    def test_norm_weights_are_not_split(self):
+        for config_cls, attention_cls in ((Olmo2Config, Olmo2Attention), (Olmo3Config, Olmo3Attention)):
+            config = config_cls(**_make_tp_config(2, 0).to_dict())
+            actions = _get_split_actions(config)
+            self.assertNotIn("model.layers.0.self_attn.q_norm.weight", actions)
+            self.assertNotIn("model.layers.0.self_attn.k_norm.weight", actions)
+
+
+class Olmo2LmHeadTPSplitTest(unittest.TestCase):
+    """Verify lm_head.weight is split along the vocab dimension for TP."""
+
+    def test_lm_head_weight_split_along_vocab(self):
+        tp_size = 2
+        vocab_size = 64
+        hidden_size = 32
+
+        full_weight = np.arange(vocab_size * hidden_size, dtype=np.float32).reshape(vocab_size, hidden_size)
+
+        shards = []
+        for rank in range(tp_size):
+            config = _make_tp_config(tp_size, rank)
+            actions = _get_split_actions(config)
+            self.assertIn("lm_head.weight", actions)
+            action = actions["lm_head.weight"]
+
+            shard = action(full_weight)
+            # vocab-parallel shard must keep hidden_size intact and halve vocab.
+            self.assertEqual(
+                list(shard.shape),
+                [vocab_size // tp_size, hidden_size],
+                f"rank {rank}: expected vocab-parallel shard "
+                f"[{vocab_size // tp_size}, {hidden_size}], "
+                f"got {list(shard.shape)}",
+            )
+            shards.append(np.asarray(shard))
+
+        merged = np.concatenate(shards, axis=0)
+        np.testing.assert_allclose(merged, full_weight)
+
+    def test_lm_head_shard_matches_param_shape(self):
+        """Shards produced by the split action must match LMHead's param shape."""
+        from unittest.mock import MagicMock
+
+        from paddleformers.nn.lm_head import LMHead
+
+        tp_size = 2
+        vocab_size = 64
+        hidden_size = 32
+
+        full_weight = np.arange(vocab_size * hidden_size, dtype=np.float32).reshape(vocab_size, hidden_size)
+
+        for rank in range(tp_size):
+            tp_config = _make_tp_config(tp_size, rank)
+            actions = _get_split_actions(tp_config)
+            shard = np.asarray(actions["lm_head.weight"](full_weight))
+
+            head_config = MagicMock()
+            head_config.vocab_size = vocab_size
+            head_config.hidden_size = hidden_size
+            head_config.tensor_model_parallel_size = tp_size
+            head_config.lm_head_bias = False
+            head_config.use_fused_head_and_loss_fn = False
+            head_config.sequence_parallel = False
+            head_config.max_sequence_length = 128
+            head_config.tensor_parallel_output = False
+            head_config.get = lambda key, default=None: default
+            head = LMHead(head_config)
+
+            self.assertEqual(
+                list(head.weight.shape),
+                list(shard.shape),
+                f"rank {rank}: LMHead param {list(head.weight.shape)} "
+                f"does not match split shard "
+                f"{list(shard.shape)}",
+            )
 
 
 if __name__ == "__main__":
