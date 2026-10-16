@@ -3995,6 +3995,7 @@ class Trainer:
             and self.args.moe_sharding_parallel_size >= 1
             and self.args.expert_model_parallel_size > 1
             and self.args.sharding_parallel_size > 1
+            and ShardingOption.FSDP not in self.args.sharding
         ):
             from ..utils import MoEHybridParallelOptimizer
 
@@ -4010,6 +4011,8 @@ class Trainer:
             dist_optimizer = hp_optim
         else:
             dist_optimizer = fleet.distributed_optimizer(optimizer)
+            if ShardingOption.FSDP in self.args.sharding:
+                dist_optimizer._sharding_enable = False
         if isinstance(dist_optimizer, HybridParallelOptimizer) and self.args.max_grad_norm > 0:
             # ``HybridParallelOptimizer.__init__`` has just replaced ``_grad_clip``
             # with paddle's wrapper, which recomputes the global norm with paddle's
@@ -4331,6 +4334,8 @@ class Trainer:
                 if hasattr(self.optimizer, "_set_broadcast_overlap") and self.args.stage1_broadcast_overlap:
                     self.optimizer._set_broadcast_overlap(True, model)
 
+        if ShardingOption.FSDP in self.args.sharding:
+            model = fully_shard(model, mesh=None)
         # To solve DPO pin-memory problem, temporarily modify the _insert_sync method.
         self.optimizer._insert_sync = types.MethodType(_insert_sync, self.optimizer)
 
