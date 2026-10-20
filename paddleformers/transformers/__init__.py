@@ -436,6 +436,9 @@ import_structure = {
         "MiniCPM4_1ForSequenceClassification",
     ],
     "minicpm4_1": [],
+    "falcon_perception.configuration": ["FalconPerceptionConfig"],
+    "falcon_perception.modeling": ["FalconPerceptionForSegmentation"],
+    "falcon_perception": [],
     "deepseek_v4.configuration": ["DeepseekV4Config"],
     "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
     "minimax.configuration": ["MiniMaxConfig"],
@@ -599,6 +602,7 @@ if TYPE_CHECKING:
     from .minimax_m2 import *
     from .minicpm import *
     from .minicpm4_1 import *
+    from .falcon_perception import *
     from .deepseek_v4 import *
     from .minimax import *
     from .gpt_oss import *

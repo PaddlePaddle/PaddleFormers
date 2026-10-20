@@ -82,6 +82,7 @@ MAPPING_NAMES = OrderedDict(
         ("MiniMaxM2", "minimax_m2"),
         ("MiniCPM", "minicpm"),
         ("MiniCPM4_1", "minicpm4_1"),
+        ("FalconPerception", "falcon_perception"),
         ("DeepseekV4", "deepseek_v4"),
         ("GptOss", "gpt_oss"),
         ("MiniCPM3", "minicpm3"),
@@ -161,6 +162,11 @@ def get_name_mapping(task="Model"):
         NAME_MAPPING[new_key] = import_class
         NAME_MAPPING[import_class] = value
 
+    # Falcon exposes one image/text segmentation model rather than separate
+    # backbone and language-model wrappers. Match the upstream architecture.
+    if task in ("Model", "ForCausalLM", "ForConditionalGeneration"):
+        NAME_MAPPING["FalconPerceptionModel_Import_Class"] = "FalconPerceptionForSegmentation"
+        NAME_MAPPING["FalconPerceptionForSegmentation"] = "falcon_perception"
     return NAME_MAPPING
 
 
