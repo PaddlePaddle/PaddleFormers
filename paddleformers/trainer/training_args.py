@@ -1251,6 +1251,13 @@ class TrainingArguments:
         default=None,
         metadata={"help": "If set not None, only do EMA when the training loss is smaller than the threshold value"},
     )
+    zcc_d2h_chunk_mb: Optional[float] = field(
+        default=64,
+        metadata={
+            "help": "Chunk size (MB) of the ZCC GPU->CPU offload; chunks are copied one after another to leave "
+            "PCIe gaps for cross-node communication. 0 copies everything at once."
+        },
+    )
     save_tokenizer: Optional[bool] = field(
         default=True,
         metadata={"help": "Save tokenizer to output_dir."},

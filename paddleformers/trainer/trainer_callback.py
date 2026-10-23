@@ -152,7 +152,16 @@ class TrainerState:
 
     def save_to_json(self, json_path: str):
         """Save the content of this instance in JSON format inside `json_path`."""
-        json_string = json.dumps(dataclasses.asdict(self), indent=2, sort_keys=True) + "\n"
+
+        # trial_params may contain numpy arrays
+        def _np_default(o):
+            if isinstance(o, np.ndarray):
+                return o.tolist()
+            if isinstance(o, np.generic):
+                return o.item()
+            raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+        json_string = json.dumps(dataclasses.asdict(self), indent=2, sort_keys=True, default=_np_default) + "\n"
         with open(json_path, "w", encoding="utf-8") as f:
             f.write(json_string)
 

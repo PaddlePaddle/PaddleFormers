@@ -2,10 +2,12 @@
 """Tests for trainer/utils/zero_cost_checkpoint.py"""
 
 import hashlib
+import pickle
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import paddle
 
 from paddleformers.trainer.utils.zero_cost_checkpoint import (
@@ -13,6 +15,7 @@ from paddleformers.trainer.utils.zero_cost_checkpoint import (
     ZCCWorkerStatus,
     ZeroCostCheckpointCallback,
     ZeroCostCheckpointManager,
+    ZeroCostCheckpointWorker,
     _unwrap_opt_for_fused_states,
     md5,
     sharded_state_dict_compatibility,
@@ -343,6 +346,148 @@ class TestMultiWorkerPoolBarrier(unittest.TestCase):
         self.assertIs(m.current_worker, wA)  # reused
         wA.status.value = ZCCWorkerStatus.OFFLOADING.value
         self._drive_barrier(m, target=wA, decoys=[wB, wC])
+
+
+class TestDeferredOffload(unittest.TestCase):
+    """The save step's OFFLOAD is deferred to after the step-tail logging and must never be lost."""
+
+    def _deferred_manager(self, worker_step=5):
+        worker = _FakeWorker(global_step=worker_step)
+        m = _bare_manager(
+            workers=[worker],
+            current_worker=worker,
+            global_step=5,
+            pipeline_hooks_steps=1,
+            current_pipeline_hook_step=0,
+        )
+        m.offload_deferred = True
+        return m, worker
+
+    def test_save_branch_defers_instead_of_offloading(self):
+        manager = MagicMock()
+        cb = ZeroCostCheckpointCallback.__new__(ZeroCostCheckpointCallback)
+        cb.manager = manager
+        cb.runtime_timer = MagicMock()
+        cb.maybe_update_zcc_worker = MagicMock()
+        cb._get_save_infos_based_on_steps = MagicMock(return_value=(None, None))
+        cb.get_rng_states = MagicMock(return_value=None)
+        args = SimpleNamespace(zcc_save_ema_coef=None, pipeline_model_parallel_size=1)
+        cb.on_step_end(
+            args,
+            SimpleNamespace(global_step=7),
+            SimpleNamespace(should_save=True),
+            model=MagicMock(),
+            lr_scheduler=MagicMock(),
+            optimizer=MagicMock(),
+        )
+        self.assertTrue(manager.offload_deferred)
+        manager.zcc_pipeline_hook.assert_not_called()
+
+    def test_flush_sends_offload_once(self):
+        m, worker = self._deferred_manager()
+        m.flush_deferred_offload()
+        m.flush_deferred_offload()
+        worker.task_queue.put.assert_called_once_with((ZCCTaskType.OFFLOAD, 5))
+        self.assertEqual(m.current_pipeline_hook_step, 1)
+
+    def test_step_begin_sync_flushes_a_pending_offload(self):
+        # trainer never called flush: maybe_sync must still issue the offload and then wait for it
+        m, worker = self._deferred_manager()
+        m.maybe_sync_offload_status()
+        worker.task_queue.put.assert_called_once_with((ZCCTaskType.OFFLOAD, 5))
+        self.assertIsNone(m.current_worker)
+
+    def test_optimizer_begin_sync_flushes_a_pending_offload(self):
+        m, worker = self._deferred_manager()
+        m.sync_offload_status()
+        worker.task_queue.put.assert_called_once_with((ZCCTaskType.OFFLOAD, 5))
+        self.assertFalse(m.offload_deferred)
+
+
+class TestStateForWorker(unittest.TestCase):
+    """Slimmed trainer_state sent to the worker must restore to exactly what the main process holds."""
+
+    N = 1000
+
+    def _state(self, saved, last_start, base=None, diff=None):
+        tp = {
+            "data_status": np.zeros(self.N, np.int64),
+            "saved_data_status": saved,
+            "last_start_data_status": last_start,
+            "consumed_samples": int(saved.sum()),
+        }
+        if base is not None:
+            tp["_zcc_saved_base"] = base
+            tp["_zcc_saved_diff"] = diff
+        return SimpleNamespace(global_step=1, trial_params=tp)
+
+    def _cb(self, n_workers=1, device_id=0):
+        cb = ZeroCostCheckpointCallback.__new__(ZeroCostCheckpointCallback)
+        cb.manager = SimpleNamespace(workers=[object()] * n_workers, device_id=device_id)
+        return cb
+
+    def _roundtrip(self, cb, worker, state):
+        snap = cb._state_for_worker(state, dumping=True)
+        worker.trainer_state = pickle.loads(pickle.dumps(snap))
+        worker._restore_trainer_state()
+        return snap, worker.trainer_state.trial_params
+
+    def test_single_worker_sends_base_once_then_diff(self):
+        rng = np.random.default_rng(0)
+        cb, worker = self._cb(), ZeroCostCheckpointWorker.__new__(ZeroCostCheckpointWorker)
+        base = rng.integers(0, 5, self.N)
+        last_start = rng.integers(0, 5, self.N)
+        saved, cum = base.copy(), {}
+        for k in range(4):
+            ids = rng.integers(0, self.N, 7)
+            np.add.at(saved, ids, 1)
+            for i in ids.tolist():
+                cum[i] = cum.get(i, 0) + 1
+            diff = (np.array(list(cum), np.int64), np.array(list(cum.values()), np.int64))
+            snap, wtp = self._roundtrip(cb, worker, self._state(saved, last_start, base, diff))
+            self.assertNotIn("data_status", snap.trial_params)
+            self.assertNotIn("_zcc_saved_base", wtp)
+            np.testing.assert_array_equal(wtp["saved_data_status"], saved)
+            np.testing.assert_array_equal(wtp["last_start_data_status"], last_start)
+            sent = snap.trial_params["saved_data_status"]
+            self.assertIsInstance(sent, tuple)
+            self.assertEqual(isinstance(sent[1], np.ndarray), k == 0, "base is sent only on the first save")
+            self.assertEqual(isinstance(snap.trial_params["last_start_data_status"], np.ndarray), k == 0)
+
+    def test_multi_worker_sends_dense_copies(self):
+        rng = np.random.default_rng(1)
+        cb = self._cb(n_workers=2)
+        workers = [ZeroCostCheckpointWorker.__new__(ZeroCostCheckpointWorker) for _ in range(2)]
+        base = rng.integers(0, 5, self.N)
+        saved = base.copy()
+        last_start = np.zeros(self.N, np.int64)
+        for k in range(4):
+            np.add.at(saved, rng.integers(0, self.N, 7), 1)
+            diff = (np.zeros(0, np.int64), np.zeros(0, np.int64))
+            state = self._state(saved, last_start, base, diff)
+            snap, wtp = self._roundtrip(cb, workers[k % 2], state)
+            sent = snap.trial_params["saved_data_status"]
+            self.assertIsInstance(sent, np.ndarray)
+            self.assertFalse(np.shares_memory(sent, saved), "must not hand the in-place-updated array to the feeder")
+            np.testing.assert_array_equal(wtp["saved_data_status"], saved)
+            np.testing.assert_array_equal(wtp["last_start_data_status"], last_start)
+
+    def test_ranks_that_do_not_write_trainer_state_get_no_arrays(self):
+        cb = self._cb(device_id=3)
+        saved = np.ones(self.N, np.int64)
+        snap = cb._state_for_worker(self._state(saved, saved.copy()), dumping=True)
+        for k in ("data_status", "saved_data_status", "last_start_data_status"):
+            self.assertNotIn(k, snap.trial_params)
+        self.assertEqual(snap.trial_params["consumed_samples"], self.N)
+
+    def test_placeholder_without_cache_raises(self):
+        cb, saved = self._cb(), np.ones(self.N, np.int64)
+        cb._state_for_worker(self._state(saved, saved.copy()), dumping=True)  # caches last_start as "sent"
+        snap = cb._state_for_worker(self._state(saved, cb._zcc_last_start_sent), dumping=True)
+        fresh = ZeroCostCheckpointWorker.__new__(ZeroCostCheckpointWorker)
+        fresh.trainer_state = pickle.loads(pickle.dumps(snap))
+        with self.assertRaises(RuntimeError):
+            fresh._restore_trainer_state()
 
 
 if __name__ == "__main__":

@@ -2895,6 +2895,9 @@ class Trainer:
 
                         self.control = self.callback_handler.on_step_end(args, self.state, self.control)
                         self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval, inputs=inputs)
+                        if self.args.enable_zero_cost_checkpoint and self.zcc_manager is not None:
+                            # Issue the ZCC D2H that was deferred until after step-tail logging
+                            self.zcc_manager.flush_deferred_offload()
                         # Log data loading time for this global_step
                         logger.info(
                             f"[DataLoad global_step: {self.state.global_step}] "
