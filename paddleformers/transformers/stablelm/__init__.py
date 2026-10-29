@@ -21,6 +21,7 @@ _import_structure = {
     "modeling": [
         "StableLmModel",
         "StableLmForCausalLM",
+        "StableLmForCausalLMPipe",
         "StableLmPretrainedModel",
         "StableLmRotaryEmbedding",
         "StableLmDecoderLayer",
@@ -35,6 +36,7 @@ if TYPE_CHECKING:
         StableLmAttention,
         StableLmDecoderLayer,
         StableLmForCausalLM,
+        StableLmForCausalLMPipe,
         StableLmModel,
         StableLmPretrainedModel,
         StableLmRotaryEmbedding,
@@ -53,6 +55,7 @@ else:
             "__all__": [
                 "StableLmModel",
                 "StableLmForCausalLM",
+                "StableLmForCausalLMPipe",
                 "StableLmPretrainedModel",
                 "StableLmRotaryEmbedding",
                 "StableLmDecoderLayer",

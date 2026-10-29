@@ -1,4 +1,4 @@
-# Copyright 2018 Google AI, Google Brain and the HuggingFace Inc. team.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -140,6 +140,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
         ("minicpm3", "MiniCPM3Model"),
+        ("stablelm", "StableLmForCausalLM"),
         ("olmo2", "Olmo2ForCausalLM"),
         ("internlm3", "InternLM3ForCausalLM"),
         ("internlm2", "InternLM2"),

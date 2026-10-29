@@ -1,4 +1,4 @@
-# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -485,11 +485,13 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "stablelm": [],
     "stablelm.configuration": ["StableLmConfig"],
     "stablelm.tokenizer": ["StableLmTokenizer"],
     "stablelm.modeling": [
         "StableLmModel",
         "StableLmForCausalLM",
+        "StableLmForCausalLMPipe",
         "StableLmPretrainedModel",
         "StableLmRotaryEmbedding",
         "StableLmDecoderLayer",

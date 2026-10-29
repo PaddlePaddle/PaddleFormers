@@ -11,11 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
+from contextlib import nullcontext
+from functools import partial
 from typing import Optional
 
 import paddle
 from paddle import nn
+from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
+from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddle.distributed.flex_checkpoint.dcp.sharded_weight import (
+    build_sharded_state_dict,
+)
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -24,7 +32,10 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
+from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
+from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
+from ..conversion_utils import split_or_merge_func
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -69,7 +80,7 @@ class StableLmRotaryEmbedding(nn.Layer):
     ) -> tuple["paddle.Tensor", float]:
         base = config.rope_parameters["rope_theta"]
         partial_rotary_factor = config.rope_parameters.get("partial_rotary_factor", 1.0)
-        head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        head_dim = config.head_dim
         dim = int(head_dim * partial_rotary_factor)
 
         attention_factor = 1.0
@@ -95,26 +106,59 @@ class StableLmRotaryEmbedding(nn.Layer):
 
 
 class StableLmLayerNormPerHead(nn.Layer):
-    def __init__(self, dim, num_heads, eps=1e-5, bias=False):
+    def __init__(self, dim, num_heads, eps=1e-5, bias=False, tensor_parallel_size=1):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
-        self.norms = nn.LayerList([nn.LayerNorm(dim, epsilon=eps, bias_attr=bias) for _ in range(self.num_heads)])
-
-    def forward(self, hidden_states: paddle.Tensor):
-        states_per_heads = paddle.split(hidden_states, self.num_heads, axis=1)
-        return paddle.concat(
-            [norm(hidden_states) for norm, hidden_states in zip(self.norms, states_per_heads)],
-            axis=1,
+        self.eps = eps
+        self.tensor_parallel_size = tensor_parallel_size
+        # A flat head-major parameter permits concatenating the original per-head checkpoint keys.
+        self.weight = self.create_parameter([num_heads * dim], default_initializer=nn.initializer.Constant(1.0))
+        self.bias = (
+            self.create_parameter([num_heads * dim], is_bias=True, default_initializer=nn.initializer.Constant(0.0))
+            if bias
+            else None
         )
+        for parameter in (self.weight, self.bias):
+            if parameter is not None:
+                parameter.is_distributed = tensor_parallel_size > 1
+                if parameter.is_distributed:
+                    parameter.split_axis = 0
+
+    def forward(self, hidden_states):
+        dtype = hidden_states.dtype
+        with paddle.amp.auto_cast(enable=False):
+            states = hidden_states.astype("float32")
+            mean = states.mean(axis=-1, keepdim=True)
+            variance = (states - mean).square().mean(axis=-1, keepdim=True)
+            states = (states - mean) * paddle.rsqrt(variance + self.eps)
+            states = states * self.weight.astype("float32").reshape([1, self.num_heads, 1, self.dim])
+            if self.bias is not None:
+                states = states + self.bias.astype("float32").reshape([1, self.num_heads, 1, self.dim])
+        return states.astype(dtype)
+
+    def sharded_state_dict(self, structured_name_prefix=""):
+        if self.tensor_parallel_size > 1:
+            axes = {"weight": 0}
+            if self.bias is not None:
+                axes["bias"] = 0
+            return build_sharded_state_dict(self.state_dict(), axes, structured_name_prefix)
+        return super().sharded_state_dict(structured_name_prefix)
 
 
-def repeat_kv(hidden_states: paddle.Tensor, n_rep: int) -> paddle.Tensor:
-    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
-    if n_rep == 1:
-        return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand([batch, num_key_value_heads, n_rep, slen, head_dim])
-    return hidden_states.reshape([batch, num_key_value_heads * n_rep, slen, head_dim])
+def _validate_execution_config(config):
+    if config.sequence_parallel and config.tensor_model_parallel_size <= 1:
+        raise ValueError("sequence_parallel requires tensor_model_parallel_size > 1")
+    if config.apply_rope_fusion:
+        raise ValueError("StableLM partial RoPE does not support apply_rope_fusion; use the unfused RoPE path")
+    if config.fuse_swiglu and config.hidden_act != "silu":
+        raise ValueError("fuse_swiglu requires hidden_act='silu'")
+    if config.recompute_granularity is not None and (
+        config.recompute_granularity != "full"
+        or config.recompute_method != "uniform"
+        or config.recompute_num_layers != 1
+    ):
+        raise ValueError("StableLM recompute supports full/uniform with recompute_num_layers=1")
 
 
 class StableLmAttention(nn.Layer):
@@ -122,23 +166,20 @@ class StableLmAttention(nn.Layer):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
-        if config.qk_layernorm and config.tensor_model_parallel_size > 1:
-            raise ValueError("StableLM per-head QK LayerNorm does not support tensor parallelism yet")
+        _validate_execution_config(config)
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
-        self.head_dim = config.hidden_size // config.num_attention_heads
+        self.head_dim = config.head_dim
 
         q_hidden_size = config.num_attention_heads * self.head_dim
         kv_hidden_size = config.num_key_value_heads * self.head_dim
 
         if config.tensor_model_parallel_size > 1:
-            assert (
-                self.num_heads % config.tensor_model_parallel_size == 0
-            ), f"num_heads: {self.num_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
-            assert (
-                self.num_key_value_heads % config.tensor_model_parallel_size == 0
-            ), f"num_key_value_heads: {self.num_key_value_heads}, tensor_model_parallel_size: {config.tensor_model_parallel_size}"
+            if self.num_heads % config.tensor_model_parallel_size:
+                raise ValueError("num_attention_heads must be divisible by tensor_model_parallel_size")
+            if self.num_key_value_heads % config.tensor_model_parallel_size:
+                raise ValueError("num_key_value_heads must be divisible by tensor_model_parallel_size")
             self.num_heads = self.num_heads // config.tensor_model_parallel_size
             self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
 
@@ -177,9 +218,17 @@ class StableLmAttention(nn.Layer):
 
         self.qk_layernorm = config.qk_layernorm
         if self.qk_layernorm:
-            self.q_layernorm = StableLmLayerNormPerHead(self.head_dim, self.num_heads, eps=config.layer_norm_eps)
+            self.q_layernorm = StableLmLayerNormPerHead(
+                self.head_dim,
+                self.num_heads,
+                eps=config.layer_norm_eps,
+                tensor_parallel_size=config.tensor_model_parallel_size,
+            )
             self.k_layernorm = StableLmLayerNormPerHead(
-                self.head_dim, self.num_key_value_heads, eps=config.layer_norm_eps
+                self.head_dim,
+                self.num_key_value_heads,
+                eps=config.layer_norm_eps,
+                tensor_parallel_size=config.tensor_model_parallel_size,
             )
 
     def forward(
@@ -193,7 +242,7 @@ class StableLmAttention(nn.Layer):
         use_cache: bool = False,
     ) -> tuple[paddle.Tensor, paddle.Tensor | None]:
         if self.config.sequence_parallel:
-            q_len = self.config.max_sequence_length
+            q_len = position_embeddings[0].shape[-2]
             bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // q_len
         else:
             bsz, q_len = hidden_states.shape[:2]
@@ -227,9 +276,10 @@ class StableLmAttention(nn.Layer):
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        attention_interface = ALL_ATTENTION_FUNCTIONS["sdpa"]
-        if self.config._attn_implementation != "sdpa":
-            attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        backend = self.config._attn_implementation
+        if backend == "flashmask" and (attention_mask is not None or (self.training and self.attention_dropout > 0)):
+            backend = "sdpa"
+        attention_interface = ALL_ATTENTION_FUNCTIONS[backend]
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -242,7 +292,6 @@ class StableLmAttention(nn.Layer):
             scaling=self.scaling,
         )
 
-        attn_output = attn_output.reshape([bsz, q_len, -1])
         if self.config.sequence_parallel:
             attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
         attn_output = self.o_proj(attn_output)
@@ -331,6 +380,50 @@ class StableLmPretrainedModel(PretrainedModel):
         "down_proj",
     ]
 
+    def _init_weights(self, layer):
+        if isinstance(layer, GeneralLMHead) and self.config.tie_word_embeddings:
+            return
+        if isinstance(layer, tuple(GeneralLinear._global_mapping.values()) + (GeneralLMHead,)):
+            context = get_rng_state_tracker().rng_state() if layer.weight.is_distributed else nullcontext()
+            with context:
+                nn.initializer.Normal(std=self.config.initializer_range)(layer.weight)
+            if layer.bias is not None:
+                nn.initializer.Constant(0.0)(layer.bias)
+        elif isinstance(layer, tuple(GeneralEmbedding._global_mapping.values())):
+            context = get_rng_state_tracker().rng_state() if layer.weight.is_distributed else nullcontext()
+            with context:
+                nn.initializer.Normal(std=self.config.initializer_range)(layer.weight)
+            padding_idx = self.config.pad_token_id
+            if padding_idx is not None and padding_idx >= 0:
+                if self.config.tensor_model_parallel_size > 1:
+                    padding_idx -= self.config.tensor_parallel_rank * layer.weight.shape[0]
+                with paddle.no_grad():
+                    if 0 <= padding_idx < layer.weight.shape[0]:
+                        layer.weight[padding_idx] = 0
+
+    @classmethod
+    def _get_tensor_parallel_mappings(cls, config, is_split=True):
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
+            tensor_parallel_rank=config.tensor_parallel_rank,
+            num_attention_heads=config.num_attention_heads,
+        )
+        actions = {"embed_tokens.weight": partial(fn, is_column=False), "lm_head.weight": partial(fn, is_column=False)}
+        for index in range(config.num_hidden_layers):
+            prefix = f"layers.{index}."
+            for name in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                actions[prefix + f"self_attn.{name}.weight"] = partial(fn, is_column=name != "o_proj")
+            if config.use_qkv_bias:
+                for name in ("q_proj", "k_proj", "v_proj"):
+                    actions[prefix + f"self_attn.{name}.bias"] = partial(fn, is_column=True)
+            for name in ("gate_proj", "up_proj", "down_proj"):
+                actions[prefix + f"mlp.{name}.weight"] = partial(fn, is_column=name != "down_proj")
+            if config.qk_layernorm:
+                for name in ("q_layernorm", "k_layernorm"):
+                    actions[prefix + f"self_attn.{name}.weight"] = partial(fn, is_column=False)
+        return actions
+
     @classmethod
     def _gen_aoa_config(cls, config: StableLmConfig):
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
@@ -374,14 +467,17 @@ class StableLmPretrainedModel(PretrainedModel):
             )
 
         if config.qk_layernorm:
-            aoa_statements.extend(
-                [
-                    f"model.layers.$LAYER_ID.self_attn.q_layernorm.norms.*.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.norms.*.weight",
-                    f"model.layers.$LAYER_ID.self_attn.q_layernorm.norms.*.bias -> {model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.norms.*.bias",
-                    f"model.layers.$LAYER_ID.self_attn.k_layernorm.norms.*.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.norms.*.weight",
-                    f"model.layers.$LAYER_ID.self_attn.k_layernorm.norms.*.bias -> {model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.norms.*.bias",
-                ]
-            )
+            for name, heads in (
+                ("q_layernorm", config.num_attention_heads),
+                ("k_layernorm", config.num_key_value_heads),
+            ):
+                sources = ", ".join(
+                    f"model.layers.$LAYER_ID.self_attn.{name}.norms.{head}.weight" for head in range(heads)
+                )
+                aoa_statements.append(
+                    f"{sources} -> {model_prefix}layers.$LAYER_ID.self_attn.{name}.weight"
+                    + (", axis=0" if heads > 1 else "")
+                )
 
         # MLP Linear weights (with ^T transpose)
         aoa_statements.extend(
@@ -440,14 +536,17 @@ class StableLmPretrainedModel(PretrainedModel):
             )
 
         if config.qk_layernorm:
-            aoa_statements.extend(
-                [
-                    f"{model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.norms.*.weight -> model.layers.$LAYER_ID.self_attn.q_layernorm.norms.*.weight",
-                    f"{model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.norms.*.bias -> model.layers.$LAYER_ID.self_attn.q_layernorm.norms.*.bias",
-                    f"{model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.norms.*.weight -> model.layers.$LAYER_ID.self_attn.k_layernorm.norms.*.weight",
-                    f"{model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.norms.*.bias -> model.layers.$LAYER_ID.self_attn.k_layernorm.norms.*.bias",
-                ]
-            )
+            for name, heads in (
+                ("q_layernorm", config.num_attention_heads),
+                ("k_layernorm", config.num_key_value_heads),
+            ):
+                targets = ", ".join(
+                    f"model.layers.$LAYER_ID.self_attn.{name}.norms.{head}.weight" for head in range(heads)
+                )
+                aoa_statements.append(
+                    f"{model_prefix}layers.$LAYER_ID.self_attn.{name}.weight -> {targets}"
+                    + (", axis=0" if heads > 1 else "")
+                )
 
         aoa_statements.extend(
             [
@@ -499,11 +598,14 @@ class StableLmModel(StableLmPretrainedModel):
         inputs_embeds: paddle.Tensor | None = None,
         attn_mask_startend_row_indices: paddle.Tensor | None = None,
         use_cache: bool | None = None,
-        return_dict: bool | None = False,
-        output_hidden_states: bool | None = False,
+        return_dict: bool | None = None,
+        output_hidden_states: bool | None = None,
     ) -> BaseModelOutputWithPast:
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
 
         if (input_ids is None) == (inputs_embeds is None):
             raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
@@ -512,6 +614,25 @@ class StableLmModel(StableLmPretrainedModel):
             inputs_embeds = self.embed_tokens(input_ids).astype(self.embed_tokens.weight.dtype)
 
         bsz, seq_length, _ = inputs_embeds.shape
+
+        if self.config.sequence_parallel and seq_length != self.config.max_sequence_length:
+            raise ValueError("sequence_parallel requires input length equal to max_sequence_length")
+
+        recompute_enabled = self.training and paddle.is_grad_enabled() and self.config.recompute_granularity == "full"
+        if recompute_enabled and past_key_values is not None:
+            raise ValueError("past_key_values must be None during recompute training")
+        if recompute_enabled and use_cache:
+            logger.warning_once("use_cache=True is incompatible with recompute; disabling cache for this forward")
+            use_cache = False
+        if past_key_values is not None and not use_cache:
+            if getattr(past_key_values, "offloading", False):
+                raise ValueError("Reading an offloaded cache requires use_cache=True")
+            past_key_values = copy.copy(past_key_values)
+            past_key_values.layers = [copy.copy(layer) for layer in past_key_values.layers]
+            for layer in past_key_values.layers:
+                for name, value in vars(layer).items():
+                    if isinstance(value, paddle.Tensor):
+                        setattr(layer, name, value.clone())
 
         if self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
@@ -537,6 +658,13 @@ class StableLmModel(StableLmPretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        if kv_seq_len > 0 and seq_length > 1 and causal_mask is None and attn_mask_startend_row_indices is None:
+            causal_mask = self._prepare_decoder_attention_mask(
+                attention_mask=paddle.ones([bsz, kv_seq_len + seq_length], dtype="bool"),
+                input_shape=(bsz, seq_length),
+                past_key_values_length=kv_seq_len,
+                dtype=inputs_embeds.dtype,
+            )
 
         hidden_states = inputs_embeds
         position_embeddings = self.rotary_emb(hidden_states, position_ids)
@@ -545,7 +673,14 @@ class StableLmModel(StableLmPretrainedModel):
         for idx, decoder_layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
-            hidden_states = decoder_layer(
+            layer_forward = decoder_layer
+            if recompute_enabled:
+                layer_forward = partial(
+                    recompute,
+                    decoder_layer,
+                    use_reentrant=self.config.recompute_use_reentrant and not hidden_states.stop_gradient,
+                )
+            hidden_states = layer_forward(
                 hidden_states,
                 attention_mask=causal_mask,
                 attn_mask_startend_row_indices=attn_mask_startend_row_indices,
@@ -555,26 +690,23 @@ class StableLmModel(StableLmPretrainedModel):
                 use_cache=use_cache,
             )
 
+        if not use_cache:
+            past_key_values = None
         hidden_states = self.norm(hidden_states)
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
 
-        if not return_dict:
-            output = [hidden_states]
-            if output_hidden_states:
-                output.append(all_hidden_states)
-            return tuple(v for v in output + [past_key_values] if v is not None)
-
-        return BaseModelOutputWithPast(
+        output = BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
             past_key_values=past_key_values,
             hidden_states=all_hidden_states,
         )
+        return output if return_dict else output.to_tuple()
 
 
 class StableLmForCausalLM(StableLmPretrainedModel):
     base_model_class = StableLmModel
-    _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
+    _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config: StableLmConfig):
         super().__init__(config)
@@ -593,13 +725,30 @@ class StableLmForCausalLM(StableLmPretrainedModel):
         inputs_embeds: paddle.Tensor | None = None,
         labels: paddle.Tensor | None = None,
         loss_mask: paddle.Tensor | None = None,
-        use_cache: bool = False,
+        use_cache: bool | None = None,
         past_key_values: Cache | None = None,
-        return_dict: bool = False,
-        output_hidden_states: bool | None = False,
+        return_dict: bool | None = None,
+        output_hidden_states: bool | None = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
+        if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
+            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
+        if kwargs.get("output_attentions", False):
+            raise ValueError("StableLM does not currently return attention weights")
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+
+        if attention_mask is not None and attention_mask.dtype != paddle.bool:
+            attention_mask = paddle.cast(attention_mask, paddle.bool)
+
+        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+            logger.warning(
+                "You have provided both attn_mask_startend_row_indices and attention_mask. "
+                "The attn_mask_startend_row_indices will be used."
+            )
+            attention_mask = None
 
         outputs = self.model(
             input_ids,
@@ -633,13 +782,84 @@ class StableLmForCausalLM(StableLmPretrainedModel):
             attentions=outputs.attentions,
         )
 
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, inputs_embeds=None, **kwargs):
+        return super().prepare_inputs_for_generation(
+            input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs
+        )
+
     def auto_dist_config(self, prefix=""):
-        return None
+        raise NotImplementedError("Use StableLmForCausalLMPipe for PP and the hybrid parallel training path for TP/SP")
+
+
+class StableLmDecoderLayerPipe(StableLmDecoderLayer):
+    def forward(self, args):
+        hidden_states, mask, position_ids, position_embeddings, _ = parse_args(args)
+        row_indices = mask if mask is not None and mask.dtype == paddle.int32 else None
+        attention_mask = mask if row_indices is None else None
+        embeddings = None if position_embeddings is None else (position_embeddings[0], position_embeddings[1])
+        if embeddings is None:
+            raise ValueError("StableLM PP requires explicit rotary embeddings")
+        if row_indices is None and (attention_mask is not None or self.config._attn_implementation == "eager"):
+            seq_length = embeddings[0].shape[-2]
+            causal_mask = paddle.triu(
+                paddle.full(
+                    [seq_length, seq_length], paddle.finfo(hidden_states.dtype).min, dtype=hidden_states.dtype
+                ),
+                diagonal=1,
+            )
+            attention_mask = causal_mask[None, None, :, :] if attention_mask is None else attention_mask + causal_mask
+        layer_forward = super().forward
+        if self.training and paddle.is_grad_enabled() and self.config.recompute_granularity == "full":
+            layer_forward = partial(
+                recompute,
+                layer_forward,
+                use_reentrant=self.config.recompute_use_reentrant and not hidden_states.stop_gradient,
+            )
+        hidden_states = layer_forward(
+            hidden_states,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=row_indices,
+            position_ids=position_ids,
+            position_embeddings=embeddings,
+        )
+        if isinstance(args, tuple):
+            return (hidden_states,) + args[1:]
+        return hidden_states
+
+
+class StableLmCriterionLayerPipe(CriterionLayer):
+    def __init__(self, config):
+        super().__init__(config, return_tuple=False)
+
+    def forward(self, logits, labels):
+        loss_mask = None
+        if isinstance(labels, tuple):
+            labels, loss_mask = labels
+        return super().forward(logits, labels, loss_mask=loss_mask)
+
+
+class StableLmForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = StableLmConfig
+    base_model_class = StableLmModel
+    base_model_prefix = "model"
+    _decoder_layer_cls = StableLmDecoderLayer
+    _decoder_layer_pipe_cls = StableLmDecoderLayerPipe
+    _rotary_emb_cls = StableLmRotaryEmbedding
+    _criterion_pipe_cls = StableLmCriterionLayerPipe
+    _norm_cls = "layer_norm"
+    _get_tensor_parallel_mappings = StableLmPretrainedModel._get_tensor_parallel_mappings
+    _init_weights = StableLmPretrainedModel._init_weights
+    _keep_in_fp32_modules = StableLmPretrainedModel._keep_in_fp32_modules
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = StableLmPretrainedModel.transpose_weight_keys
+    _gen_aoa_config = StableLmForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = StableLmForCausalLM._gen_inv_aoa_config
 
 
 __all__ = [
     "StableLmModel",
     "StableLmForCausalLM",
+    "StableLmForCausalLMPipe",
     "StableLmPretrainedModel",
     "StableLmRotaryEmbedding",
     "StableLmDecoderLayer",
