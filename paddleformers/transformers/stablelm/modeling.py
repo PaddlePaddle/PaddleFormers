@@ -600,7 +600,11 @@ class StableLmModel(StableLmPretrainedModel):
         use_cache: bool | None = None,
         return_dict: bool | None = None,
         output_hidden_states: bool | None = None,
+        output_attentions: bool | None = None,
     ) -> BaseModelOutputWithPast:
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        if output_attentions:
+            raise ValueError("StableLM does not currently return attention weights")
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         output_hidden_states = (
@@ -729,12 +733,11 @@ class StableLmForCausalLM(StableLmPretrainedModel):
         past_key_values: Cache | None = None,
         return_dict: bool | None = None,
         output_hidden_states: bool | None = None,
+        output_attentions: bool | None = None,
         **kwargs,
     ) -> CausalLMOutputWithPast:
         if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
             attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
-        if kwargs.get("output_attentions", False):
-            raise ValueError("StableLM does not currently return attention weights")
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -760,6 +763,7 @@ class StableLmForCausalLM(StableLmPretrainedModel):
             past_key_values=past_key_values,
             return_dict=True,
             output_hidden_states=output_hidden_states,
+            output_attentions=output_attentions,
         )
 
         hidden_states = outputs[0]
@@ -787,9 +791,6 @@ class StableLmForCausalLM(StableLmPretrainedModel):
             input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs
         )
 
-    def auto_dist_config(self, prefix=""):
-        raise NotImplementedError("Use StableLmForCausalLMPipe for PP and the hybrid parallel training path for TP/SP")
-
 
 class StableLmDecoderLayerPipe(StableLmDecoderLayer):
     def forward(self, args):
@@ -807,7 +808,16 @@ class StableLmDecoderLayerPipe(StableLmDecoderLayer):
                 ),
                 diagonal=1,
             )
-            attention_mask = causal_mask[None, None, :, :] if attention_mask is None else attention_mask + causal_mask
+            causal_mask = causal_mask[None, None, :, :]
+            attention_mask = (
+                causal_mask
+                if attention_mask is None
+                else paddle.where(
+                    attention_mask < 0,
+                    paddle.full_like(attention_mask, paddle.finfo(hidden_states.dtype).min),
+                    causal_mask,
+                )
+            )
         layer_forward = super().forward
         if self.training and paddle.is_grad_enabled() and self.config.recompute_granularity == "full":
             layer_forward = partial(

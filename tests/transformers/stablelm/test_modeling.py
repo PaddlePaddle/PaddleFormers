@@ -33,7 +33,12 @@ from paddleformers.transformers.stablelm.modeling import (
     StableLmLayerNormPerHead,
     StableLmRotaryEmbedding,
 )
-from tests.testing_utils import gpu_device_initializer, require_package, slow
+from tests.testing_utils import (
+    gpu_device_initializer,
+    require_gpu,
+    require_package,
+    slow,
+)
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -198,6 +203,11 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
             rope_scaling={"type": "linear", "factor": 2.0},
         )
         self.assertEqual(config.rope_parameters["factor"], 3.0)
+
+    @parameterized.expand([(-10000.0,), (float("nan"),), (float("inf"),), ("invalid",)])
+    def test_invalid_effective_rope_theta(self, rope_theta):
+        with self.assertRaisesRegex(ValueError, "rope_theta"):
+            self.model_tester.get_config(rope_parameters={"rope_theta": rope_theta})
 
     @parameterized.expand([(False,), (True,)])
     def test_residual_formula(self, parallel):
@@ -377,6 +387,33 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
             outputs = model(paddle.to_tensor([[1, 2, 3]]), return_dict=True)
         self.assertTrue(paddle.isfinite(outputs.last_hidden_state).all().item())
 
+    def test_auto_data_sharding_config(self):
+        from paddleformers.trainer.trainer_utils import ShardingOption
+
+        model = StableLmForCausalLM(self.model_tester.get_config())
+        config = model._generate_auto_dist_config(
+            {
+                "data_sharding_parallel": True,
+                "sharding": [ShardingOption.FULL_SHARD],
+                "sharding_mesh_dim": "dp",
+            }
+        )
+        self.assertEqual(config["dp_config"], {"sharding_level": 3, "sharding_mesh_dim": "dp"})
+        self.assertIsNone(config["mp_config"])
+        self.assertIsNone(config["pp_config"])
+
+    def test_output_attentions_config_and_override(self):
+        input_ids = paddle.to_tensor([[1, 2, 3]])
+        for model_class in self.all_model_classes:
+            model = model_class(self.model_tester.get_config(output_attentions=True)).eval()
+            with self.assertRaisesRegex(ValueError, "attention weights"):
+                model(input_ids, return_dict=True)
+            with paddle.no_grad():
+                outputs = model(input_ids, output_attentions=False, return_dict=True)
+            self.assertIsNone(outputs.attentions)
+            with self.assertRaisesRegex(ValueError, "attention weights"):
+                model(input_ids, output_attentions=True, return_dict=True)
+
     @parameterized.expand([(None,), ([],)])
     def test_auto_entrypoint_and_small_generation(self, architectures):
         import re
@@ -516,8 +553,15 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         self.assertEqual(int(rope.max_seq_len_cached), 8)
         paddle.testing.assert_close(rope.inv_freq, original, rtol=0.0, atol=0.0)
 
-    @parameterized.expand([(False, False), (True, False), (False, True), (True, True)])
-    def test_pipeline_stages_match_regular_model(self, with_mask, with_recompute):
+    @parameterized.expand(
+        [
+            (layout, recompute, dtype)
+            for layout in ("none", "right", "left", "empty")
+            for recompute in (False, True)
+            for dtype in ("float32", "float16", "bfloat16")
+        ]
+    )
+    def test_pipeline_stages_match_regular_model(self, mask_layout, with_recompute, dtype):
         from paddleformers.nn.pp_model import EmbeddingPipe, LayerNormPipe, LMHeadPipe
         from paddleformers.transformers.stablelm.modeling import (
             StableLmCriterionLayerPipe,
@@ -543,8 +587,16 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         head = LMHeadPipe(config)
         head.set_state_dict(model.lm_head.state_dict())
         criterion = StableLmCriterionLayerPipe(config)
+        for component in (model, embed, *layers, norm, head):
+            component.to(dtype=dtype)
         x = paddle.to_tensor([[1, 2, 3, 4], [4, 3, 2, 1]])
-        mask = paddle.to_tensor([[1, 1, 1, 1], [1, 1, 1, 0]])
+        masks = {
+            "right": [[1, 1, 1, 1], [1, 1, 1, 0]],
+            "left": [[0, 0, 1, 1], [1, 1, 1, 1]],
+            "empty": [[0, 0, 0, 0], [1, 1, 1, 1]],
+        }
+        mask = paddle.to_tensor(masks.get(mask_layout, masks["right"]))
+        with_mask = mask_layout != "none"
         loss_mask = mask.astype("float32")
         expected = model(
             x, attention_mask=mask if with_mask else None, labels=x, loss_mask=loss_mask, return_dict=True
@@ -554,16 +606,92 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
             states = layer(states)
         logits = head(norm(states))
         loss = criterion(logits, (x, loss_mask))
-        paddle.testing.assert_close(logits, expected.logits, rtol=1e-5, atol=1e-6)
+        self.assertEqual(logits.dtype, expected.logits.dtype)
+        paddle.testing.assert_close(logits.float(), expected.logits.float(), rtol=1e-5, atol=1e-6)
         paddle.testing.assert_close(loss, expected.loss, rtol=1e-5, atol=1e-6)
         loss.backward()
         expected.loss.backward()
         paddle.testing.assert_close(
-            layers[0].self_attn.q_layernorm.weight.grad,
-            model.model.layers[0].self_attn.q_layernorm.weight.grad,
+            layers[0].self_attn.q_layernorm.weight.grad.float(),
+            model.model.layers[0].self_attn.q_layernorm.weight.grad.float(),
             rtol=1e-5,
             atol=1e-6,
         )
+
+    @require_gpu(min_gpus=2)
+    def test_pipeline_parallel_training_and_checkpoint(self):
+        from paddle.distributed import fleet
+
+        from paddleformers.transformers import AutoModelForCausalLMPipe
+
+        world_size = paddle.distributed.get_world_size()
+        if world_size not in (2, 4):
+            self.skipTest("Requires a distributed launch with two or four GPU ranks")
+        paddle.set_device(f"gpu:{paddle.distributed.ParallelEnv().dev_id}")
+        strategy = fleet.DistributedStrategy()
+        tp_size = world_size // 2
+        strategy.hybrid_configs = dict(dp_degree=1, mp_degree=tp_size, pp_degree=2, sharding_degree=1)
+        strategy.pipeline_configs = dict(micro_batch_size=1, accumulate_steps=1)
+        fleet.init(is_collective=True, strategy=strategy)
+        hcg = fleet.get_hybrid_communicate_group()
+        paddle.seed(123)
+        config = self.model_tester.get_config(
+            vocab_size=32,
+            eos_token_id=31,
+            qk_layernorm=True,
+            use_cache=False,
+            tensor_parallel_output=False,
+            recompute_granularity="full",
+            recompute_method="uniform",
+            recompute_num_layers=1,
+        )
+        reference = StableLmForCausalLM(config)
+        pipe = AutoModelForCausalLMPipe.from_config(StableLmConfig.from_dict(config.to_dict()))
+        self.assertIsInstance(pipe, StableLmForCausalLMPipe)
+        original = reference.state_dict()
+        actions = pipe._get_tensor_parallel_mappings(pipe.config)
+        local = {}
+        for name in pipe.state_dict():
+            key = name.removeprefix("model.")
+            local[name] = actions[key](original[name]) if tp_size > 1 and key in actions else original[name]
+        pipe.set_state_dict(local)
+        x = paddle.to_tensor([[1, 2, 3, 4]])
+        labels = paddle.to_tensor([[2, 3, 4, 5]])
+        loss_mask = paddle.to_tensor([[1.0, 1.0, 0.0, 1.0]])
+        expected = reference(x, labels=labels, loss_mask=loss_mask, return_dict=True)
+        engine = fleet.distributed_model(pipe)
+        engine.eval()
+        with paddle.no_grad():
+            outputs = engine.eval_batch([x, labels], compute_loss=False)
+        if hcg.get_stage_id() == 1:
+            paddle.testing.assert_close(outputs[0], expected.logits, rtol=1e-5, atol=1e-6)
+        expected.loss.backward()
+        engine.train()
+        optimizer = fleet.distributed_optimizer(paddle.optimizer.SGD(learning_rate=0.01, parameters=pipe.parameters()))
+        before = [parameter.clone() for parameter in pipe.parameters()]
+        loss = engine.train_batch([x, (labels, loss_mask)], optimizer=optimizer)
+        paddle.testing.assert_close(loss, expected.loss.detach(), rtol=1e-5, atol=1e-6)
+        self.assertTrue(
+            any(not paddle.equal_all(old, parameter).item() for old, parameter in zip(before, pipe.parameters()))
+        )
+        paddle.optimizer.SGD(learning_rate=0.01, parameters=reference.parameters()).step()
+        updated = reference.state_dict()
+        for name, parameter in pipe.state_dict().items():
+            key = name.removeprefix("model.")
+            expected_parameter = actions[key](updated[name]) if tp_size > 1 and key in actions else updated[name]
+            paddle.testing.assert_close(parameter, expected_parameter, rtol=1e-5, atol=1e-6)
+        with tempfile.TemporaryDirectory() as directory:
+            directories = []
+            paddle.distributed.all_gather_object(directories, directory)
+            directory = directories[0]
+            pipe.save_pretrained(directory, save_checkpoint_format="flex_checkpoint")
+            paddle.distributed.barrier()
+            loaded = AutoModelForCausalLMPipe.from_pretrained(
+                directory, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
+            for name, value in pipe.state_dict().items():
+                paddle.testing.assert_close(loaded.state_dict()[name], value, rtol=0.0, atol=0.0)
+            paddle.distributed.barrier()
 
     def test_lora_recompute_training(self):
         from paddleformers.cli.utils.llm_utils import get_lora_target_modules

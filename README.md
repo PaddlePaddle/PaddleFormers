@@ -55,7 +55,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   <tbody>
     <!-- LLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="19" style="vertical-align: top;">LLM</td>
+      <td rowspan="20" style="vertical-align: top;">LLM</td>
       <td>DeepSeekv3</td>
       <td>deepseek-ai/DeepSeek-V3-Base、deepseek-ai/DeepSeek-V3、deepseek-ai/DeepSeek-V3-0324</td>
       <td>deepseek3</td>

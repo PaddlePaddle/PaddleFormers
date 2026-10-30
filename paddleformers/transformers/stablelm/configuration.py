@@ -106,6 +106,13 @@ class StableLmConfig(PretrainedConfig):
             raise ValueError("rope_parameters and rope_scaling must be dicts or None")
         self.rope_parameters = dict(rope_parameters) if rope_parameters is not None else None
         standardize_rope_params(self, rope_theta=self.rope_theta)
+        effective_rope_theta = self.rope_parameters["rope_theta"]
+        if (
+            not isinstance(effective_rope_theta, (int, float))
+            or not math.isfinite(effective_rope_theta)
+            or effective_rope_theta <= 0
+        ):
+            raise ValueError("rope_parameters.rope_theta must be positive and finite")
         rope_config_validation(self, ignore_keys={"partial_rotary_factor"})
 
         self.norm_eps = self.layer_norm_eps
