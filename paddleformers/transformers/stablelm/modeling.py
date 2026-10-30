@@ -90,6 +90,10 @@ class StableLmRotaryEmbedding(nn.Layer):
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
+        if "dynamic" in self.rope_type and hasattr(self, "None_max_seq_len_cached"):
+            # The shared helper stores the updated length under this legacy attribute.
+            self.max_seq_len_cached = int(self.None_max_seq_len_cached)
+            delattr(self, "None_max_seq_len_cached")
         with paddle.amp.auto_cast(enable=False):
             inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
