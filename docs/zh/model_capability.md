@@ -2,7 +2,7 @@
 |模型|PT / CPT|SFT|SFT-LoRA|DPO|DPO-LoRA|
 |-|-|-|-|-|-|
 |Cohere|✓|✓|✓|✓|✓|
-|StableLM|✓|✓|✓|待验证|待验证|
+|StableLM|✓|✓|✓|x|x|
 |DeepSeekv3|✓|✓|✓|✓|✓|
 |🏛️ERNIE-4.5|✓|✓|✓|✓|✓|
 |Gemma3|✓|✓|✓|✓|✓|
@@ -30,7 +30,6 @@
 |模型|TP + SP|PP|EP|CP|DP|FSDP|
 |-|-|-|-|-|-|-|
 |Cohere|✓|✓|-|x|✓|✓|
-|StableLM|待验证|待验证|-|x|待验证|待验证|
 |DeepSeekv3|✓|✓|✓|x|✓|✓|
 |🏛️ERNIE-4.5|✓|✓|✓|x|✓|✓|
 |Gemma3|x|✓|-|x|✓|✓|

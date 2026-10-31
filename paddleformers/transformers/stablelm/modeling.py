@@ -32,7 +32,7 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe, parse_args
+from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..conversion_utils import split_or_merge_func
@@ -796,6 +796,35 @@ class StableLmForCausalLM(StableLmPretrainedModel):
         )
 
 
+class StableLmEmbeddingPipe(EmbeddingPipe):
+    def forward(self, args):
+        input_ids, mask, _, _, _ = parse_args(args, is_embed=True)
+        outputs = super().forward(args)
+        hidden_states, _, position_ids, position_embeddings, offset = parse_args(outputs)
+        row_indices = mask if mask is not None and mask.ndim >= 3 and mask.dtype == paddle.int32 else None
+        attention_mask = mask.astype("bool") if mask is not None and row_indices is None else None
+        attention_mask, row_indices = create_causal_mask_and_row_indices(
+            config=self.config,
+            inputs_embeds=hidden_states,
+            batch_size=input_ids.shape[0],
+            seq_length=input_ids.shape[1],
+            cache_length=0,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=row_indices,
+            prepare_decoder_attention_mask=StableLmPretrainedModel._prepare_decoder_attention_mask,
+        )
+        outputs = (hidden_states,)
+        for value in (
+            row_indices if row_indices is not None else attention_mask,
+            position_ids,
+            position_embeddings,
+            offset,
+        ):
+            if value is not None:
+                outputs += (value,)
+        return outputs
+
+
 class StableLmDecoderLayerPipe(StableLmDecoderLayer):
     def forward(self, args):
         hidden_states, mask, position_ids, position_embeddings, _ = parse_args(args)
@@ -804,24 +833,6 @@ class StableLmDecoderLayerPipe(StableLmDecoderLayer):
         embeddings = None if position_embeddings is None else (position_embeddings[0], position_embeddings[1])
         if embeddings is None:
             raise ValueError("StableLM PP requires explicit rotary embeddings")
-        if row_indices is None and (attention_mask is not None or self.config._attn_implementation == "eager"):
-            seq_length = embeddings[0].shape[-2]
-            causal_mask = paddle.triu(
-                paddle.full(
-                    [seq_length, seq_length], paddle.finfo(hidden_states.dtype).min, dtype=hidden_states.dtype
-                ),
-                diagonal=1,
-            )
-            causal_mask = causal_mask[None, None, :, :]
-            attention_mask = (
-                causal_mask
-                if attention_mask is None
-                else paddle.where(
-                    attention_mask < 0,
-                    paddle.full_like(attention_mask, paddle.finfo(hidden_states.dtype).min),
-                    causal_mask,
-                )
-            )
         layer_forward = super().forward
         if self.training and paddle.is_grad_enabled() and self.config.recompute_granularity == "full":
             layer_forward = partial(
@@ -858,6 +869,7 @@ class StableLmForCausalLMPipe(GeneralModelForCausalLMPipe):
     base_model_prefix = "model"
     _decoder_layer_cls = StableLmDecoderLayer
     _decoder_layer_pipe_cls = StableLmDecoderLayerPipe
+    _embedding_pipe_cls = StableLmEmbeddingPipe
     _rotary_emb_cls = StableLmRotaryEmbedding
     _criterion_pipe_cls = StableLmCriterionLayerPipe
     _norm_cls = "layer_norm"
@@ -868,6 +880,12 @@ class StableLmForCausalLMPipe(GeneralModelForCausalLMPipe):
     transpose_weight_keys = StableLmPretrainedModel.transpose_weight_keys
     _gen_aoa_config = StableLmForCausalLM._gen_aoa_config
     _gen_inv_aoa_config = StableLmForCausalLM._gen_inv_aoa_config
+
+    def add_sequential_layer(self, layer_desc, name_prefix=""):
+        # The shared-weight path selects the common embedding class directly.
+        if name_prefix == "model" and layer_desc.layer_func is EmbeddingPipe:
+            layer_desc.layer_func = StableLmEmbeddingPipe
+        super().add_sequential_layer(layer_desc, name_prefix)
 
 
 __all__ = [

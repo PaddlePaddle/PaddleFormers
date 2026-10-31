@@ -556,16 +556,17 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     @parameterized.expand(
         [
             (layout, recompute, dtype)
-            for layout in ("none", "right", "left", "empty")
+            for layout in ("none", "right", "left", "empty", "prefix_3d", "prefix_4d", "broadcast_4d")
             for recompute in (False, True)
             for dtype in ("float32", "float16", "bfloat16")
         ]
     )
     def test_pipeline_stages_match_regular_model(self, mask_layout, with_recompute, dtype):
-        from paddleformers.nn.pp_model import EmbeddingPipe, LayerNormPipe, LMHeadPipe
+        from paddleformers.nn.pp_model import LayerNormPipe, LMHeadPipe
         from paddleformers.transformers.stablelm.modeling import (
             StableLmCriterionLayerPipe,
             StableLmDecoderLayerPipe,
+            StableLmEmbeddingPipe,
         )
 
         config = self.model_tester.get_config(
@@ -577,7 +578,7 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
             config.recompute_num_layers = 1
         model = StableLmForCausalLM(config)
         model.train()
-        embed = EmbeddingPipe(config, rotary_emb_cls=StableLmRotaryEmbedding)
+        embed = StableLmEmbeddingPipe(config, rotary_emb_cls=StableLmRotaryEmbedding)
         embed.embed_tokens.set_state_dict(model.model.embed_tokens.state_dict())
         layers = [StableLmDecoderLayerPipe(config, i) for i in range(2)]
         for index, layer in enumerate(layers):
@@ -598,6 +599,14 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         mask = paddle.to_tensor(masks.get(mask_layout, masks["right"]))
         with_mask = mask_layout != "none"
         loss_mask = mask.astype("float32")
+        if mask_layout in ("prefix_3d", "prefix_4d", "broadcast_4d"):
+            loss_mask = paddle.ones_like(x, dtype="float32")
+            prefix_mask = [[[1, 1, 0, 0], [1, 1, 0, 0], [1, 1, 1, 0], [1, 1, 1, 1]]]
+            mask = paddle.to_tensor(prefix_mask, dtype="bool").tile([2, 1, 1])
+            if mask_layout == "prefix_4d":
+                mask = mask.unsqueeze(1)
+            elif mask_layout == "broadcast_4d":
+                mask = paddle.ones([2, 1, 1, 4], dtype="bool")
         expected = model(
             x, attention_mask=mask if with_mask else None, labels=x, loss_mask=loss_mask, return_dict=True
         )
