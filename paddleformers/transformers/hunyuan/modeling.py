@@ -29,6 +29,7 @@ import paddle.distributed as dist
 from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
+from paddlefleet.transformer.transformer_layer import TransformerLayer
 
 from paddleformers.transformers.gpt_provider import GPTModelProvider
 
@@ -56,6 +57,71 @@ from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import HunyuanConfig
 
 
+def _get_dynamic_ntk_alpha_base(
+    base: float,
+    rope_parameters: Optional[Dict],
+    head_dim: int,
+) -> Optional[float]:
+    """Return the statically scaled RoPE base used by Hunyuan's DynamicNTKAlpha.
+
+    Hunyuan Dense V1 rescales ``base`` once at initialization instead of
+    recomputing it from the sequence length like the generic dynamic NTK. The
+    result is ``None`` when the configuration does not use DynamicNTKAlpha.
+    """
+    if not rope_parameters:
+        return None
+    rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+    alpha = rope_parameters.get("alpha")
+    if rope_type != "dynamic" or alpha is None:
+        return None
+    return base * float(alpha) ** (head_dim / (head_dim - 2))
+
+
+class HunyuanCoreAttention(nn.Layer):
+    """Core attention wrapper that applies Hunyuan's q/k RMSNorm after RoPE.
+
+    PaddleFleet's shared ``SelfAttention`` applies ``q_norm``/``k_norm`` inside
+    ``get_query_key_value_tensors``, i.e. before RoPE (the Qwen3 order). Hunyuan
+    applies them after RoPE, so the norms are moved into this wrapper, which
+    runs right before the attention computation.
+    """
+
+    def __init__(self, core_attention: nn.Layer, q_norm: nn.Layer, k_norm: nn.Layer):
+        super().__init__()
+        self.core_attention = core_attention
+        self.q_norm = q_norm
+        self.k_norm = k_norm
+
+    def forward(self, query, key, value, *args, **kwargs):
+        query = self.q_norm(query)
+        key = self.k_norm(key)
+        return self.core_attention(query, key, value, *args, **kwargs)
+
+
+def _apply_qk_norm_after_rope(self_attn: nn.Layer) -> None:
+    """Move the q/k norms of a PaddleFleet attention from before to after RoPE."""
+    q_norm = getattr(self_attn, "q_norm", None)
+    k_norm = getattr(self_attn, "k_norm", None)
+    if q_norm is None or k_norm is None or getattr(q_norm, "weight", None) is None:
+        # `use_qk_norm=False` builds parameter-free identity modules.
+        return
+    # Replacing the modules with identities removes their pre-RoPE application;
+    # the wrapper below applies the original norms to the post-RoPE query/key.
+    self_attn.q_norm = paddle.nn.Identity()
+    self_attn.k_norm = paddle.nn.Identity()
+    self_attn.core_attention = HunyuanCoreAttention(self_attn.core_attention, q_norm, k_norm)
+
+
+class HunyuanTransformerLayer(TransformerLayer):
+    """Hunyuan decoder layer with the q/k RMSNorm applied after RoPE."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self_attn = getattr(self, "self_attn", None)
+        if self_attn is not None:
+            _apply_qk_norm_after_rope(self_attn)
+
+
 @dataclass
 class HunyuanModelProvider(GPTModelProvider):
     """Base provider for Hunyuan Models."""
@@ -63,9 +129,13 @@ class HunyuanModelProvider(GPTModelProvider):
     model_type = "hunyuan_v1_dense"
 
     # Hunyuan applies q/k RMSNorm *after* RoPE, whereas PaddleFleet's shared
-    # SelfAttention applies it before RoPE, so the fleet logits are close to
-    # but not bit-identical with the Hugging Face reference.
+    # SelfAttention applies it before RoPE. HunyuanTransformerLayer moves the
+    # norms into a wrapper around the core attention to match Hugging Face.
     use_qk_norm: bool = True
+
+    # Hunyuan Dense V1 has no multi-token-prediction layers, so they must not
+    # take part in the pipeline layer segmentation.
+    separate_mtp_headloss: bool = False
 
     bias_activation_fusion: bool = True
     bias_dropout_fusion: bool = True
@@ -79,18 +149,19 @@ class HunyuanModelProvider(GPTModelProvider):
 
     def __post_init__(self):
         super().__post_init__()
+        # PaddleFleet reads `config.specific_layer` when it builds the decoder
+        # layer specs; use the variant that applies the q/k norms after RoPE.
+        self.specific_layer = HunyuanTransformerLayer
         # HunYuan Dense V1 encodes its DynamicNTKAlpha scaling in `rope_scaling`,
         # but PaddleFleet does not consume `alpha`. Materialize the statically
         # scaled base here so that fleet, eager and Hugging Face produce the
         # same `inv_freq`.
         rope_parameters = getattr(self, "rope_parameters", None)
         if rope_parameters:
-            rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
-            alpha = rope_parameters.get("alpha")
-            if rope_type == "dynamic" and alpha is not None:
-                dim = getattr(self, "head_dim", None) or self.hidden_size // self.num_attention_heads
-                base = rope_parameters.get("rope_theta", self.rotary_base)
-                scaled_base = base * float(alpha) ** (dim / (dim - 2))
+            dim = getattr(self, "head_dim", None) or self.hidden_size // self.num_attention_heads
+            base = rope_parameters.get("rope_theta", self.rotary_base)
+            scaled_base = _get_dynamic_ntk_alpha_base(base, rope_parameters, dim)
+            if scaled_base is not None:
                 # Copy before mutating: `rope_parameters` may be shared with the
                 # model config, which must keep the original unscaled base.
                 rope_parameters = dict(rope_parameters)
@@ -229,7 +300,7 @@ class HunyuanAttention(nn.Layer):
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
-    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
+    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor]]:
         """Input shape: Batch x Time x Channel"""
         mix_layer = self.qkv_proj(hidden_states)
         if self.sequence_parallel:
@@ -417,11 +488,16 @@ class HunyuanPretrainedModel(PretrainedModel):
                 f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
             ]
         if config.use_qk_norm:
-            # PaddleFleet names the attention q/k norms `q_norm`/`k_norm`
-            # regardless of whether the model runs in fleet or eager mode.
+            # In fleet mode the norms live in HunyuanCoreAttention, which applies
+            # them after RoPE; eager mode keeps them on the attention layer.
+            norm_prefix = (
+                f"{model_prefix}layers.$LAYER_ID.self_attn.core_attention"
+                if is_fleet
+                else f"{model_prefix}layers.$LAYER_ID.self_attn"
+            )
             aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.query_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
-                f"model.layers.$LAYER_ID.self_attn.key_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
+                f"model.layers.$LAYER_ID.self_attn.query_layernorm.weight -> {norm_prefix}.q_norm.weight",
+                f"model.layers.$LAYER_ID.self_attn.key_layernorm.weight -> {norm_prefix}.k_norm.weight",
             ]
 
         # attention qkv
@@ -472,9 +548,14 @@ class HunyuanPretrainedModel(PretrainedModel):
                 f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             ]
         if config.use_qk_norm:
+            norm_prefix = (
+                f"{model_prefix}layers.$LAYER_ID.self_attn.core_attention"
+                if is_fleet
+                else f"{model_prefix}layers.$LAYER_ID.self_attn"
+            )
             aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.query_layernorm.weight",
-                f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.key_layernorm.weight",
+                f"{norm_prefix}.q_norm.weight -> model.layers.$LAYER_ID.self_attn.query_layernorm.weight",
+                f"{norm_prefix}.k_norm.weight -> model.layers.$LAYER_ID.self_attn.key_layernorm.weight",
             ]
 
         aoa_statements += [
@@ -523,7 +604,9 @@ class HunyuanRotaryEmbedding(nn.Layer):
         # sequence-dependent generic dynamic-NTK formula used by Qwen models.
         # `compute_default_rope_parameters` folds alpha into the base, so the
         # resulting frequencies are static and do not need dynamic updates.
-        if self.rope_type == "dynamic" and self.rope_parameters.get("alpha") is not None:
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        base = self.rope_parameters.get("rope_theta", config.rope_theta)
+        if _get_dynamic_ntk_alpha_base(base, self.rope_parameters, dim) is not None:
             self.rope_type = "default"
 
         rope_init_fn = self.compute_default_rope_parameters
@@ -545,10 +628,9 @@ class HunyuanRotaryEmbedding(nn.Layer):
 
         # HunYuan Dense V1's DynamicNTKAlpha rescales the base once at
         # initialization instead of recomputing it from the sequence length.
-        rope_type = config.rope_parameters.get("rope_type", config.rope_parameters.get("type", "default"))
-        alpha = config.rope_parameters.get("alpha")
-        if rope_type == "dynamic" and alpha is not None:
-            base = base * float(alpha) ** (dim / (dim - 2))
+        scaled_base = _get_dynamic_ntk_alpha_base(base, config.rope_parameters, dim)
+        if scaled_base is not None:
+            base = scaled_base
 
         inv_freq = 1.0 / (
             base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32).to(device) / dim)
@@ -729,7 +811,16 @@ class HunyuanModel(HunyuanPretrainedModel):
         )
 
 
-class HunyuanForCausalLM(HunyuanPretrainedModel):
+class HunyuanForCausalLMFleet(HunyuanPretrainedModel):
+    """PaddleFleet implementation of the Hunyuan Dense V1 causal language model.
+
+    PaddleFleet's shared ``SelfAttention`` applies the q/k RMSNorm before RoPE,
+    whereas Hunyuan applies it afterwards. ``HunyuanTransformerLayer`` moves the
+    norms behind RoPE so this path matches the Hugging Face reference. The fleet
+    implementation stays opt-in while the public ``HunyuanForCausalLM`` resolves
+    to the eager implementation.
+    """
+
     is_fleet = True
 
     def __new__(cls, config):
@@ -904,7 +995,6 @@ class HunyuanForSequenceClassification(HunyuanPretrainedModel):
                 # if no pad token found, use modulo instead of reverse indexing for ONNX compatibility
                 sequence_lengths = paddle.eq(input_ids, self.config.pad_token_id).astype("int32").argmax(-1) - 1
                 sequence_lengths = sequence_lengths % input_ids.shape[-1]
-                sequence_lengths = sequence_lengths
             else:
                 sequence_lengths = -1
 
@@ -970,12 +1060,11 @@ class HunyuanForTokenClassification(HunyuanPretrainedModel):
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
+    ) -> Union[Tuple, TokenClassifierOutput]:
         r"""
-        labels (`paddle.Tensor` of shape `(batch_size,)`, *optional*):
-            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
-            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
-            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        labels (`paddle.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the token classification loss. Indices should be in `[0, ...,
+            config.num_labels - 1]`.
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -1015,13 +1104,12 @@ class HunyuanSentenceEmbedding(HunyuanPretrainedModel):
         config: HunyuanConfig,
         embedding_temperature: float = 0.02,
     ):
-        """HunyuanSentenceEmbedding
-        For getting larger batch_size, we use tensor parallel to get larger batch_size.
+        """Hunyuan sentence embedding model.
 
         Args:
-            config (HunyuanConfig): _description_
-            model (HunyuanModel): _description_
-            embedding_temperature (float, optional): _description_. Defaults to 0.02.
+            config (HunyuanConfig): Model configuration.
+            embedding_temperature (float, optional): Temperature of the in-batch
+                negative contrastive loss. Defaults to 0.02.
         """
         super(HunyuanSentenceEmbedding, self).__init__(config)
         self.config = config
@@ -1039,7 +1127,7 @@ class HunyuanSentenceEmbedding(HunyuanPretrainedModel):
         passages: Optional[Dict[str, paddle.Tensor]] = None,
         return_encode=False,
     ):
-        """forward"""
+        """Compute the in-batch negative contrastive loss."""
         q_reps = self.encode(**query)
         p_reps = self.encode(**passages)
 
@@ -1065,7 +1153,7 @@ class HunyuanSentenceEmbedding(HunyuanPretrainedModel):
         return_dict=False,
         **kwargs,
     ):
-        """encode"""
+        """Encode the selected token hidden states as sentence embeddings."""
         input_type = type(input_ids)
         outputs = self.model(
             input_ids,
@@ -1082,7 +1170,9 @@ class HunyuanSentenceEmbedding(HunyuanPretrainedModel):
         return last_hidden_states
 
 
-class HunyuanForCausalLMPipe(HunyuanPretrainedModel, GeneralModelForCausalLMPipe):
+class HunyuanForCausalLMPipeFleet(HunyuanPretrainedModel, GeneralModelForCausalLMPipe):
+    """PaddleFleet pipeline-parallel variant of ``HunyuanForCausalLMFleet``."""
+
     is_fleet = True
 
     def __new__(cls, config):
@@ -1110,8 +1200,8 @@ class HunyuanForCausalLMPipe(HunyuanPretrainedModel, GeneralModelForCausalLMPipe
 
 # Exact Hugging Face architecture names used by Hunyuan Dense V1 checkpoints.
 HunYuanDenseV1Model = HunyuanModel
-HunYuanDenseV1ForCausalLM = HunyuanForCausalLM
-HunYuanDenseV1ForCausalLMPipe = HunyuanForCausalLMPipe
+HunYuanDenseV1ForCausalLMFleet = HunyuanForCausalLMFleet
+HunYuanDenseV1ForCausalLMPipeFleet = HunyuanForCausalLMPipeFleet
 
 
 class HunyuanForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
@@ -1129,6 +1219,14 @@ class HunyuanForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
 
 HunYuanDenseV1ForCausalLMPipeDeprecated = HunyuanForCausalLMPipeDeprecated
 
+# PaddleFleet applies the q/k RMSNorm before RoPE while Hunyuan applies it
+# afterwards. HunyuanTransformerLayer fixes the order for the fleet path, but
+# the public classes keep resolving to the eager implementation.
+HunyuanForCausalLM = HunyuanForCausalLMDeprecated
+HunyuanForCausalLMPipe = HunyuanForCausalLMPipeDeprecated
+HunYuanDenseV1ForCausalLM = HunyuanForCausalLM
+HunYuanDenseV1ForCausalLMPipe = HunyuanForCausalLMPipe
+
 
 __all__ = [
     "HunyuanModel",
@@ -1136,8 +1234,12 @@ __all__ = [
     "HunyuanPretrainedModel",
     "HunyuanForCausalLM",
     "HunYuanDenseV1ForCausalLM",
+    "HunyuanForCausalLMFleet",
+    "HunYuanDenseV1ForCausalLMFleet",
     "HunyuanForCausalLMPipe",
     "HunYuanDenseV1ForCausalLMPipe",
+    "HunyuanForCausalLMPipeFleet",
+    "HunYuanDenseV1ForCausalLMPipeFleet",
     "HunyuanForSequenceClassification",
     "HunyuanForTokenClassification",
     "HunyuanSentenceEmbedding",

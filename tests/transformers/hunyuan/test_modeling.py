@@ -13,13 +13,27 @@
 # limitations under the License.
 from __future__ import annotations
 
+import tempfile
 import unittest
 
 import paddle
 
-from paddleformers.transformers import HunyuanConfig, HunyuanModel
-from paddleformers.transformers import HunyuanForCausalLMDeprecated as HunyuanForCausalLM
-from paddleformers.transformers.hunyuan.modeling import HunyuanForSequenceClassification, HunyuanForTokenClassification
+from paddleformers.transformers import (
+    HunyuanConfig,
+    HunyuanForCausalLM,
+    HunyuanForCausalLMDeprecated,
+    HunyuanForCausalLMFleet,
+    HunyuanModel,
+)
+from paddleformers.transformers.hunyuan.modeling import (
+    HunyuanCoreAttention,
+    HunyuanForSequenceClassification,
+    HunyuanForTokenClassification,
+    HunyuanModelProvider,
+    HunyuanRotaryEmbedding,
+    HunyuanTransformerLayer,
+    _apply_qk_norm_after_rope,
+)
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -213,6 +227,83 @@ class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
     def test_hunyuan_gqa_model(self):
         self.model_tester.create_and_check_gqa_model(*self.model_tester.prepare_config_and_inputs())
+
+    def test_default_causal_lm_is_eager(self):
+        # The public classes resolve to the eager implementation; the fleet
+        # implementation is opt-in via HunyuanForCausalLMFleet.
+        self.assertIs(HunyuanForCausalLM, HunyuanForCausalLMDeprecated)
+        self.assertFalse(getattr(HunyuanForCausalLM, "is_fleet", False))
+
+    def test_fleet_layer_applies_qk_norm_after_rope(self):
+        # PaddleFleet applies the q/k RMSNorm before RoPE while Hunyuan applies
+        # it afterwards, so the fleet decoder layer must move the norms.
+        config = self.model_tester.get_config()
+        provider = HunyuanModelProvider.from_config(config)
+        self.assertIs(provider.specific_layer, HunyuanTransformerLayer)
+
+        class EchoCoreAttention(paddle.nn.Layer):
+            def forward(self, query, key, value, *args, **kwargs):
+                return query
+
+        q_norm = paddle.nn.LayerNorm([config.head_dim])
+        k_norm = paddle.nn.LayerNorm([config.head_dim])
+        attn = paddle.nn.Layer()
+        attn.q_norm = q_norm
+        attn.k_norm = k_norm
+        attn.core_attention = EchoCoreAttention()
+
+        _apply_qk_norm_after_rope(attn)
+        self.assertIsInstance(attn.q_norm, paddle.nn.Identity)
+        self.assertIsInstance(attn.k_norm, paddle.nn.Identity)
+        self.assertIsInstance(attn.core_attention, HunyuanCoreAttention)
+        self.assertIs(attn.core_attention.q_norm, q_norm)
+
+        query = paddle.randn([2, 3, config.head_dim])
+        out = attn.core_attention(query, query, query)
+        self.assertTrue(paddle.allclose(out, q_norm(query)))
+
+    def test_fleet_matches_eager_logits(self):
+        # The fleet layer applies the q/k norms after RoPE, so loading the same
+        # checkpoint through AOA must reproduce the eager logits.
+        config = self.model_tester.get_config()
+        eager_model = HunyuanForCausalLM(config)
+        eager_model.eval()
+        input_ids = ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            eager_model.save_pretrained(tmpdir)
+            fleet_model = HunyuanForCausalLMFleet.from_pretrained(tmpdir, dtype="float32")
+        fleet_model.eval()
+
+        with paddle.no_grad():
+            eager_logits = eager_model(input_ids=input_ids)[0]
+            fleet_logits = fleet_model({"input_ids": input_ids})
+        if hasattr(fleet_logits, "logits"):
+            fleet_logits = fleet_logits.logits
+
+        self.assertLess(float((eager_logits - fleet_logits).abs().max()), 1e-3)
+
+    def test_dynamic_ntk_alpha_rope(self):
+        # The checkpoint stores `type: dynamic` plus `alpha`; both the config
+        # migration and the statically folded base must match Hugging Face.
+        config = HunyuanConfig(
+            hidden_size=32,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            head_dim=8,
+            max_position_embeddings=64,
+            rope_scaling={"type": "dynamic", "alpha": 1000.0, "factor": 1.0},
+        )
+        self.assertEqual(config.rope_parameters["rope_type"], "dynamic")
+
+        head_dim = config.head_dim
+        alpha = config.rope_scaling["alpha"]
+        scaled_base = config.rope_theta * alpha ** (head_dim / (head_dim - 2))
+        expected_inv_freq = 1.0 / (
+            scaled_base ** (paddle.arange(0, head_dim, 2, dtype=paddle.float32) / head_dim)
+        )
+        inv_freq = HunyuanRotaryEmbedding(config).inv_freq
+        self.assertTrue(paddle.allclose(inv_freq, expected_inv_freq, rtol=1e-5, atol=1e-6))
 
     def test_inputs_embeds(self):
         config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
