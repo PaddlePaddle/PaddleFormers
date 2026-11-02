@@ -17,7 +17,8 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import HunyuanConfig, HunyuanForCausalLM, HunyuanModel
+from paddleformers.transformers import HunyuanConfig, HunyuanModel
+from paddleformers.transformers import HunyuanForCausalLMDeprecated as HunyuanForCausalLM
 from paddleformers.transformers.hunyuan.modeling import HunyuanForSequenceClassification, HunyuanForTokenClassification
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester

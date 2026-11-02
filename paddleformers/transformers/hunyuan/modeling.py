@@ -22,26 +22,15 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 
-import numpy as np
 import paddle
 import paddle.distributed as dist
 from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
-try:
-    from paddleformers.transformers.gpt_provider import GPTModelProvider
-except ImportError:
-    # paddlefleet is optional for the single-card implementation below. Keep
-    # the provider importable so the standard Hunyuan model has no Fleet-only
-    # runtime dependency; Fleet construction still fails at its own entrypoint.
-    class GPTModelProvider:
-        @classmethod
-        def from_config(cls, config):
-            raise ImportError("paddlefleet is required to construct HunyuanForCausalLMPipeFleet")
+from paddleformers.transformers.gpt_provider import GPTModelProvider
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
@@ -55,10 +44,7 @@ from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..contrastive_loss import SimpleContrastiveLoss
 from ..embedding_utils import dist_gather_tensor_with_gradient
-from ..masking_utils import (
-    create_causal_mask_and_row_indices,
-    create_sliding_window_causal_mask_and_row_indices,
-)
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
@@ -66,6 +52,7 @@ from ..model_outputs import (
     TokenClassifierOutput,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import HunyuanConfig
 
 
@@ -75,6 +62,9 @@ class HunyuanModelProvider(GPTModelProvider):
 
     model_type = "hunyuan_v1_dense"
 
+    # Hunyuan applies q/k RMSNorm *after* RoPE, whereas PaddleFleet's shared
+    # SelfAttention applies it before RoPE, so the fleet logits are close to
+    # but not bit-identical with the Hugging Face reference.
     use_qk_norm: bool = True
 
     bias_activation_fusion: bool = True
@@ -86,6 +76,29 @@ class HunyuanModelProvider(GPTModelProvider):
 
     persist_layer_norm: bool = True
     share_embeddings_and_output_weights: bool = False
+
+    def __post_init__(self):
+        super().__post_init__()
+        # HunYuan Dense V1 encodes its DynamicNTKAlpha scaling in `rope_scaling`,
+        # but PaddleFleet does not consume `alpha`. Materialize the statically
+        # scaled base here so that fleet, eager and Hugging Face produce the
+        # same `inv_freq`.
+        rope_parameters = getattr(self, "rope_parameters", None)
+        if rope_parameters:
+            rope_type = rope_parameters.get("rope_type", rope_parameters.get("type", "default"))
+            alpha = rope_parameters.get("alpha")
+            if rope_type == "dynamic" and alpha is not None:
+                dim = getattr(self, "head_dim", None) or self.hidden_size // self.num_attention_heads
+                base = rope_parameters.get("rope_theta", self.rotary_base)
+                scaled_base = base * float(alpha) ** (dim / (dim - 2))
+                # Copy before mutating: `rope_parameters` may be shared with the
+                # model config, which must keep the original unscaled base.
+                rope_parameters = dict(rope_parameters)
+                rope_parameters["rope_theta"] = scaled_base
+                self.rope_parameters = rope_parameters
+                self.rotary_base = scaled_base
+        # Avoid PaddleFleet applying mscale-based YaRN scaling on the fleet path.
+        self.rope_scaling = None
 
     def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
         """
@@ -142,10 +155,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
 
 
 class HunyuanAttention(nn.Layer):
-    """
-    Multi-headed attention from 'Attention Is All You Need' paper. Modified to use sliding window attention: Longformer
-    and "Generating Long Sequences with Sparse Transformers".
-    """
+    """Multi-headed attention from 'Attention Is All You Need' paper."""
 
     def __init__(self, config: HunyuanConfig, layer_idx: int = 0):
         super().__init__()
@@ -193,21 +203,21 @@ class HunyuanAttention(nn.Layer):
             config=config,
             tp_plan="rowwise",
         )
-        self.q_norm = GeneralNorm.create(
-            config,
-            norm_type="rms_norm",
-            hidden_size=self.head_dim,
-            norm_eps=config.rms_norm_eps,
-            input_is_parallel=self.tensor_parallel,
-        )  # unlike olmo, only on the head dim!
-        self.k_norm = GeneralNorm.create(
-            config,
-            norm_type="rms_norm",
-            hidden_size=self.head_dim,
-            norm_eps=config.rms_norm_eps,
-            input_is_parallel=self.tensor_parallel,
-        )  # thus post q_norm does not need reshape
-        self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
+        if config.use_qk_norm:
+            self.q_norm = GeneralNorm.create(
+                config,
+                norm_type="rms_norm",
+                hidden_size=self.head_dim,
+                norm_eps=config.rms_norm_eps,
+                input_is_parallel=self.tensor_parallel,
+            )  # unlike olmo, only on the head dim!
+            self.k_norm = GeneralNorm.create(
+                config,
+                norm_type="rms_norm",
+                hidden_size=self.head_dim,
+                norm_eps=config.rms_norm_eps,
+                input_is_parallel=self.tensor_parallel,
+            )  # thus post q_norm does not need reshape
 
     def forward(
         self,
@@ -251,8 +261,9 @@ class HunyuanAttention(nn.Layer):
 
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
-        query_states = self.q_norm(query_states)
-        key_states = self.k_norm(key_states)
+        if self.config.use_qk_norm:
+            query_states = self.q_norm(query_states)
+            key_states = self.k_norm(key_states)
         # key_states shape: [bs, seq_len, num_head, head_dim]
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
@@ -302,7 +313,6 @@ class HunyuanDecoderLayer(nn.Layer):
             norm_eps=config.rms_norm_eps,
             input_is_parallel=config.sequence_parallel,
         )
-        self.attention_type = config.layer_types[layer_idx]
 
         if config.sequence_parallel:
             if not hasattr(config, "disable_ffn_model_parallel"):
@@ -370,12 +380,7 @@ class HunyuanPretrainedModel(PretrainedModel):
             layer_prefix = f"model.layers.{layer_idx}"
             mappings.update(
                 {
-                    f"{layer_prefix}.self_attn.qkv_proj.weight": partial(
-                        fn,
-                        is_column=True,
-                        is_naive_3fuse=True,
-                        num_kv_groups=config.num_key_value_heads,
-                    ),
+                    f"{layer_prefix}.self_attn.qkv_proj.weight": partial(fn, is_column=True),
                     f"{layer_prefix}.self_attn.o_proj.weight": partial(fn, is_column=False),
                     f"{layer_prefix}.mlp.up_gate_proj.weight": partial(
                         fn, is_column=True, is_naive_2fuse=True
@@ -384,12 +389,7 @@ class HunyuanPretrainedModel(PretrainedModel):
                 }
             )
             if config.attention_bias:
-                mappings[f"{layer_prefix}.self_attn.qkv_proj.bias"] = partial(
-                    fn,
-                    is_column=True,
-                    is_naive_3fuse=True,
-                    num_kv_groups=config.num_key_value_heads,
-                )
+                mappings[f"{layer_prefix}.self_attn.qkv_proj.bias"] = partial(fn, is_column=True)
 
         return mappings
 
@@ -411,12 +411,15 @@ class HunyuanPretrainedModel(PretrainedModel):
         if is_fleet:
             aoa_config["aoa_statements"] += [
                 f"model.embed_tokens.weight -> {model_prefix}embedding.embed_tokens.weight",
-                f"model.layers.$LAYER_ID.self_attn.query_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.weight",
-                f"model.layers.$LAYER_ID.self_attn.key_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.weight",
             ]
         else:
             aoa_config["aoa_statements"] += [
                 f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
+            ]
+        if config.use_qk_norm:
+            # PaddleFleet names the attention q/k norms `q_norm`/`k_norm`
+            # regardless of whether the model runs in fleet or eager mode.
+            aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.self_attn.query_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight",
                 f"model.layers.$LAYER_ID.self_attn.key_layernorm.weight -> {model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight",
             ]
@@ -463,12 +466,13 @@ class HunyuanPretrainedModel(PretrainedModel):
         if is_fleet:
             aoa_statements += [
                 f"{model_prefix}embedding.embed_tokens.weight -> model.embed_tokens.weight",
-                f"{model_prefix}layers.$LAYER_ID.self_attn.q_layernorm.weight -> model.layers.$LAYER_ID.self_attn.query_layernorm.weight",
-                f"{model_prefix}layers.$LAYER_ID.self_attn.k_layernorm.weight -> model.layers.$LAYER_ID.self_attn.key_layernorm.weight",
             ]
         else:
             aoa_statements += [
                 f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
+            ]
+        if config.use_qk_norm:
+            aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.query_layernorm.weight",
                 f"{model_prefix}layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.key_layernorm.weight",
             ]
@@ -510,24 +514,48 @@ class HunyuanPretrainedModel(PretrainedModel):
 class HunyuanRotaryEmbedding(nn.Layer):
     def __init__(self, config: HunyuanConfig):
         super().__init__()
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
         self.config = config
         self.rope_parameters = config.rope_parameters
-        self.head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
-        self.attention_scaling = 1.0
-
+        self.rope_type = self.rope_parameters.get("rope_type", self.rope_parameters.get("type", "default"))
         # HunYuan Dense V1 uses a fixed DynamicNTKAlpha base, rather than the
         # sequence-dependent generic dynamic-NTK formula used by Qwen models.
-        base = self.rope_parameters["rope_theta"]
-        rope_type = self.rope_parameters.get("rope_type", self.rope_parameters.get("type", "default"))
-        alpha = self.rope_parameters.get("alpha")
+        # `compute_default_rope_parameters` folds alpha into the base, so the
+        # resulting frequencies are static and do not need dynamic updates.
+        if self.rope_type == "dynamic" and self.rope_parameters.get("alpha") is not None:
+            self.rope_type = "default"
+
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(self.config)
+
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
+
+    @staticmethod
+    def compute_default_rope_parameters(
+        config: Optional[HunyuanConfig] = None,
+        device: str = "cpu",
+        seq_len: Optional[int] = None,
+    ) -> tuple["paddle.Tensor", float]:
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+
+        # HunYuan Dense V1's DynamicNTKAlpha rescales the base once at
+        # initialization instead of recomputing it from the sequence length.
+        rope_type = config.rope_parameters.get("rope_type", config.rope_parameters.get("type", "default"))
+        alpha = config.rope_parameters.get("alpha")
         if rope_type == "dynamic" and alpha is not None:
-            base *= float(alpha) ** (self.head_dim / (self.head_dim - 2))
+            base = base * float(alpha) ** (dim / (dim - 2))
 
         inv_freq = 1.0 / (
-            base ** (paddle.arange(0, self.head_dim, 2, dtype="int64").astype("float32") / self.head_dim)
+            base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32).to(device) / dim)
         )
-        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        return inv_freq, 1.0
 
+    @dynamic_rope_update
     def forward(self, x, position_ids):
         with paddle.amp.auto_cast(enable=False):
             inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
@@ -569,9 +597,6 @@ class HunyuanModel(HunyuanPretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = HunyuanRotaryEmbedding(config=config)
-        self.has_sliding_layers = getattr(
-            self.config, "sliding_window", None
-        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -659,17 +684,7 @@ class HunyuanModel(HunyuanPretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         # Create the causal mask and row indices
-        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
-
-        causal_mask_mapping = {"full_attention": full_mask}
-        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
-
-        # if model has sliding layer
-        if self.has_sliding_layers:
-            (
-                causal_mask_mapping["sliding_attention"],
-                attn_mask_startend_row_indices_mapping["sliding_attention"],
-            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
+        causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
 
         hidden_states = inputs_embeds
 
@@ -687,25 +702,21 @@ class HunyuanModel(HunyuanPretrainedModel):
                 hidden_states = self.recompute_training_full(
                     decoder_layer,
                     hidden_states,
-                    causal_mask_mapping[decoder_layer.attention_type],
+                    causal_mask,
                     past_key_values,
                     use_cache,
                     position_embeddings,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
-                        decoder_layer.attention_type
-                    ],
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     batch_size=batch_size,
                 )
             else:
                 hidden_states = decoder_layer(
                     hidden_states,
-                    causal_mask_mapping[decoder_layer.attention_type],
+                    causal_mask,
                     past_key_values,
                     use_cache,
                     position_embeddings,
-                    attn_mask_startend_row_indices=attn_mask_startend_row_indices_mapping[
-                        decoder_layer.attention_type
-                    ],
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
                     batch_size=batch_size,
                 )
 
@@ -718,7 +729,7 @@ class HunyuanModel(HunyuanPretrainedModel):
         )
 
 
-class HunyuanForCausalLMFleet(HunyuanPretrainedModel):
+class HunyuanForCausalLM(HunyuanPretrainedModel):
     is_fleet = True
 
     def __new__(cls, config):
@@ -742,181 +753,9 @@ class HunyuanForCausalLMFleet(HunyuanPretrainedModel):
         return gpt_model
 
 
-class HunyuanForCausalLM(HunyuanPretrainedModel):
+class HunyuanForCausalLMDeprecated(HunyuanPretrainedModel):
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
-
-    @staticmethod
-    def _load_single_card_hf_weights(model, model_dir: Union[str, os.PathLike], config: HunyuanConfig) -> None:
-        """Stream local Hunyuan Dense V1 weights into a non-Flex single-card model."""
-        try:
-            from safetensors import safe_open
-        except ImportError as error:
-            raise ImportError("safetensors is required to load Hunyuan HF checkpoints") from error
-
-        weights_path = Path(model_dir) / "model.safetensors"
-        if not weights_path.is_file():
-            raise FileNotFoundError(f"missing Hunyuan safetensors checkpoint: {weights_path}")
-
-        state_dict = model.state_dict()
-        logged_dtype_conversion = False
-
-        def assign(name: str, value: np.ndarray) -> None:
-            nonlocal logged_dtype_conversion
-            parameter = state_dict[name]
-            target_dtype = str(parameter.dtype).removeprefix("paddle.")
-            if target_dtype == "bfloat16":
-                if not logged_dtype_conversion:
-                    logger.debug(
-                        f"Converting HF safetensors weight {name} from {value.dtype} "
-                        f"to target Paddle dtype {parameter.dtype}"
-                    )
-                    logged_dtype_conversion = True
-                # NumPy cannot construct np.dtype("bfloat16") on every supported
-                # version. Convert through float32 and let Paddle perform the
-                # final BF16 cast when assigning the parameter.
-                value = value.astype(np.float32)
-                parameter.set_value(paddle.to_tensor(value, dtype="float32").astype("bfloat16"))
-                return
-            if str(value.dtype) == "bfloat16":
-                if not logged_dtype_conversion:
-                    logger.debug(
-                        f"Converting HF safetensors weight {name} from {value.dtype} "
-                        f"to target Paddle dtype {parameter.dtype}"
-                    )
-                    logged_dtype_conversion = True
-                value = value.astype(np.dtype(target_dtype))
-            parameter.set_value(value)
-
-        head_dim = config.head_dim
-        num_kv_heads = config.num_key_value_heads
-        num_kv_groups = config.num_attention_heads // num_kv_heads
-        with safe_open(str(weights_path), framework="np") as checkpoint:
-            embedding = checkpoint.get_tensor("model.embed_tokens.weight")
-            assign("model.embed_tokens.weight", embedding)
-            # LM head is tied in the source checkpoint but appears as a separate
-            # parameter in the regular single-card state dict.
-            assign("lm_head.weight", embedding)
-            assign("model.norm.weight", checkpoint.get_tensor("model.norm.weight"))
-
-            for layer_id in range(config.num_hidden_layers):
-                source_prefix = f"model.layers.{layer_id}"
-                attention_prefix = f"{source_prefix}.self_attn"
-                mlp_prefix = f"{source_prefix}.mlp"
-                q_proj = checkpoint.get_tensor(f"{attention_prefix}.q_proj.weight").T.reshape(
-                    config.hidden_size, num_kv_heads, num_kv_groups, head_dim
-                )
-                k_proj = checkpoint.get_tensor(f"{attention_prefix}.k_proj.weight").T.reshape(
-                    config.hidden_size, num_kv_heads, 1, head_dim
-                )
-                v_proj = checkpoint.get_tensor(f"{attention_prefix}.v_proj.weight").T.reshape(
-                    config.hidden_size, num_kv_heads, 1, head_dim
-                )
-                assign(
-                    f"{source_prefix}.self_attn.qkv_proj.weight",
-                    np.concatenate((q_proj, k_proj, v_proj), axis=2).reshape(config.hidden_size, -1),
-                )
-                assign(
-                    f"{source_prefix}.self_attn.o_proj.weight",
-                    checkpoint.get_tensor(f"{attention_prefix}.o_proj.weight").T,
-                )
-                assign(
-                    f"{source_prefix}.self_attn.q_norm.weight",
-                    checkpoint.get_tensor(f"{attention_prefix}.query_layernorm.weight"),
-                )
-                assign(
-                    f"{source_prefix}.self_attn.k_norm.weight",
-                    checkpoint.get_tensor(f"{attention_prefix}.key_layernorm.weight"),
-                )
-                assign(
-                    f"{source_prefix}.input_layernorm.weight",
-                    checkpoint.get_tensor(f"{source_prefix}.input_layernorm.weight"),
-                )
-                assign(
-                    f"{source_prefix}.post_attention_layernorm.weight",
-                    checkpoint.get_tensor(f"{source_prefix}.post_attention_layernorm.weight"),
-                )
-                assign(
-                    f"{source_prefix}.mlp.up_gate_proj.weight",
-                    np.concatenate(
-                        (
-                            checkpoint.get_tensor(f"{mlp_prefix}.gate_proj.weight").T,
-                            checkpoint.get_tensor(f"{mlp_prefix}.up_proj.weight").T,
-                        ),
-                        axis=1,
-                    ),
-                )
-                assign(
-                    f"{source_prefix}.mlp.down_proj.weight",
-                    checkpoint.get_tensor(f"{mlp_prefix}.down_proj.weight").T,
-                )
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *model_args, **kwargs):
-        """Load local HF weights without requiring FlexCheckpoint on a single card."""
-        subfolder = kwargs.get("subfolder") or ""
-        model_dir = Path(pretrained_model_name_or_path) / subfolder
-        if (
-            kwargs.get("convert_from_hf", True)
-            and kwargs.get("load_checkpoint_format") != "flex_checkpoint"
-            and kwargs.get("state_dict") is None
-            and model_dir.is_dir()
-            and (model_dir / "model.safetensors").is_file()
-        ):
-            # Keep this fast path's argument boundary aligned with
-            # PretrainedModel.from_pretrained: AutoModel deliberately forwards
-            # these loader options, but HunyuanForCausalLM.__init__ only accepts
-            # the config object.
-            config = kwargs.pop("config", None)
-            cache_dir = kwargs.pop("cache_dir", None)
-            force_download = kwargs.pop("force_download", False)
-            kwargs.pop("from_hf_hub", None)
-            kwargs.pop("from_aistudio", None)
-            kwargs.pop("convert_from_torch", None)
-            kwargs.pop("ignore_mismatched_sizes", None)
-            kwargs.pop("download_hub", None)
-            kwargs.pop("load_via_cpu", None)
-            kwargs.pop("load_checkpoint_format", None)
-            kwargs.pop("variant", None)
-            kwargs.pop("use_safetensors", None)
-            kwargs.pop("low_cpu_mem_usage", None)
-            kwargs.pop("load_state_as_np", None)
-            kwargs.pop("key_mapping", None)
-            kwargs.pop("revision", None)
-            kwargs.pop("local_files_only", None)
-            kwargs.pop("token", None)
-            kwargs.pop("use_auth_token", None)
-            kwargs.pop("proxies", None)
-            kwargs.pop("resume_download", None)
-            kwargs.pop("trust_remote_code", None)
-            kwargs.pop("_fast_init", None)
-            kwargs.pop("convert_from_hf", None)
-            kwargs.pop("subfolder", None)
-
-            dtype = kwargs.pop("dtype", None)
-            supported_dtypes = (None, "float32", "bfloat16", paddle.float32, paddle.bfloat16)
-            if dtype not in supported_dtypes:
-                raise ValueError(
-                    "single-card Hunyuan HF loading supports dtype=None, 'float32', or 'bfloat16', "
-                    f"but received {dtype!r}"
-                )
-
-            if config is None:
-                config, kwargs = HunyuanConfig.from_pretrained(
-                    pretrained_model_name_or_path,
-                    cache_dir=cache_dir,
-                    force_download=force_download,
-                    subfolder=subfolder,
-                    return_unused_kwargs=True,
-                    **kwargs,
-                )
-            if not isinstance(config, HunyuanConfig):
-                return super().from_pretrained(pretrained_model_name_or_path, *model_args, config=config, **kwargs)
-
-            model = cls(config, *model_args, **kwargs)
-            cls._load_single_card_hf_weights(model, model_dir, config)
-            return model
-        return super().from_pretrained(pretrained_model_name_or_path, *model_args, **kwargs)
 
     def __init__(self, config: HunyuanConfig):
         super().__init__(config)
@@ -1243,7 +1082,7 @@ class HunyuanSentenceEmbedding(HunyuanPretrainedModel):
         return last_hidden_states
 
 
-class HunyuanForCausalLMPipeFleet(HunyuanPretrainedModel, GeneralModelForCausalLMPipe):
+class HunyuanForCausalLMPipe(HunyuanPretrainedModel, GeneralModelForCausalLMPipe):
     is_fleet = True
 
     def __new__(cls, config):
@@ -1272,9 +1111,10 @@ class HunyuanForCausalLMPipeFleet(HunyuanPretrainedModel, GeneralModelForCausalL
 # Exact Hugging Face architecture names used by Hunyuan Dense V1 checkpoints.
 HunYuanDenseV1Model = HunyuanModel
 HunYuanDenseV1ForCausalLM = HunyuanForCausalLM
+HunYuanDenseV1ForCausalLMPipe = HunyuanForCausalLMPipe
 
 
-class HunyuanForCausalLMPipe(HunyuanForCausalLM):
+class HunyuanForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
     config_class = HunyuanConfig
     _decoder_layer_cls = HunyuanDecoderLayer
     _get_tensor_parallel_mappings = HunyuanModel._get_tensor_parallel_mappings
@@ -1283,19 +1123,25 @@ class HunyuanForCausalLMPipe(HunyuanForCausalLM):
     _rotary_emb_cls = HunyuanRotaryEmbedding
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = HunyuanModel.transpose_weight_keys
-    _gen_aoa_config = HunyuanForCausalLM._gen_aoa_config
-    _gen_inv_aoa_config = HunyuanForCausalLM._gen_inv_aoa_config
+    _gen_aoa_config = HunyuanForCausalLMDeprecated._gen_aoa_config
+    _gen_inv_aoa_config = HunyuanForCausalLMDeprecated._gen_inv_aoa_config
+
+
+HunYuanDenseV1ForCausalLMPipeDeprecated = HunyuanForCausalLMPipeDeprecated
 
 
 __all__ = [
     "HunyuanModel",
+    "HunYuanDenseV1Model",
     "HunyuanPretrainedModel",
     "HunyuanForCausalLM",
     "HunYuanDenseV1ForCausalLM",
     "HunyuanForCausalLMPipe",
+    "HunYuanDenseV1ForCausalLMPipe",
     "HunyuanForSequenceClassification",
     "HunyuanForTokenClassification",
     "HunyuanSentenceEmbedding",
-    "HunyuanForCausalLMFleet",
-    "HunyuanForCausalLMPipeFleet",
+    "HunyuanForCausalLMDeprecated",
+    "HunyuanForCausalLMPipeDeprecated",
+    "HunYuanDenseV1ForCausalLMPipeDeprecated",
 ]

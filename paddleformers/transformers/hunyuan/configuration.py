@@ -17,7 +17,7 @@
 # HuggingFace Inc. team. All rights reserved.
 """Hunyuan model configuration"""
 
-from ..configuration_utils import PretrainedConfig, layer_type_validation
+from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
@@ -107,15 +107,6 @@ class HunyuanConfig(PretrainedConfig):
                     Only used with 'llama3'. Scaling factor applied to high frequency components of the RoPE
         attention_bias (`bool`, defaults to `False`, *optional*, defaults to `False`):
             Whether to use a bias in the query, key, value and output projection layers during self-attention.
-        use_sliding_window (`bool`, *optional*, defaults to `False`):
-            Whether to use sliding window attention.
-        sliding_window (`int`, *optional*, defaults to 4096):
-            Sliding window attention (SWA) window size. If not specified, will default to `4096`.
-        max_window_layers (`int`, *optional*, defaults to 28):
-            The number of layers using full attention. The first `max_window_layers` layers will use full attention, while any
-            additional layer afterwards will use SWA (Sliding Window Attention).
-        layer_types (`list`, *optional*):
-            Attention pattern for each layer.
         attention_dropout (`float`, *optional*, defaults to 0.0):
             The dropout ratio for the attention probabilities.
 
@@ -154,10 +145,6 @@ class HunyuanConfig(PretrainedConfig):
         rope_scaling=None,
         attention_bias=False,
         use_qk_norm=True,
-        use_sliding_window=False,
-        sliding_window=4096,
-        max_window_layers=28,
-        layer_types=None,
         attention_dropout=0.0,
         **kwargs,
     ):
@@ -167,9 +154,6 @@ class HunyuanConfig(PretrainedConfig):
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
         self.num_attention_heads = num_attention_heads
-        self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window if self.use_sliding_window else None
-        self.max_window_layers = max_window_layers
 
         # for backward compatibility
         if num_key_value_heads is None:
@@ -182,25 +166,15 @@ class HunyuanConfig(PretrainedConfig):
         self.rms_norm_eps = rms_norm_eps
         self.use_cache = use_cache
         self.rope_theta = rope_theta
-        self.rope_scaling = dict(rope_scaling) if rope_scaling is not None else {"type": "default"}
+        self.rope_scaling = dict(rope_scaling) if rope_scaling is not None else None
         self.attention_bias = attention_bias
         self.use_qk_norm = use_qk_norm
         self.attention_dropout = attention_dropout
         # Hunyuan checkpoints use the legacy `type` field and add DynamicNTKAlpha
         # parameters which are intentionally retained in `rope_parameters`.
-        if "type" in self.rope_scaling:
+        if self.rope_scaling is not None and "type" in self.rope_scaling:
             self.rope_scaling["rope_type"] = self.rope_scaling["type"]
-        self.rope_parameters = dict(self.rope_scaling)
-
-        self.layer_types = layer_types
-        if self.layer_types is None:
-            self.layer_types = [
-                "sliding_attention"
-                if self.sliding_window is not None and i >= self.max_window_layers
-                else "full_attention"
-                for i in range(self.num_hidden_layers)
-            ]
-        layer_type_validation(self.layer_types, self.num_hidden_layers)
+        self.rope_parameters = dict(self.rope_scaling) if self.rope_scaling is not None else None
 
         # Keep Hunyuan's DynamicNTKAlpha parameters while validating the common
         # RoPE fields understood by PaddleFormers.
