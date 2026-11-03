@@ -1078,6 +1078,9 @@ register_template(
     format_user=StringFormatter(slots=["<｜hy_User｜>{{content}}<｜hy_Assistant｜>"]),
     format_assistant=StringFormatter(slots=["{{content}}", {"eos_token"}]),
     format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    # ``format_assistant`` already emits the EOS inline, so the dataset must
+    # not append a dynamic EOS on top of it.
+    efficient_eos=False,
 )
 
 
