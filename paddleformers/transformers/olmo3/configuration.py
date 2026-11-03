@@ -143,11 +143,20 @@ class Olmo3Config(PretrainedConfig):
         self.attention_dropout = attention_dropout
         self.rms_norm_eps = rms_norm_eps
         self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
-        if isinstance(self.head_dim, bool) or not isinstance(self.head_dim, int) or self.head_dim <= 0 or self.head_dim % 2:
+        if (
+            isinstance(self.head_dim, bool)
+            or not isinstance(self.head_dim, int)
+            or self.head_dim <= 0
+            or self.head_dim % 2
+        ):
             raise ValueError("head_dim must be a positive even integer for OLMo3 rotary embeddings.")
         if not 0.0 <= attention_dropout < 1.0:
             raise ValueError("attention_dropout must be in [0, 1).")
-        for name, value in (("rope_theta", rope_theta), ("rms_norm_eps", rms_norm_eps), ("initializer_range", initializer_range)):
+        for name, value in (
+            ("rope_theta", rope_theta),
+            ("rms_norm_eps", rms_norm_eps),
+            ("initializer_range", initializer_range),
+        ):
             if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be positive and finite.")
 

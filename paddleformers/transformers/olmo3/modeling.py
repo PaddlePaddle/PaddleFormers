@@ -227,7 +227,9 @@ class Olmo3Attention(nn.Layer):
                 allowed = key_positions <= query_positions
                 if self.sliding_window is not None:
                     allowed = allowed & (key_positions > query_positions - self.sliding_window)
-                attention_mask = paddle.where(allowed, 0.0, paddle.finfo(query_states.dtype).min).astype(query_states.dtype)
+                attention_mask = paddle.where(allowed, 0.0, paddle.finfo(query_states.dtype).min).astype(
+                    query_states.dtype
+                )
                 attention_mask = attention_mask.unsqueeze(0).unsqueeze(0)
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[backend]
 
@@ -389,7 +391,9 @@ class Olmo3PretrainedModel(PretrainedModel):
         if isinstance(layer, linear_types + embedding_types):
             weight = layer.weight
             if not getattr(weight, "_olmo3_initialized", False):
-                context = get_rng_state_tracker().rng_state() if getattr(weight, "is_distributed", False) else nullcontext()
+                context = (
+                    get_rng_state_tracker().rng_state() if getattr(weight, "is_distributed", False) else nullcontext()
+                )
                 with context:
                     nn.initializer.Normal(std=self.config.initializer_range)(weight)
                 weight._olmo3_initialized = True
@@ -407,7 +411,7 @@ class Olmo3PretrainedModel(PretrainedModel):
         attention_mask: paddle.Tensor | None,
         attn_mask_startend_row_indices: paddle.Tensor | None,
         position_ids: paddle.Tensor,
-        position_embeddings: paddle.Tensor,
+        position_embeddings: tuple[paddle.Tensor, paddle.Tensor],
         past_key_values: Cache | None,
         use_cache: bool,
         output_attentions: bool = False,
@@ -662,7 +666,8 @@ class Olmo3Model(Olmo3PretrainedModel):
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        if self.training and paddle.is_grad_enabled() and self.config.recompute_granularity == "full":
+        do_recompute = self.training and paddle.is_grad_enabled() and self.config.recompute_granularity == "full"
+        if do_recompute:
             if self.config.recompute_method != "uniform" or self.config.recompute_num_layers != 1:
                 raise ValueError("OLMo3 full recompute requires uniform recompute with one layer per group.")
             if past_key_values is not None:
@@ -774,13 +779,7 @@ class Olmo3Model(Olmo3PretrainedModel):
 
             layer_position_embeddings = position_embeddings_mapping[attention_type]
 
-            if (
-                self.training
-                and paddle.is_grad_enabled()
-                and self.config.recompute_granularity == "full"
-                and self.config.recompute_method == "uniform"
-                and self.config.recompute_num_layers == 1
-            ):
+            if do_recompute:
                 layer_outputs = self.recompute_training(
                     decoder_layer,
                     hidden_states,
@@ -864,7 +863,9 @@ class Olmo3ForCausalLM(Olmo3PretrainedModel):
                 input_ids = input_ids[:, -new_length:]
             elif input_ids.shape[1] > cache_length:
                 input_ids = input_ids[:, cache_length:]
-        current_length = inputs_embeds.shape[1] if inputs_embeds is not None and not cache_length else input_ids.shape[1]
+        current_length = (
+            inputs_embeds.shape[1] if inputs_embeds is not None and not cache_length else input_ids.shape[1]
+        )
         if position_ids is None:
             position_ids = paddle.arange(cache_length, cache_length + current_length, dtype="int64").unsqueeze(0)
         else:

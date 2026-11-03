@@ -243,10 +243,17 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
         for recompute in (False, True):
             with self.subTest(recompute=recompute):
                 config = Olmo3Config(
-                    vocab_size=32, hidden_size=16, intermediate_size=24,
-                    num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2,
-                    layer_types=["sliding_attention", "full_attention"], sliding_window=3,
-                    use_cache=False, fuse_rms_norm=False, _attn_implementation="eager",
+                    vocab_size=32,
+                    hidden_size=16,
+                    intermediate_size=24,
+                    num_hidden_layers=2,
+                    num_attention_heads=4,
+                    num_key_value_heads=2,
+                    layer_types=["sliding_attention", "full_attention"],
+                    sliding_window=3,
+                    use_cache=False,
+                    fuse_rms_norm=False,
+                    _attn_implementation="eager",
                 )
                 if recompute:
                     config.recompute_granularity = "full"
@@ -305,6 +312,72 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
             decoded = model(**prepared)
             self.assertEqual(cache.get_seq_length(), 6)
             np.testing.assert_allclose(decoded.logits.numpy(), expected.logits[:, 5:].numpy(), atol=1e-5, rtol=1e-5)
+
+    def test_padding_mask_and_cached_chunks(self):
+        config = Olmo3Config(
+            vocab_size=32,
+            hidden_size=16,
+            intermediate_size=24,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            num_hidden_layers=2,
+            layer_types=["sliding_attention", "full_attention"],
+            sliding_window=3,
+            fuse_rms_norm=False,
+            _attn_implementation="eager",
+        )
+        model = Olmo3ForCausalLM(config)
+        model.eval()
+        for left_padding in (False, True):
+            with self.subTest(left_padding=left_padding), paddle.no_grad():
+                tokens = [[2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 1, 1]]
+                mask = [[1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 0, 0]]
+                if left_padding:
+                    tokens[1] = [1, 1, 8, 9, 10, 11]
+                    mask[1] = [0, 0, 1, 1, 1, 1]
+                input_ids = paddle.to_tensor(tokens, dtype="int64")
+                attention_mask = paddle.to_tensor(mask, dtype="bool")
+                position_ids = paddle.clip(attention_mask.astype("int64").cumsum(-1) - 1, min=0)
+                expected = model(
+                    input_ids,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    use_cache=False,
+                    return_dict=True,
+                ).logits
+                self.assertTrue(paddle.isfinite(expected).all().item())
+                for index, length in enumerate((6, 4)):
+                    valid = input_ids[index][attention_mask[index]].unsqueeze(0)
+                    single = model(valid, use_cache=False, return_dict=True).logits[0]
+                    np.testing.assert_allclose(
+                        expected[index][attention_mask[index]].numpy(), single.numpy(), atol=1e-5, rtol=1e-5
+                    )
+                prefill = model(
+                    input_ids[:, :4],
+                    attention_mask=attention_mask[:, :4],
+                    position_ids=position_ids[:, :4],
+                    use_cache=True,
+                    return_dict=True,
+                )
+                chunk = model(
+                    input_ids[:, 4:],
+                    attention_mask=attention_mask,
+                    position_ids=position_ids[:, 4:],
+                    past_key_values=prefill.past_key_values,
+                    use_cache=True,
+                    return_dict=True,
+                ).logits
+                valid = attention_mask[:, 4:]
+                np.testing.assert_allclose(chunk[valid].numpy(), expected[:, 4:][valid].numpy(), atol=1e-5, rtol=1e-5)
+
+        with paddle.no_grad():
+            input_ids = paddle.to_tensor([[2, 3, 4, 5, 6, 7]], dtype="int64")
+            expected = model(input_ids, use_cache=False, return_dict=True).logits
+            indices = paddle.full([1, 1, 6, 1], 6, dtype="int32")
+            snapshot = indices.clone()
+            actual = model(input_ids, attn_mask_startend_row_indices=indices, use_cache=False, return_dict=True).logits
+            np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
+            np.testing.assert_array_equal(indices.numpy(), snapshot.numpy())
 
 
 #  Generation test, marked with slow decorator, not executed by default
