@@ -121,9 +121,7 @@ class HunyuanModelTester:
         # All masks are semantically causal and fully valid. This isolates the
         # accepted rank (2-D, 3-D, or 4-D) from padding semantics.
         mask_2d = paddle.ones([self.batch_size, self.seq_length], dtype=paddle.int64)
-        causal_mask = paddle.tril(
-            paddle.ones([self.batch_size, self.seq_length, self.seq_length], dtype=paddle.int64)
-        )
+        causal_mask = paddle.tril(paddle.ones([self.batch_size, self.seq_length, self.seq_length], dtype=paddle.int64))
         mask_4d = causal_mask.unsqueeze(1)
 
         result_2d = model(input_ids, attention_mask=mask_2d)[0]
@@ -357,9 +355,7 @@ class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         head_dim = config.head_dim
         alpha = config.rope_scaling["alpha"]
         scaled_base = config.rope_theta * alpha ** (head_dim / (head_dim - 2))
-        expected_inv_freq = 1.0 / (
-            scaled_base ** (paddle.arange(0, head_dim, 2, dtype=paddle.float32) / head_dim)
-        )
+        expected_inv_freq = 1.0 / (scaled_base ** (paddle.arange(0, head_dim, 2, dtype=paddle.float32) / head_dim))
         inv_freq = HunyuanRotaryEmbedding(config).inv_freq
         self.assertTrue(paddle.allclose(inv_freq, expected_inv_freq, rtol=1e-5, atol=1e-6))
 
