@@ -22,7 +22,10 @@ from paddleformers.transformers import (
     HunyuanConfig,
     HunyuanForCausalLM,
     HunyuanForCausalLMDeprecated,
+    HunyuanForCausalLMEager,
     HunyuanForCausalLMFleet,
+    HunyuanForCausalLMPipe,
+    HunyuanForCausalLMPipeEager,
     HunyuanModel,
 )
 from paddleformers.transformers.hunyuan.modeling import (
@@ -230,8 +233,11 @@ class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
     def test_default_causal_lm_is_eager(self):
         # The public classes resolve to the eager implementation; the fleet
-        # implementation is opt-in via HunyuanForCausalLMFleet.
-        self.assertIs(HunyuanForCausalLM, HunyuanForCausalLMDeprecated)
+        # implementation is opt-in via HunyuanForCausalLMFleet. The old
+        # `*Deprecated` names stay as aliases for backward compatibility.
+        self.assertIs(HunyuanForCausalLM, HunyuanForCausalLMEager)
+        self.assertIs(HunyuanForCausalLMPipe, HunyuanForCausalLMPipeEager)
+        self.assertIs(HunyuanForCausalLMDeprecated, HunyuanForCausalLMEager)
         self.assertFalse(getattr(HunyuanForCausalLM, "is_fleet", False))
 
     def test_fleet_layer_applies_qk_norm_after_rope(self):
@@ -242,6 +248,12 @@ class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         self.assertIs(provider.specific_layer, HunyuanTransformerLayer)
 
         class EchoCoreAttention(paddle.nn.Layer):
+            def __init__(self):
+                super().__init__()
+                # PaddleFleet's sequence-parallel + flashmask path reads this
+                # attribute from the attention it calls.
+                self.context_parallel_size = 1
+
             def forward(self, query, key, value, *args, **kwargs):
                 return query
 
@@ -257,6 +269,9 @@ class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         self.assertIsInstance(attn.k_norm, paddle.nn.Identity)
         self.assertIsInstance(attn.core_attention, HunyuanCoreAttention)
         self.assertIs(attn.core_attention.q_norm, q_norm)
+        # Attributes of the wrapped attention must stay reachable through the
+        # wrapper.
+        self.assertEqual(attn.core_attention.context_parallel_size, 1)
 
         query = paddle.randn([2, 3, config.head_dim])
         out = attn.core_attention(query, query, query)
@@ -282,6 +297,29 @@ class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             fleet_logits = fleet_logits.logits
 
         self.assertLess(float((eager_logits - fleet_logits).abs().max()), 1e-3)
+
+    def test_fleet_sequence_parallel_core_attention_attributes(self):
+        # PaddleFleet reads `context_parallel_size` from `self.core_attention`
+        # when sequence parallelism and flashmask attention are enabled, so the
+        # wrapper must delegate attributes of the attention it wraps.
+        config = self.model_tester.get_config()
+        config.sequence_parallel = True
+        fleet_model = HunyuanForCausalLMFleet(config)
+        fleet_model.eval()
+
+        decoder_layers = [layer for layer in fleet_model.run_function if isinstance(layer, HunyuanTransformerLayer)]
+        self.assertTrue(decoder_layers)
+        attn = decoder_layers[0].self_attn
+        self.assertIsInstance(attn.core_attention, HunyuanCoreAttention)
+        inner_core_attention = attn.core_attention.core_attention
+        if not hasattr(inner_core_attention, "context_parallel_size"):
+            # Some PaddleFleet releases do not define this attribute on the
+            # default core attention; set it to emulate the version that does.
+            inner_core_attention.context_parallel_size = 1
+        self.assertEqual(
+            attn.core_attention.context_parallel_size,
+            inner_core_attention.context_parallel_size,
+        )
 
     def test_dynamic_ntk_alpha_rope(self):
         # The checkpoint stores `type: dynamic` plus `alpha`; both the config

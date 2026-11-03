@@ -92,6 +92,22 @@ class HunyuanCoreAttention(nn.Layer):
         self.q_norm = q_norm
         self.k_norm = k_norm
 
+    def __getattr__(self, name: str):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            # PaddleFleet's attention reads attributes such as
+            # `context_parallel_size` from `self.core_attention` when sequence
+            # parallelism and flashmask attention are enabled. Delegate the
+            # attributes that live on the wrapped attention instead of
+            # redefining them here.
+            if name.startswith("_"):
+                raise
+            core_attention = self.__dict__.get("_sub_layers", {}).get("core_attention")
+            if core_attention is None:
+                raise
+            return getattr(core_attention, name)
+
     def forward(self, query, key, value, *args, **kwargs):
         query = self.q_norm(query)
         key = self.k_norm(key)
@@ -844,7 +860,9 @@ class HunyuanForCausalLMFleet(HunyuanPretrainedModel):
         return gpt_model
 
 
-class HunyuanForCausalLMDeprecated(HunyuanPretrainedModel):
+class HunyuanForCausalLMEager(HunyuanPretrainedModel):
+    """Eager implementation of the Hunyuan Dense V1 causal language model."""
+
     enable_to_static_method = True
     _tied_weights_keys = ["lm_head.weight"]
 
@@ -1204,7 +1222,9 @@ HunYuanDenseV1ForCausalLMFleet = HunyuanForCausalLMFleet
 HunYuanDenseV1ForCausalLMPipeFleet = HunyuanForCausalLMPipeFleet
 
 
-class HunyuanForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
+class HunyuanForCausalLMPipeEager(GeneralModelForCausalLMPipe):
+    """Eager pipeline-parallel implementation of the Hunyuan causal language model."""
+
     config_class = HunyuanConfig
     _decoder_layer_cls = HunyuanDecoderLayer
     _get_tensor_parallel_mappings = HunyuanModel._get_tensor_parallel_mappings
@@ -1213,19 +1233,22 @@ class HunyuanForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
     _rotary_emb_cls = HunyuanRotaryEmbedding
     _tied_weights_keys = ["lm_head.weight"]
     transpose_weight_keys = HunyuanModel.transpose_weight_keys
-    _gen_aoa_config = HunyuanForCausalLMDeprecated._gen_aoa_config
-    _gen_inv_aoa_config = HunyuanForCausalLMDeprecated._gen_inv_aoa_config
+    _gen_aoa_config = HunyuanForCausalLMEager._gen_aoa_config
+    _gen_inv_aoa_config = HunyuanForCausalLMEager._gen_inv_aoa_config
 
 
-HunYuanDenseV1ForCausalLMPipeDeprecated = HunyuanForCausalLMPipeDeprecated
+# Backward-compatible aliases for the eager implementations.
+HunyuanForCausalLMDeprecated = HunyuanForCausalLMEager
+HunyuanForCausalLMPipeDeprecated = HunyuanForCausalLMPipeEager
+HunYuanDenseV1ForCausalLMPipeDeprecated = HunyuanForCausalLMPipeEager
 
 # PaddleFleet applies the q/k RMSNorm before RoPE while Hunyuan applies it
 # afterwards. HunyuanTransformerLayer fixes the order for the fleet path, but
 # the public classes keep resolving to the eager implementation.
-HunyuanForCausalLM = HunyuanForCausalLMDeprecated
-HunyuanForCausalLMPipe = HunyuanForCausalLMPipeDeprecated
-HunYuanDenseV1ForCausalLM = HunyuanForCausalLM
-HunYuanDenseV1ForCausalLMPipe = HunyuanForCausalLMPipe
+HunyuanForCausalLM = HunyuanForCausalLMEager
+HunyuanForCausalLMPipe = HunyuanForCausalLMPipeEager
+HunYuanDenseV1ForCausalLM = HunyuanForCausalLMEager
+HunYuanDenseV1ForCausalLMPipe = HunyuanForCausalLMPipeEager
 
 
 __all__ = [
@@ -1243,6 +1266,8 @@ __all__ = [
     "HunyuanForSequenceClassification",
     "HunyuanForTokenClassification",
     "HunyuanSentenceEmbedding",
+    "HunyuanForCausalLMEager",
+    "HunyuanForCausalLMPipeEager",
     "HunyuanForCausalLMDeprecated",
     "HunyuanForCausalLMPipeDeprecated",
     "HunYuanDenseV1ForCausalLMPipeDeprecated",

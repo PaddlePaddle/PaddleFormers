@@ -217,6 +217,8 @@ import_structure = {
         "HunyuanForSequenceClassification",
         "HunyuanForTokenClassification",
         "HunyuanSentenceEmbedding",
+        "HunyuanForCausalLMEager",
+        "HunyuanForCausalLMPipeEager",
         "HunyuanForCausalLMDeprecated",
         "HunyuanForCausalLMPipeDeprecated",
         "HunYuanDenseV1ForCausalLMPipeDeprecated",
