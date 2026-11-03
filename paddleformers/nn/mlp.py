@@ -13,7 +13,15 @@
 # limitations under the License.
 import paddle
 import paddle.nn as nn
-from paddle.nn.functional import swiglu as fused_swiglu
+
+try:
+    from paddle.nn.functional import swiglu as fused_swiglu
+except ImportError:
+    # Paddle versions without the fused kernel still support the same operation.
+    def fused_swiglu(x):
+        gate, value = x.chunk(2, axis=-1)
+        return paddle.nn.functional.silu(gate) * value
+
 
 from ..generation.configuration_utils import PretrainedConfig
 from .activation import ACT2FN

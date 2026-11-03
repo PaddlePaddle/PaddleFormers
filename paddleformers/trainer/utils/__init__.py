@@ -23,6 +23,7 @@ import_structure = {
     "helper": [],
     "reshard": [],
     "async_save": [],
+    "flex_async_save": [],
     "zero_cost_checkpoint": [],
     "sharding_io": [],
 }

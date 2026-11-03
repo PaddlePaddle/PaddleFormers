@@ -440,7 +440,7 @@
   --save_total_limit
                         最多保留的检查点数量，旧的检查点将被删除。(`int`, 可选)
 
-  --save_to_hf
+  --save_safetensors
                         是否以 HuggingFace Safetensors 格式保存模型权重。(`bool`, 可选, 默认为 `True`)
 
   --save_tokenizer

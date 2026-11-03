@@ -90,7 +90,7 @@ fa_version: 3
 
 save_checkpoint_format: flex_checkpoint
 load_checkpoint_format: flex_checkpoint
-save_to_hf: true
+save_safetensors: true
 continue_training: true
 
 dataloader_num_workers: 32

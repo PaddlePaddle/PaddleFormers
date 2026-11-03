@@ -119,7 +119,7 @@ class InternLM25ModelTest(unittest.TestCase):
         model = InternLM25ForCausalLM(self.config)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            model.save_pretrained(temp_dir, save_checkpoint_format="", save_to_hf=False)
+            model.save_pretrained(temp_dir, save_checkpoint_format="", save_safetensors=False)
 
             self.assertTrue(os.path.exists(os.path.join(temp_dir, "model_state.pdparams")))
             self.assertTrue(os.path.exists(os.path.join(temp_dir, "config.json")))

@@ -54,11 +54,17 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "ernie4_5_moe_vl": ("Ernie4_5_VLImageProcessor"),
         "glm4v_moe": ("Glm4vImageProcessor", "Glm4vImageProcessorFast"),
         "kimi_k25": ("KimiK25VisionProcessor"),
+        "kimi_k3": ("KimiK3VisionProcessor"),
         "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
+        "phi4_multimodal": ("Phi4MultimodalImageProcessor"),
+        "gemma3": ("Gemma3ImageProcessor", "Gemma3ImageProcessorFast"),
+        "llama4": ("Llama4ImageProcessor", "Llama4ImageProcessorFast"),
         "qwen2_5_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen2_vl": ("Qwen2VLImageProcessor", "Qwen2VLImageProcessorFast"),
         "qwen3_vl": ("Qwen3VLImageProcessor", "Qwen3VLImageProcessorFast"),
         "glm_ocr": ("Glm46VImageProcessor"),
+        "molmo": ("MolmoImageProcessor"),
+        "paligemma": ("PaliGemmaImageProcessor"),
     }
 )
 
@@ -68,6 +74,9 @@ IMAGE_PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, IMAGE_PROCESSOR
 
 
 def get_image_processor_class_from_name(class_name: str):
+    if class_name == "Phi4MMImageProcessor":
+        class_name = "Phi4MultimodalImageProcessor"
+
     if class_name == "BaseImageProcessorFast":
         return BaseImageProcessorFast
 
@@ -301,6 +310,11 @@ class AutoImageProcessor(hf.AutoImageProcessor):
                 raise initial_exception
 
         image_processor_type = config_dict.get("image_processor_type", None)
+        if (
+            image_processor_type == "SiglipImageProcessor"
+            and config_dict.get("processor_class") == "PaliGemmaProcessor"
+        ):
+            image_processor_type = "PaliGemmaImageProcessor"
         image_processor_auto_map = None
         if "AutoImageProcessor" in config_dict.get("auto_map", {}):
             image_processor_auto_map = config_dict["auto_map"]["AutoImageProcessor"]

@@ -35,6 +35,7 @@ from huggingface_hub.utils import EntryNotFoundError
 from .. import __version__
 from ..quantization.quantization_config import QuantizationConfig
 from ..utils import CONFIG_NAME, LEGACY_CONFIG_NAME
+from ..utils.accuracy_target import normalize_accuracy_target
 from ..utils.download import resolve_file_path
 from ..utils.downloader import hf_file_exists
 from ..utils.log import logger
@@ -300,19 +301,18 @@ class LlmMetaConfig:
             "The number of tokens in each subbatch for MoE model processing.",
         ),
         ("moe_router_force_load_balancing", bool, False, "Whether to fake gate."),
-        ("moe_token_dispatcher_type", str, "deepep", 'Communication type used by MoE module "deepep" or "alltoall". '),
+        (
+            "moe_token_dispatcher_type",
+            str,
+            "alltoall",
+            'Communication type used by MoE module "deepep" or "alltoall". ',
+        ),
         ("use_unified_moe", bool, False, "Whether to use unified moe."),
         (
             "moe_deepep_num_sms",
             Optional[bool],
             None,
             "Whether to enable DeepEP (Deep Expert Pruning) with SMS (Sub-Model Selection) for MoE. Defaults to False.",
-        ),
-        (
-            "moe_token_dispatcher_type",
-            str,
-            "deepep",
-            "Type of token dispatcher for MoE (e.g., 'round_robin', 'top_k'). Defaults to None (use default dispatcher).",
         ),
         (
             "moe_use_fusion_node",
@@ -382,6 +382,12 @@ class LlmMetaConfig:
             "Whether to fuse experts. Default to True.",
         ),
         (
+            "situ_glu_fusion",
+            bool,
+            True,
+            "Whether to use fused Triton SiTU-GLU in fused BF16 MoE experts.",
+        ),
+        (
             "moe_router_fusion",
             bool,
             True,
@@ -414,7 +420,7 @@ class LlmMetaConfig:
         (
             "dsa_indexer_loss_coeff",
             float,
-            0.01,
+            0.0,
             "Loss coefficient for the DSA indexer; controls the weight of the indexer loss term.",
         ),
     ]
@@ -561,9 +567,11 @@ class LlmMetaConfig:
         ("fa_version", int, 2, "FlashAttention or FlashMask version. Can be set to 2 or 3. Default is 2."),
         (
             "use_accuracy_compatible",
-            bool,
+            str,
             False,
-            "Whether to enable accuracy-compatible kernels for cross-framework numerical alignment. Defaults to False.",
+            "Which reference the accuracy-compatible kernels reproduce bit-for-bit: False "
+            "(default kernels), 'megatron' (also accepted as True) or 'hf'. Both non-default "
+            "values are truthy, so existing bool checks keep working.",
         ),
         ("experimental_dataflow", bool, False, "Whether to enable experimental dataflow in Fleet. Default is False."),
     ]
@@ -645,6 +653,17 @@ class LlmMetaConfig:
             value = getattr(args, key, value)
             if value is None:
                 continue
+            if key == "use_accuracy_compatible":
+                # This is the single funnel from args to config, so normalizing
+                # here covers every workflow (sft, dpo, auto_parallel, the
+                # pretrain scripts) and the secondary text_config /
+                # ref_model_config writes, without each args class having to
+                # remember. The field is truthiness-tested in about a dozen
+                # places and a YAML ``false`` can arrive as the *string*
+                # "false", which is truthy; normalizing turns that back into a
+                # real ``False`` and also keeps a serialized config.json holding
+                # a JSON ``false`` rather than baking the string into it.
+                value = normalize_accuracy_target(value)
             setattr(config, key, value)
 
 
@@ -797,7 +816,7 @@ class PretrainedConfig:
             `"single_label_classification"` or `"multi_label_classification"`.
         moe_subbatch_token_num_before_dispatch (`int`, *optional*, defaults to 0):
             The number of tokens in a subbatch for MoE.
-        moe_token_dispatcher_type (`str`, *optional*, defaults to `deepep`):
+        moe_token_dispatcher_type (`str`, *optional*, defaults to `alltoall`):
             Communication type for expert parallel. Can be one of `deepep`, `alltoall`.
         use_unified_moe (`bool`, *optional*, defaults to `False`):
             Whether to use unified MoE.
@@ -950,7 +969,6 @@ class PretrainedConfig:
         self.dpo_config = kwargs.pop("dpo_config", None)
         self.kto_config = kwargs.pop("kto_config", None)
 
-        self.moe_token_dispatcher_type = kwargs.pop("moe_token_dispatcher_type", "deepep")
         self.use_unified_moe = kwargs.pop("use_unified_moe", False)
         self.moe_router_force_load_balancing = kwargs.pop("moe_router_force_load_balancing", False)
 
@@ -989,8 +1007,8 @@ class PretrainedConfig:
                 "Transformers. Using `model.gradient_checkpointing_enable()` instead, or if you are using the "
                 "`Trainer` API, pass `gradient_checkpointing=True` in your `TrainingArguments`."
             )
-        self._save_to_hf = kwargs.pop("save_to_hf", True)
-        self._unsavable_keys.add("_save_to_hf")
+        self._save_safetensors = kwargs.pop("save_safetensors", True)
+        self._unsavable_keys.add("_save_safetensors")
 
         # Initialize model weight for fleet model
         self.perform_initialization = kwargs.pop("perform_initialization", True)
@@ -1089,7 +1107,7 @@ class PretrainedConfig:
 
         os.makedirs(save_directory, exist_ok=True)
 
-        self._save_to_hf = kwargs.pop("save_to_hf", True)
+        self._save_safetensors = kwargs.pop("save_safetensors", True)
 
         # If we have a custom config, we copy the file defining it in the folder and set the attributes so it can be
         # loaded from the Hub.
@@ -1439,7 +1457,7 @@ class PretrainedConfig:
             del output["moe_group"]
         if "_unsavable_keys" in output:
             del output["_unsavable_keys"]
-        if self._save_to_hf and "dtype" in output:
+        if self._save_safetensors and "dtype" in output:
             output["torch_dtype"] = str(output["dtype"])
             del output["dtype"]
 

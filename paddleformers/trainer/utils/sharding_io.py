@@ -267,6 +267,8 @@ class GroupGetter:
 class ShardingIO:
     def __init__(self, args, model, optimizer=None, hcg=None, remap_parameter_name=False, is_ema=False):
         self.args = args
+        # Apply the reshard broadcast chunk cap here
+        reshard_util.set_broadcast_max_chunk_bytes(int(args.reshard_bucketed_broadcast_max_chunk_gb * (1024**3)))
         self.model = model
         self.optimizer = optimizer
         self.hcg = hcg
