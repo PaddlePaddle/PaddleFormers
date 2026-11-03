@@ -357,6 +357,31 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         with self.assertRaises(ValueError):
             self.model_tester.get_config(qk_layernorm=True, **{key: value})
 
+    @parameterized.expand(
+        [
+            ("sequence_parallel", {"sequence_parallel": True, "tensor_model_parallel_size": 1}, "sequence_parallel"),
+            ("rope_fusion", {"apply_rope_fusion": True}, "apply_rope_fusion"),
+            ("swiglu", {"fuse_swiglu": True, "hidden_act": "gelu"}, "fuse_swiglu"),
+            ("recompute_granularity", {"recompute_granularity": "selective"}, "StableLM recompute supports"),
+            (
+                "recompute_method",
+                {"recompute_granularity": "full", "recompute_method": "block", "recompute_num_layers": 1},
+                "StableLM recompute supports",
+            ),
+            (
+                "recompute_num_layers",
+                {"recompute_granularity": "full", "recompute_method": "uniform", "recompute_num_layers": 2},
+                "StableLM recompute supports",
+            ),
+        ]
+    )
+    def test_invalid_execution_config(self, name, overrides, message):
+        config = self.model_tester.get_config(**overrides)
+        for model_class in self.all_model_classes:
+            with self.subTest(model_class=model_class.__name__):
+                with self.assertRaisesRegex(ValueError, message):
+                    model_class(config)
+
     def test_generation_config_and_defaults(self):
         model = StableLmForCausalLM(
             self.model_tester.get_config(

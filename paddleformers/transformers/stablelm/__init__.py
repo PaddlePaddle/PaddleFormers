@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from ...utils.lazy_import import _LazyModule
 
-_import_structure = {
+import_structure = {
     "configuration": ["StableLmConfig"],
     "modeling": [
         "StableLmModel",
@@ -49,19 +49,6 @@ else:
     sys.modules[__name__] = _LazyModule(
         __name__,
         globals()["__file__"],
-        _import_structure,
+        import_structure,
         module_spec=__spec__,
-        extra_objects={
-            "__all__": [
-                "StableLmModel",
-                "StableLmForCausalLM",
-                "StableLmForCausalLMPipe",
-                "StableLmPretrainedModel",
-                "StableLmRotaryEmbedding",
-                "StableLmDecoderLayer",
-                "StableLmAttention",
-                "StableLmConfig",
-                "StableLmTokenizer",
-            ]
-        },
     )

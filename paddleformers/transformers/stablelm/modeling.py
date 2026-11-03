@@ -91,7 +91,7 @@ class StableLmRotaryEmbedding(nn.Layer):
     @dynamic_rope_update
     def forward(self, x, position_ids):
         if "dynamic" in self.rope_type and hasattr(self, "None_max_seq_len_cached"):
-            # The shared helper stores the updated length under this legacy attribute.
+            # dynamic_frequency_update writes this name when layer_type is None.
             self.max_seq_len_cached = int(self.None_max_seq_len_cached)
             delattr(self, "None_max_seq_len_cached")
         with paddle.amp.auto_cast(enable=False):
@@ -605,7 +605,7 @@ class StableLmModel(StableLmPretrainedModel):
         return_dict: bool | None = None,
         output_hidden_states: bool | None = None,
         output_attentions: bool | None = None,
-    ) -> BaseModelOutputWithPast:
+    ) -> BaseModelOutputWithPast | tuple:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         if output_attentions:
             raise ValueError("StableLM does not currently return attention weights")
@@ -739,7 +739,7 @@ class StableLmForCausalLM(StableLmPretrainedModel):
         output_hidden_states: bool | None = None,
         output_attentions: bool | None = None,
         **kwargs,
-    ) -> CausalLMOutputWithPast:
+    ) -> CausalLMOutputWithPast | tuple:
         if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
             attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -882,7 +882,7 @@ class StableLmForCausalLMPipe(GeneralModelForCausalLMPipe):
     _gen_inv_aoa_config = StableLmForCausalLM._gen_inv_aoa_config
 
     def add_sequential_layer(self, layer_desc, name_prefix=""):
-        # The shared-weight path selects the common embedding class directly.
+        # The shared-weight path hardcodes EmbeddingPipe instead of using _embedding_pipe_cls.
         if name_prefix == "model" and layer_desc.layer_func is EmbeddingPipe:
             layer_desc.layer_func = StableLmEmbeddingPipe
         super().add_sequential_layer(layer_desc, name_prefix)
