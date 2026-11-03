@@ -27,18 +27,11 @@ import_structure = {
         "HunYuanDenseV1ForCausalLM",
         "HunyuanForCausalLMPipe",
         "HunYuanDenseV1ForCausalLMPipe",
-        "HunyuanForCausalLMFleet",
-        "HunYuanDenseV1ForCausalLMFleet",
-        "HunyuanForCausalLMPipeFleet",
-        "HunYuanDenseV1ForCausalLMPipeFleet",
         "HunyuanForSequenceClassification",
         "HunyuanForTokenClassification",
         "HunyuanSentenceEmbedding",
         "HunyuanForCausalLMEager",
         "HunyuanForCausalLMPipeEager",
-        "HunyuanForCausalLMDeprecated",
-        "HunyuanForCausalLMPipeDeprecated",
-        "HunYuanDenseV1ForCausalLMPipeDeprecated",
     ],
 }
 

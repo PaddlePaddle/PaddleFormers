@@ -7,6 +7,7 @@
 |GLM-4.5|✓|✓|✓|✓|✓|
 |GPT-OSS|✓|✓|✓|x|x|
 |Granite|✓|✓|✓|✓|✓|
+|Hunyuan Dense V1|✓|✓|x|x|x|
 |LLaMA3|✓|✓|✓|✓|✓|
 |OLMo2|✓|✓|✓|✓|✓|
 |Phi4|✓|✓|✓|✓|✓|
@@ -27,6 +28,7 @@
 |GLM-4.5|✓|✓|✓|✓|✓|✓|
 |GPT-OSS|✓|✓|x|x|✓|✓|
 |Granite|✓|✓|-|x|✓|✓|
+|Hunyuan Dense V1|✓|✓|-|x|✓|✓|
 |LLaMA3|✓|✓|-|x|✓|✓|
 |OLMo2|✓|✓|-|x|✓|✓|
 |Phi4|✓|✓|-|x|✓|✓|

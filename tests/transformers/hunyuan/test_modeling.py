@@ -13,6 +13,8 @@
 # limitations under the License.
 from __future__ import annotations
 
+import json
+import os
 import tempfile
 import unittest
 
@@ -21,9 +23,7 @@ import paddle
 from paddleformers.transformers import (
     HunyuanConfig,
     HunyuanForCausalLM,
-    HunyuanForCausalLMDeprecated,
     HunyuanForCausalLMEager,
-    HunyuanForCausalLMFleet,
     HunyuanForCausalLMPipe,
     HunyuanForCausalLMPipeEager,
     HunyuanModel,
@@ -136,7 +136,7 @@ class HunyuanModelTester:
         self.parent.assertTrue(paddle.allclose(result_2d, result_none, atol=1e-6, rtol=1e-6))
 
     def create_and_check_lm_head_model(self, config, input_ids, attention_mask):
-        model = HunyuanForCausalLM(config)
+        model = HunyuanForCausalLMEager(config)
         model.eval()
 
         logits_output = model(input_ids, attention_mask=attention_mask, return_dict=True)
@@ -147,7 +147,7 @@ class HunyuanModelTester:
         self.parent.assertEqual(loss_output.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
 
     def check_model_position_ids(self, config, input_ids, attention_mask):
-        model = HunyuanForCausalLM(config)
+        model = HunyuanForCausalLMEager(config)
         model.eval()
         implicit_positions = model(input_ids, attention_mask=attention_mask, return_dict=True).logits
         position_ids = paddle.arange(self.seq_length, dtype="int64").expand([self.batch_size, self.seq_length])
@@ -160,7 +160,7 @@ class HunyuanModelTester:
         self.parent.assertTrue(paddle.equal_all(implicit_positions, explicit_positions).item())
 
     def create_and_check_cache(self, config, input_ids, attention_mask):
-        model = HunyuanForCausalLM(config)
+        model = HunyuanForCausalLMEager(config)
         model.eval()
         prefix_length = self.seq_length - 1
         prefix_ids = input_ids[:, :prefix_length]
@@ -183,7 +183,7 @@ class HunyuanModelTester:
         # Set KV heads before model construction; attention layers cache this
         # configuration during initialization.
         config.num_key_value_heads = max(1, config.num_attention_heads // 2)
-        model = HunyuanForCausalLM(config)
+        model = HunyuanForCausalLMEager(config)
         model.eval()
         result = model(input_ids, attention_mask=attention_mask, return_dict=True)
         self.parent.assertEqual(result.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
@@ -192,8 +192,8 @@ class HunyuanModelTester:
 
 class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
     base_model_class = HunyuanModel
-    all_model_classes = (HunyuanModel, HunyuanForCausalLM)
-    all_generative_model_classes = {HunyuanForCausalLM: (HunyuanModel, "hunyuan")}
+    all_model_classes = (HunyuanModel, HunyuanForCausalLMEager)
+    all_generative_model_classes = {HunyuanForCausalLMEager: (HunyuanModel, "hunyuan")}
     use_test_inputs_embeds = False
     use_test_model_name_list = False
     has_attentions = False
@@ -231,14 +231,23 @@ class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_hunyuan_gqa_model(self):
         self.model_tester.create_and_check_gqa_model(*self.model_tester.prepare_config_and_inputs())
 
-    def test_default_causal_lm_is_eager(self):
-        # The public classes resolve to the eager implementation; the fleet
-        # implementation is opt-in via HunyuanForCausalLMFleet. The old
-        # `*Deprecated` names stay as aliases for backward compatibility.
-        self.assertIs(HunyuanForCausalLM, HunyuanForCausalLMEager)
-        self.assertIs(HunyuanForCausalLMPipe, HunyuanForCausalLMPipeEager)
-        self.assertIs(HunyuanForCausalLMDeprecated, HunyuanForCausalLMEager)
-        self.assertFalse(getattr(HunyuanForCausalLM, "is_fleet", False))
+    def test_default_causal_lm_is_fleet(self):
+        # The public classes resolve to the PaddleFleet implementation, like
+        # the other PaddleFormers models. The eager implementation stays
+        # available through the explicit *Eager classes.
+        self.assertTrue(getattr(HunyuanForCausalLM, "is_fleet", False))
+        self.assertTrue(getattr(HunyuanForCausalLMPipe, "is_fleet", False))
+        self.assertIsNot(HunyuanForCausalLM, HunyuanForCausalLMEager)
+        self.assertIsNot(HunyuanForCausalLMPipe, HunyuanForCausalLMPipeEager)
+
+    def test_saved_architectures_use_public_name(self):
+        config = self.model_tester.get_config()
+        model = HunyuanForCausalLM(config)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir)
+            with open(os.path.join(tmpdir, "config.json")) as f:
+                saved_config = json.load(f)
+        self.assertEqual(saved_config["architectures"], ["HunyuanForCausalLM"])
 
     def test_fleet_layer_applies_qk_norm_after_rope(self):
         # PaddleFleet applies the q/k RMSNorm before RoPE while Hunyuan applies
@@ -281,13 +290,24 @@ class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         # The fleet layer applies the q/k norms after RoPE, so loading the same
         # checkpoint through AOA must reproduce the eager logits.
         config = self.model_tester.get_config()
-        eager_model = HunyuanForCausalLM(config)
+        eager_model = HunyuanForCausalLMEager(config)
         eager_model.eval()
+
+        # The default q/k RMSNorm weights are all ones, which makes the
+        # pre-/post-RoPE orders equivalent and hides the bug this test guards.
+        # Use non-uniform gains so the two orders produce different logits.
+        with paddle.no_grad():
+            q_weight = paddle.linspace(0.5, 1.5, config.head_dim, dtype="float32")
+            k_weight = paddle.linspace(1.5, 0.5, config.head_dim, dtype="float32")
+            for layer in eager_model.model.layers:
+                layer.self_attn.q_norm.weight.set_value(q_weight)
+                layer.self_attn.k_norm.weight.set_value(k_weight)
+
         input_ids = ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             eager_model.save_pretrained(tmpdir)
-            fleet_model = HunyuanForCausalLMFleet.from_pretrained(tmpdir, dtype="float32")
+            fleet_model = HunyuanForCausalLM.from_pretrained(tmpdir, dtype="float32")
         fleet_model.eval()
 
         with paddle.no_grad():
@@ -304,7 +324,7 @@ class HunyuanModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         # wrapper must delegate attributes of the attention it wraps.
         config = self.model_tester.get_config()
         config.sequence_parallel = True
-        fleet_model = HunyuanForCausalLMFleet(config)
+        fleet_model = HunyuanForCausalLM(config)
         fleet_model.eval()
 
         decoder_layers = [layer for layer in fleet_model.run_function if isinstance(layer, HunyuanTransformerLayer)]

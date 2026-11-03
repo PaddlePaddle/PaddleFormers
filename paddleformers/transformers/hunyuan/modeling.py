@@ -184,7 +184,9 @@ class HunyuanModelProvider(GPTModelProvider):
                 rope_parameters["rope_theta"] = scaled_base
                 self.rope_parameters = rope_parameters
                 self.rotary_base = scaled_base
-        # Avoid PaddleFleet applying mscale-based YaRN scaling on the fleet path.
+        # PaddleFleet's rotary embedding only checks whether `rope_scaling` is
+        # truthy and then applies llama-3.x-style scaling with a factor of 8.
+        # The DynamicNTKAlpha scaling is already folded into `rotary_base`.
         self.rope_scaling = None
 
     def save_pretrained(self, save_directory: Union[str, os.PathLike], **kwargs):
@@ -446,39 +448,6 @@ class HunyuanPretrainedModel(PretrainedModel):
     base_model_prefix = "model"
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        from functools import partial
-
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.tensor_model_parallel_size,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-        mappings = {
-            "model.embed_tokens.weight": partial(fn, is_column=False),
-            "lm_head.weight": partial(fn, is_column=False),
-        }
-        for layer_idx in range(config.num_hidden_layers):
-            layer_prefix = f"model.layers.{layer_idx}"
-            mappings.update(
-                {
-                    f"{layer_prefix}.self_attn.qkv_proj.weight": partial(fn, is_column=True),
-                    f"{layer_prefix}.self_attn.o_proj.weight": partial(fn, is_column=False),
-                    f"{layer_prefix}.mlp.up_gate_proj.weight": partial(
-                        fn, is_column=True, is_naive_2fuse=True
-                    ),
-                    f"{layer_prefix}.mlp.down_proj.weight": partial(fn, is_column=False),
-                }
-            )
-            if config.attention_bias:
-                mappings[f"{layer_prefix}.self_attn.qkv_proj.bias"] = partial(fn, is_column=True)
-
-        return mappings
 
     @classmethod
     def _gen_aoa_config(cls, config: HunyuanConfig):
@@ -827,14 +796,12 @@ class HunyuanModel(HunyuanPretrainedModel):
         )
 
 
-class HunyuanForCausalLMFleet(HunyuanPretrainedModel):
+class HunyuanForCausalLM(HunyuanPretrainedModel):
     """PaddleFleet implementation of the Hunyuan Dense V1 causal language model.
 
     PaddleFleet's shared ``SelfAttention`` applies the q/k RMSNorm before RoPE,
     whereas Hunyuan applies it afterwards. ``HunyuanTransformerLayer`` moves the
-    norms behind RoPE so this path matches the Hugging Face reference. The fleet
-    implementation stays opt-in while the public ``HunyuanForCausalLM`` resolves
-    to the eager implementation.
+    norms behind RoPE so this path matches the Hugging Face reference.
     """
 
     is_fleet = True
@@ -855,6 +822,10 @@ class HunyuanForCausalLMFleet(HunyuanPretrainedModel):
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        if not getattr(config, "architectures", None):
+            # Keep the public architecture name in the saved checkpoint instead
+            # of the implementation wrapper (`GPTModel`).
+            config.architectures = [cls.__name__]
         gpt_model.config_to_save = config
         gpt_model.is_fleet = cls.is_fleet
         return gpt_model
@@ -1188,8 +1159,8 @@ class HunyuanSentenceEmbedding(HunyuanPretrainedModel):
         return last_hidden_states
 
 
-class HunyuanForCausalLMPipeFleet(HunyuanPretrainedModel, GeneralModelForCausalLMPipe):
-    """PaddleFleet pipeline-parallel variant of ``HunyuanForCausalLMFleet``."""
+class HunyuanForCausalLMPipe(HunyuanPretrainedModel, GeneralModelForCausalLMPipe):
+    """PaddleFleet pipeline-parallel variant of ``HunyuanForCausalLM``."""
 
     is_fleet = True
 
@@ -1209,7 +1180,7 @@ class HunyuanForCausalLMPipeFleet(HunyuanPretrainedModel, GeneralModelForCausalL
         gpt_model = model_provider.provide(loss_fn=loss_fn)
         gpt_model._gen_aoa_config = cls._gen_aoa_config
         gpt_model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        if not hasattr(config, "architectures"):
+        if not getattr(config, "architectures", None):
             config.architectures = [cls.__name__.replace("Pipe", "")]
         gpt_model.config_to_save = config
         gpt_model.is_fleet = cls.is_fleet
@@ -1218,8 +1189,8 @@ class HunyuanForCausalLMPipeFleet(HunyuanPretrainedModel, GeneralModelForCausalL
 
 # Exact Hugging Face architecture names used by Hunyuan Dense V1 checkpoints.
 HunYuanDenseV1Model = HunyuanModel
-HunYuanDenseV1ForCausalLMFleet = HunyuanForCausalLMFleet
-HunYuanDenseV1ForCausalLMPipeFleet = HunyuanForCausalLMPipeFleet
+HunYuanDenseV1ForCausalLM = HunyuanForCausalLM
+HunYuanDenseV1ForCausalLMPipe = HunyuanForCausalLMPipe
 
 
 class HunyuanForCausalLMPipeEager(GeneralModelForCausalLMPipe):
@@ -1227,7 +1198,6 @@ class HunyuanForCausalLMPipeEager(GeneralModelForCausalLMPipe):
 
     config_class = HunyuanConfig
     _decoder_layer_cls = HunyuanDecoderLayer
-    _get_tensor_parallel_mappings = HunyuanModel._get_tensor_parallel_mappings
     _init_weights = HunyuanModel._init_weights
     _keep_in_fp32_modules = HunyuanModel._keep_in_fp32_modules
     _rotary_emb_cls = HunyuanRotaryEmbedding
@@ -1237,38 +1207,17 @@ class HunyuanForCausalLMPipeEager(GeneralModelForCausalLMPipe):
     _gen_inv_aoa_config = HunyuanForCausalLMEager._gen_inv_aoa_config
 
 
-# Backward-compatible aliases for the eager implementations.
-HunyuanForCausalLMDeprecated = HunyuanForCausalLMEager
-HunyuanForCausalLMPipeDeprecated = HunyuanForCausalLMPipeEager
-HunYuanDenseV1ForCausalLMPipeDeprecated = HunyuanForCausalLMPipeEager
-
-# PaddleFleet applies the q/k RMSNorm before RoPE while Hunyuan applies it
-# afterwards. HunyuanTransformerLayer fixes the order for the fleet path, but
-# the public classes keep resolving to the eager implementation.
-HunyuanForCausalLM = HunyuanForCausalLMEager
-HunyuanForCausalLMPipe = HunyuanForCausalLMPipeEager
-HunYuanDenseV1ForCausalLM = HunyuanForCausalLMEager
-HunYuanDenseV1ForCausalLMPipe = HunyuanForCausalLMPipeEager
-
-
 __all__ = [
     "HunyuanModel",
     "HunYuanDenseV1Model",
     "HunyuanPretrainedModel",
     "HunyuanForCausalLM",
     "HunYuanDenseV1ForCausalLM",
-    "HunyuanForCausalLMFleet",
-    "HunYuanDenseV1ForCausalLMFleet",
     "HunyuanForCausalLMPipe",
     "HunYuanDenseV1ForCausalLMPipe",
-    "HunyuanForCausalLMPipeFleet",
-    "HunYuanDenseV1ForCausalLMPipeFleet",
     "HunyuanForSequenceClassification",
     "HunyuanForTokenClassification",
     "HunyuanSentenceEmbedding",
     "HunyuanForCausalLMEager",
     "HunyuanForCausalLMPipeEager",
-    "HunyuanForCausalLMDeprecated",
-    "HunyuanForCausalLMPipeDeprecated",
-    "HunYuanDenseV1ForCausalLMPipeDeprecated",
 ]
