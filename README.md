@@ -55,7 +55,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   <tbody>
     <!-- LLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="18" style="vertical-align: top;">LLM</td>
+      <td rowspan="20" style="vertical-align: top;">LLM</td>
       <td>DeepSeekv3</td>
       <td>deepseek-ai/DeepSeek-V3-Base、deepseek-ai/DeepSeek-V3、deepseek-ai/DeepSeek-V3-0324</td>
       <td>deepseek3</td>
@@ -123,6 +123,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     <tr>
       <td>OLMo2</td>
       <td>allenai/OLMo-2-0425-1B、allenai/OLMo-2-0425-1B-SFT、allenai/OLMo-2-0425-1B-DPO、allenai/OLMo-2-0425-1B-Instruct、allenai/OLMo-2-1124-7B、allenai/OLMo-2-1124-7B-SFT、allenai/OLMo-2-1124-7B-DPO、allenai/OLMo-2-1124-7B-Instruct、allenai/OLMo-2-1124-13B、allenai/OLMo-2-1124-13B-SFT、allenai/OLMo-2-1124-13B-DPO、allenai/OLMo-2-1124-13B-Instruct、allenai/OLMo-2-0325-32B、allenai/OLMo-2-0325-32B-SFT、allenai/OLMo-2-0325-32B-DPO、allenai/OLMo-2-0325-32B-Instruct</td>
+      <td>jinja</td>
+    </tr>
+    <tr>
+      <td>OLMo3</td>
+      <td>allenai/OLMo-3-7B-Instruct</td>
       <td>jinja</td>
     </tr>
     <tr>

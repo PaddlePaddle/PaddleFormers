@@ -486,14 +486,9 @@ import_structure = {
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
     "olmo2.configuration": ["Olmo2Config"],
-    "olmo2.modeling": [
-        "Olmo2DecoderLayer",
-        "Olmo2Model",
-        "Olmo2PretrainedModel",
-        "Olmo2ForCausalLM",
-        "Olmo2ForCausalLMPipe",
-    ],
+    "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
     "olmo2": [],
+    "olmo3": [],
     "olmo3.tokenizer": ["Olmo3Tokenizer"],
     "olmo3.configuration": ["Olmo3Config"],
     "olmo3.modeling": [

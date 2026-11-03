@@ -12,51 +12,175 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""OLMo3 model configuration.
+import math
+from copy import deepcopy
 
-Migrated from transformers.models.olmo3.configuration_olmo3.Olmo3Config
-
-OLMo3 extends OLMo2 with:
-- Sliding window attention for 3 out of 4 layers
-- Full attention for every 4th layer
-- Separate RoPE embeddings for sliding and full attention
-"""
-
-from ..configuration_utils import layer_type_validation
-from ..olmo2.configuration import Olmo2Config
+from ..configuration_utils import PretrainedConfig, layer_type_validation
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
 
-class Olmo3Config(Olmo2Config):
+class Olmo3Config(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`Olmo3Model`].
     It is used to instantiate an OLMo3 model according to the specified arguments,
     defining the model architecture.
 
-    OLMo3 extends OLMo2 with sliding window attention support.
+    Configuration objects inherit from [`PretrainedConfig`] and can be used to
+    control the model outputs. Read the documentation from [`PretrainedConfig`]
+    for more information.
 
     Args:
+        vocab_size (`int`, *optional*, defaults to 50304):
+            Vocabulary size of the Olmo3 model.
+        hidden_size (`int`, *optional*, defaults to 4096):
+            Dimension of the hidden representations.
+        intermediate_size (`int`, *optional*, defaults to 11008):
+            Dimension of the MLP representations.
+        num_hidden_layers (`int`, *optional*, defaults to 32):
+            Number of hidden layers in the Transformer decoder.
+        num_attention_heads (`int`, *optional*, defaults to 32):
+            Number of attention heads for each attention layer.
+        num_key_value_heads (`int`, *optional*):
+            Number of key_value heads for Grouped Query Attention.
+        hidden_act (`str`, *optional*, defaults to `"silu"`):
+            The non-linear activation function in the decoder.
+        max_position_embeddings (`int`, *optional*, defaults to 2048):
+            The maximum sequence length.
+        initializer_range (`float`, *optional*, defaults to 0.02):
+            The standard deviation of the truncated_normal_initializer.
+        use_cache (`bool`, *optional*, defaults to `True`):
+            Whether or not the model should return last key/values attentions.
+        pad_token_id (`int`, *optional*, defaults to 1):
+            Padding token id.
+        bos_token_id (`int`, *optional*):
+            Beginning of stream token id.
+        eos_token_id (`int`, *optional*, defaults to 50279):
+            End of stream token id.
+        tie_word_embeddings (`bool`, *optional*, defaults to `False`):
+            Whether to tie weight embeddings.
+        rope_theta (`float`, *optional*, defaults to 10000.0):
+            The base period of the RoPE embeddings.
+        rope_scaling (`Dict`, *optional*):
+            Dictionary containing the scaling configuration for the RoPE embeddings.
+        attention_bias (`bool`, *optional*, defaults to `False`):
+            Whether to use a bias in the attention projection layers.
+        attention_dropout (`float`, *optional*, defaults to 0.0):
+            The dropout ratio for the attention probabilities.
+        rms_norm_eps (`float`, *optional*, defaults to 1e-05):
+            The epsilon used by the rms normalization layers.
+        head_dim (`int`, *optional*):
+            Dimension of each attention head. Defaults to hidden_size // num_attention_heads.
         sliding_window (`int`, *optional*, defaults to 4096):
-            Size of the sliding window for sliding window attention.
+            Size of the sliding attention window.
         layer_types (`list`, *optional*):
-            Attention pattern for each layer. Defaults to sliding window attention
-            for 3 out of 4 layers, and full attention for every 4th layer.
+            Attention pattern for each layer. Defaults to three sliding attention
+            layers followed by one full attention layer.
     """
 
     model_type = "olmo3"
+    keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
         self,
+        vocab_size=50304,
+        hidden_size=4096,
+        intermediate_size=11008,
+        num_hidden_layers=32,
+        num_attention_heads=32,
+        num_key_value_heads=None,
+        hidden_act="silu",
+        max_position_embeddings=2048,
+        initializer_range=0.02,
+        use_cache=True,
+        pad_token_id=1,
+        bos_token_id=None,
+        eos_token_id=50279,
+        tie_word_embeddings=False,
+        rope_theta=10000.0,
+        rope_scaling=None,
+        attention_bias=False,
+        attention_dropout=0.0,
+        rms_norm_eps=1e-5,
+        head_dim=None,
         sliding_window=4096,
         layer_types=None,
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        for name, value in (
+            ("vocab_size", vocab_size),
+            ("hidden_size", hidden_size),
+            ("intermediate_size", intermediate_size),
+            ("num_hidden_layers", num_hidden_layers),
+            ("num_attention_heads", num_attention_heads),
+            ("max_position_embeddings", max_position_embeddings),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ValueError(f"{name} must be a positive integer.")
+        if head_dim is None and hidden_size % num_attention_heads:
+            raise ValueError("hidden_size must be divisible by num_attention_heads when head_dim is omitted.")
+        self.vocab_size = vocab_size
+        self.max_position_embeddings = max_position_embeddings
+        self.hidden_size = hidden_size
+        self.intermediate_size = intermediate_size
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+
+        if num_key_value_heads is None:
+            num_key_value_heads = num_attention_heads
+        if (
+            isinstance(num_key_value_heads, bool)
+            or not isinstance(num_key_value_heads, int)
+            or num_key_value_heads <= 0
+            or num_attention_heads % num_key_value_heads
+        ):
+            raise ValueError("num_key_value_heads must be a positive divisor of num_attention_heads.")
+
+        self.num_key_value_heads = num_key_value_heads
+        self.hidden_act = hidden_act
+        self.initializer_range = initializer_range
+        self.use_cache = use_cache
+        self.attention_bias = attention_bias
+        self.attention_dropout = attention_dropout
+        self.rms_norm_eps = rms_norm_eps
+        self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
+        if isinstance(self.head_dim, bool) or not isinstance(self.head_dim, int) or self.head_dim <= 0 or self.head_dim % 2:
+            raise ValueError("head_dim must be a positive even integer for OLMo3 rotary embeddings.")
+        if not 0.0 <= attention_dropout < 1.0:
+            raise ValueError("attention_dropout must be in [0, 1).")
+        for name, value in (("rope_theta", rope_theta), ("rms_norm_eps", rms_norm_eps), ("initializer_range", initializer_range)):
+            if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be positive and finite.")
+
+        self.rope_theta = rope_theta
+        self.rope_scaling = deepcopy(rope_scaling)
+        self.rope_parameters = deepcopy(kwargs.pop("rope_parameters", rope_scaling))
+        if self.rope_parameters is not None and not isinstance(self.rope_parameters, dict):
+            raise ValueError("rope_parameters must be a dictionary.")
+        standardize_rope_params(self, rope_theta=self.rope_theta)
+        resolved_theta = self.rope_parameters["rope_theta"]
+        if not isinstance(resolved_theta, (int, float)) or not math.isfinite(resolved_theta) or resolved_theta <= 0:
+            raise ValueError("rope_parameters.rope_theta must be positive and finite.")
+        rope_config_validation(self)
+
+        super().__init__(
+            pad_token_id=pad_token_id,
+            bos_token_id=bos_token_id,
+            eos_token_id=eos_token_id,
+            tie_word_embeddings=tie_word_embeddings,
+            **kwargs,
+        )
 
         self.sliding_window = sliding_window
-        self.layer_types = layer_types
+        self.layer_types = list(layer_types) if layer_types is not None else None
         if self.layer_types is None:
-            # Default: 3 out of 4 layers use sliding_attention, every 4th uses full_attention
             self.layer_types = [
-                "sliding_attention" if (i + 1) % 4 != 0 else "full_attention" for i in range(self.num_hidden_layers)
+                "sliding_attention" if sliding_window is not None and (i + 1) % 4 != 0 else "full_attention"
+                for i in range(self.num_hidden_layers)
             ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
+        if any(layer_type not in ("full_attention", "sliding_attention") for layer_type in self.layer_types):
+            raise ValueError("OLMo3 supports only full_attention and sliding_attention layers.")
+        if "sliding_attention" in self.layer_types and (
+            isinstance(sliding_window, bool) or not isinstance(sliding_window, int) or sliding_window <= 0
+        ):
+            raise ValueError("sliding_window must be a positive integer when sliding attention is enabled.")

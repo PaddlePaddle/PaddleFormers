@@ -22,7 +22,6 @@ import_structure = {
     "configuration": ["Olmo2Config"],
     "modeling": [
         "Olmo2DecoderLayer",
-        "Olmo2PretrainedModel",
         "Olmo2Model",
         "Olmo2ForCausalLM",
         "Olmo2ForCausalLMPipe",
