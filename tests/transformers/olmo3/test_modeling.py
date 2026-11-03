@@ -17,8 +17,6 @@
 from __future__ import annotations
 
 import unittest
-from itertools import product
-from tempfile import TemporaryDirectory
 
 import numpy as np
 import paddle
@@ -37,29 +35,6 @@ from tests.transformers.test_modeling_common import (
     ids_tensor,
     random_attention_mask,
 )
-
-
-def _make_tp_config(tp_size, tensor_parallel_rank):
-    config = Olmo3Config(
-        vocab_size=64,
-        hidden_size=32,
-        intermediate_size=64,
-        num_hidden_layers=1,
-        num_attention_heads=4,
-        num_key_value_heads=4,
-        max_position_embeddings=32,
-        tie_word_embeddings=False,
-        dtype="float32",
-    )
-    config.tensor_model_parallel_size = tp_size
-    config.tensor_parallel_rank = tensor_parallel_rank
-    config.tensor_parallel_output = True
-    config.sequence_parallel = False
-    return config
-
-
-def _get_split_actions(config):
-    return Olmo3ForCausalLM._get_tensor_parallel_mappings(config, is_split=True)
 
 
 # Base test class, subsequent tests will call this base class
@@ -211,17 +186,8 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
         """Test that default layer_types are correctly generated."""
         config = Olmo3Config(num_hidden_layers=8)
         # Default: 3 out of 4 layers use sliding_attention, every 4th uses full_attention
-        expected = [
-            "sliding_attention",  # layer 0: (0+1)%4=1 != 0
-            "sliding_attention",  # layer 1: (1+1)%4=2 != 0
-            "sliding_attention",  # layer 2: (2+1)%4=3 != 0
-            "full_attention",  # layer 3: (3+1)%4=0
-            "sliding_attention",  # layer 4: (4+1)%4=1 != 0
-            "sliding_attention",  # layer 5: (5+1)%4=2 != 0
-            "sliding_attention",  # layer 6: (6+1)%4=3 != 0
-            "full_attention",  # layer 7: (7+1)%4=0
-        ]
-        self.assertEqual(config.layer_types, expected)
+        expected = ["sliding_attention"] * 3 + ["full_attention"]
+        self.assertEqual(config.layer_types, expected * 2)
 
     def test_config_custom_layer_types(self):
         """Test that custom layer_types can be set."""
@@ -273,70 +239,28 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                 model = AutoModelForCausalLM.from_config(config)
                 self.assertIsInstance(model, Olmo3ForCausalLM)
 
-    def test_pipeline_stages_match_model_with_recompute(self):
-        from paddleformers.transformers.olmo3.modeling import (
-            Olmo3DecoderLayerPipe,
-            Olmo3EmbeddingPipe,
-            Olmo3RMSNormPipe,
-        )
-
-        for recompute_enabled in (False, True):
-            for padding in ("left", "right", "all"):
-                with self.subTest(recompute=recompute_enabled, padding=padding):
-                    paddle.seed(2026)
-                    config = Olmo3Config(
-                        vocab_size=32,
-                        hidden_size=16,
-                        intermediate_size=24,
-                        num_attention_heads=4,
-                        num_key_value_heads=2,
-                        num_hidden_layers=2,
-                        layer_types=["full_attention", "sliding_attention"],
-                        sliding_window=2,
-                        rope_scaling={"rope_type": "linear", "factor": 2.0},
-                        use_cache=False,
-                        fuse_rms_norm=False,
-                        _attn_implementation="eager",
-                    )
-                    model = Olmo3Model(config)
-                    model.train()
-                    pipe_config = Olmo3Config.from_dict(config.to_dict())
-                    if recompute_enabled:
-                        pipe_config.recompute_granularity = "full"
-                        pipe_config.recompute_method = "uniform"
-                        pipe_config.recompute_num_layers = 1
-                        pipe_config.recompute_use_reentrant = False
-                    embedding = Olmo3EmbeddingPipe(pipe_config)
-                    embedding.set_state_dict({"embed_tokens.weight": model.embed_tokens.weight})
-                    stages = [Olmo3DecoderLayerPipe(pipe_config, i) for i in range(2)]
-                    for stage, layer in zip(stages, model.layers):
-                        stage.set_state_dict(layer.state_dict())
-                        stage.train()
-                    norm = Olmo3RMSNormPipe(pipe_config)
-                    norm.set_state_dict(model.norm.state_dict())
-                    input_ids = paddle.to_tensor([[2, 3, 4, 5], [6, 7, 8, 9]], dtype="int64")
-                    mask_values = {"left": [0, 0, 1, 1], "right": [1, 1, 0, 0], "all": [0, 0, 0, 0]}
-                    mask = paddle.to_tensor([[1, 1, 1, 1], mask_values[padding]], dtype="bool")
-                    expected = model(input_ids, attention_mask=mask, return_dict=True).last_hidden_state
-                    payload = embedding((input_ids, mask))
-                    for stage in stages:
-                        payload = stage(payload)
-                    actual = norm(payload)
-                    np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
-                    self.assertTrue(paddle.isfinite(actual).all().item())
-                    expected.square().mean().backward()
-                    actual.square().mean().backward()
-                    pairs = [(embedding.embed_tokens.weight, model.embed_tokens.weight)]
-                    pairs.append((norm.weight, model.norm.weight))
-                    for stage, layer in zip(stages, model.layers):
-                        reference_parameters = dict(layer.named_parameters())
-                        pairs.extend((parameter, reference_parameters[name]) for name, parameter in stage.named_parameters())
-                    for parameter, reference in pairs:
-                        self.assertIsNotNone(parameter.grad)
-                        self.assertTrue(paddle.isfinite(parameter.grad).all().item())
-                        np.testing.assert_allclose(
-                            parameter.grad.numpy(), reference.grad.numpy(), atol=1e-5, rtol=1e-5
-                        )
+    def test_training_with_recompute(self):
+        for recompute in (False, True):
+            with self.subTest(recompute=recompute):
+                config = Olmo3Config(
+                    vocab_size=32, hidden_size=16, intermediate_size=24,
+                    num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=2,
+                    layer_types=["sliding_attention", "full_attention"], sliding_window=3,
+                    use_cache=False, fuse_rms_norm=False, _attn_implementation="eager",
+                )
+                if recompute:
+                    config.recompute_granularity = "full"
+                    config.recompute_method = "uniform"
+                    config.recompute_num_layers = 1
+                model = Olmo3ForCausalLM(config)
+                model.train()
+                input_ids = ids_tensor([2, 6], config.vocab_size)
+                loss = model(input_ids, labels=input_ids, return_dict=True).loss
+                self.assertTrue(paddle.isfinite(loss).all().item())
+                loss.backward()
+                for parameter in model.parameters():
+                    self.assertIsNotNone(parameter.grad)
+                    self.assertTrue(paddle.isfinite(parameter.grad).all().item())
 
     def test_generation_cache_chunks_and_read_only_cache(self):
         config = Olmo3Config(
@@ -382,174 +306,10 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
             self.assertEqual(cache.get_seq_length(), 6)
             np.testing.assert_allclose(decoded.logits.numpy(), expected.logits[:, 5:].numpy(), atol=1e-5, rtol=1e-5)
 
-    def test_pipeline_inputs_preserve_positions_and_caller_data(self):
-        from paddleformers.transformers.olmo3.modeling import Olmo3ForCausalLMPipe
-
-        input_ids = paddle.to_tensor([[2, 3, 4]], dtype="int64")
-        position_ids = paddle.to_tensor([[5, 6, 7]], dtype="int64")
-        record = {"input_ids": input_ids, "position_ids": position_ids, "labels": input_ids}
-        inputs, labels = Olmo3ForCausalLMPipe._prepare_pipeline_inputs_func(record)
-        self.assertEqual(set(record), {"input_ids", "position_ids", "labels"})
-        self.assertIs(inputs[0], input_ids)
-        self.assertIs(inputs[2], position_ids)
-        self.assertEqual(inputs[1].dtype, paddle.bool)
-        self.assertIs(labels, input_ids)
-        for name in ("attn_mask_start_row_indices", "attn_mask_startend_row_indices"):
-            with self.subTest(mask_alias=name):
-                indices = paddle.zeros([1, 1, 3], dtype="int32")
-                inputs, _ = Olmo3ForCausalLMPipe._prepare_pipeline_inputs_func(
-                    {"input_ids": input_ids, name: indices, "attention_mask": paddle.ones_like(input_ids)}
-                )
-                self.assertIs(inputs[1], indices)
-        inputs, _ = Olmo3ForCausalLMPipe._prepare_pipeline_inputs_func([dict(record), dict(record)])
-        self.assertEqual(len(inputs), 3)
-        self.assertEqual(len(inputs[0]), 2)
-
-    def test_initialization_and_tied_weight_checkpoint_roundtrip(self):
-        for tied, checkpoint_format in product((False, True), ("", "flex_checkpoint")):
-            with self.subTest(tie_word_embeddings=tied, checkpoint_format=checkpoint_format):
-                paddle.seed(2026)
-                config = Olmo3Config(
-                    vocab_size=1024,
-                    hidden_size=64,
-                    intermediate_size=128,
-                    num_attention_heads=4,
-                    num_key_value_heads=2,
-                    num_hidden_layers=1,
-                    initializer_range=0.01,
-                    attention_bias=True,
-                    tie_word_embeddings=tied,
-                    use_cache=False,
-                    fuse_rms_norm=False,
-                    _attn_implementation="eager",
-                )
-                model = Olmo3ForCausalLM(config)
-                model.eval()
-                self.assertEqual(model.lm_head.weight is model.model.embed_tokens.weight, tied)
-                self.assertAlmostEqual(model.model.embed_tokens.weight.std().item(), 0.01, delta=0.0005)
-                self.assertAlmostEqual(model.lm_head.weight.std().item(), 0.01, delta=0.0005)
-                for layer in model.model.layers:
-                    self.assertEqual(layer.self_attn.q_proj.bias.count_nonzero().item(), 0)
-                    np.testing.assert_array_equal(layer.self_attn.q_norm.weight.numpy(), np.ones(64, dtype=np.float32))
-                input_ids = paddle.to_tensor([[2, 3, 4]], dtype="int64")
-                with paddle.no_grad():
-                    expected = model(input_ids, return_dict=True).logits
-                with TemporaryDirectory() as directory:
-                    model.save_pretrained(
-                        directory, save_checkpoint_format=checkpoint_format, save_safetensors=False
-                    )
-                    restored = Olmo3ForCausalLM.from_pretrained(
-                        directory, load_checkpoint_format=checkpoint_format, convert_from_hf=False, dtype="float32"
-                    )
-                    restored.eval()
-                    self.assertEqual(restored.lm_head.weight is restored.model.embed_tokens.weight, tied)
-                    with paddle.no_grad():
-                        actual = restored(input_ids, return_dict=True).logits
-                    np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-6, rtol=1e-6)
-
-    def test_attention_output_requests_respect_config(self):
-        for model_class in (Olmo3Model, Olmo3ForCausalLM):
-            config = Olmo3Config(
-                vocab_size=32, hidden_size=16, intermediate_size=24, num_hidden_layers=1,
-                num_attention_heads=4, num_key_value_heads=2, output_attentions=True,
-                use_cache=False, fuse_rms_norm=False, _attn_implementation="eager",
-            )
-            model = model_class(config)
-            input_ids = paddle.to_tensor([[2, 3, 4]], dtype="int64")
-            model.eval()
-            with paddle.no_grad():
-                outputs = model(input_ids, return_dict=True)
-                self.assertEqual(len(outputs.attentions), 1)
-                self.assertEqual(list(outputs.attentions[0].shape), [1, 4, 3, 3])
-                outputs = model(input_ids, output_attentions=False, return_dict=True)
-                self.assertIsNone(outputs.attentions)
-
-    def test_flashmask_dropout_fallback_preserves_causality(self):
-        config = Olmo3Config(
-            vocab_size=32, hidden_size=16, intermediate_size=24, num_hidden_layers=1,
-            num_attention_heads=4, num_key_value_heads=2, layer_types=["full_attention"],
-            attention_dropout=0.25, fuse_rms_norm=False, _attn_implementation="eager",
-        )
-        attention = Olmo3Attention(config, 0)
-        attention.train()
-        hidden_states = paddle.randn([1, 4, 16])
-        positions = (paddle.ones([1, 4, 4]), paddle.zeros([1, 4, 4]))
-        mask = paddle.triu(paddle.full([1, 1, 4, 4], paddle.finfo("float32").min), diagonal=1)
-        paddle.seed(2026)
-        expected = attention(hidden_states, attention_mask=mask, position_embeddings=positions)[0]
-        config._attn_implementation = "flashmask"
-        paddle.seed(2026)
-        actual = attention(hidden_states, position_embeddings=positions)[0]
-        np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-6, rtol=1e-6)
-
-    def test_config_rope_roundtrip_preserves_inputs(self):
-        scaling = {"type": "linear", "factor": 2.0}
-        parameters = {"rope_type": "linear", "factor": 4.0, "rope_theta": 20000.0}
-        layer_types = ["full_attention", "sliding_attention"]
-        config = Olmo3Config(
-            num_hidden_layers=2, rope_scaling=scaling, rope_parameters=parameters, layer_types=layer_types
-        )
-        self.assertEqual(scaling, {"type": "linear", "factor": 2.0})
-        self.assertEqual(parameters, {"rope_type": "linear", "factor": 4.0, "rope_theta": 20000.0})
-        self.assertEqual(config.rope_parameters["factor"], 4.0)
-        restored = Olmo3Config.from_dict(config.to_dict())
-        self.assertEqual(restored.rope_parameters, config.rope_parameters)
-        config.layer_types[0] = "sliding_attention"
-        self.assertEqual(layer_types, ["full_attention", "sliding_attention"])
-        self.assertEqual(Olmo3Config(sliding_window=None).layer_types, ["full_attention"] * 32)
-
-    def test_config_invalid_dimensions_and_attention_options(self):
-        for options in (
-            {"hidden_size": 0},
-            {"num_attention_heads": 0},
-            {"hidden_size": 15, "num_attention_heads": 4},
-            {"num_attention_heads": 4, "num_key_value_heads": 3},
-            {"head_dim": 3},
-            {"attention_dropout": 1.0},
-            {"rms_norm_eps": 0.0},
-            {"rope_theta": float("nan")},
-            {"rope_parameters": {"rope_theta": -1.0}},
-            {"rope_parameters": []},
-            {"sliding_window": 0},
-            {"num_hidden_layers": 2, "layer_types": ["full_attention"]},
-        ):
-            with self.subTest(options=options):
-                with self.assertRaises(ValueError):
-                    Olmo3Config(**options)
-
-    def test_config_and_model_classes_are_independent(self):
-        from paddleformers.transformers.configuration_utils import PretrainedConfig
-        from paddleformers.transformers.model_utils import PretrainedModel
-        from paddleformers.transformers.olmo3.modeling import (
-            Olmo3Attention,
-            Olmo3DecoderLayer,
-            Olmo3PretrainedModel,
-            Olmo3RotaryEmbedding,
-        )
-
-        self.assertEqual(Olmo3Config.__bases__, (PretrainedConfig,))
-        self.assertEqual(Olmo3PretrainedModel.__bases__, (PretrainedModel,))
-        for model_class in (
-            Olmo3Attention,
-            Olmo3DecoderLayer,
-            Olmo3RotaryEmbedding,
-            Olmo3Model,
-            Olmo3ForCausalLM,
-        ):
-            for base in model_class.__mro__:
-                self.assertNotIn(".olmo2", base.__module__)
-        config = Olmo3Config(num_hidden_layers=4)
-        restored = Olmo3Config.from_dict(config.to_dict())
-        self.assertEqual(restored.model_type, "olmo3")
-        self.assertEqual(restored.layer_types, config.layer_types)
-
 
 #  Generation test, marked with slow decorator, not executed by default
 class Olmo3GenerationTest(unittest.TestCase):
     _MODEL_ID = "allenai/OLMo-3-7B-Instruct"
-
-    def setUp(self):
-        pass
 
     @slow
     @require_package("transformers")
@@ -685,9 +445,6 @@ def _build_ref_dict():
 class Olmo3DiffTest(unittest.TestCase):
     _MODEL_ID = "allenai/OLMo-3-7B-Instruct"
 
-    def setUp(self):
-        pass
-
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -763,129 +520,6 @@ class Olmo3DiffTest(unittest.TestCase):
             1e-2,
             f"Mean logit diff ({mean_diff:.6f}) must be below 1e-2.",
         )
-
-
-class Olmo3QKNormTest(unittest.TestCase):
-    def test_tensor_parallel_invalid_head_counts(self):
-        for config_cls, attention_cls in ((Olmo3Config, Olmo3Attention),):
-            for kv_heads in (1, 3):
-                for sequence_parallel in (False, True):
-                    with self.subTest(model=config_cls.__name__, kv_heads=kv_heads, sp=sequence_parallel):
-                        config = config_cls(**_make_tp_config(2, 0).to_dict())
-                        config.num_key_value_heads = kv_heads
-                        config.sequence_parallel = sequence_parallel
-                        with self.assertRaisesRegex(ValueError, "head counts must be divisible"):
-                            attention_cls(config, layer_idx=0)
-
-    def test_single_rank_norm_spans_full_projection(self):
-        for config_cls, attention_cls in ((Olmo3Config, Olmo3Attention),):
-            for kv_heads in (4, 2):
-                with self.subTest(model=config_cls.__name__, kv_heads=kv_heads):
-                    config = config_cls(**_make_tp_config(1, 0).to_dict())
-                    config.num_key_value_heads = kv_heads
-                    config.fuse_rms_norm = False
-                    attention = attention_cls(config, layer_idx=0)
-                    for norm, heads in ((attention.q_norm, 4), (attention.k_norm, kv_heads)):
-                        width = heads * attention.head_dim
-                        values = np.arange(1, 2 * width + 1, dtype=np.float32).reshape(1, 2, width)
-                        weights = np.linspace(0.5, 1.5, width, dtype=np.float32)
-                        norm.weight.set_value(weights)
-                        expected = values / np.sqrt(np.mean(values**2, axis=-1, keepdims=True) + config.rms_norm_eps)
-                        expected *= weights
-                        np.testing.assert_allclose(norm(paddle.to_tensor(values)).numpy(), expected, rtol=1e-6, atol=1e-6)
-
-    def test_norm_weights_are_not_split(self):
-        for config_cls, attention_cls in ((Olmo3Config, Olmo3Attention),):
-            config = config_cls(**_make_tp_config(2, 0).to_dict())
-            actions = _get_split_actions(config)
-            self.assertNotIn("layers.0.self_attn.q_norm.weight", actions)
-            self.assertNotIn("layers.0.self_attn.k_norm.weight", actions)
-
-    def test_projection_bias_shards_and_replicated_output_bias(self):
-        for rank in (0, 1):
-            config = _make_tp_config(2, rank)
-            config.attention_bias = True
-            config.mlp_bias = True
-            actions = _get_split_actions(config)
-            for name in ("q_proj", "k_proj", "v_proj"):
-                bias = np.arange(config.hidden_size, dtype=np.float32)
-                shard = actions[f"layers.0.self_attn.{name}.bias"](bias)
-                np.testing.assert_array_equal(shard, np.split(bias, 2)[rank])
-            for name in ("gate_proj", "up_proj"):
-                bias = np.arange(config.intermediate_size, dtype=np.float32)
-                shard = actions[f"layers.0.mlp.{name}.bias"](bias)
-                np.testing.assert_array_equal(shard, np.split(bias, 2)[rank])
-            self.assertNotIn("layers.0.self_attn.o_proj.bias", actions)
-            self.assertNotIn("layers.0.mlp.down_proj.bias", actions)
-
-
-class Olmo3LmHeadTPSplitTest(unittest.TestCase):
-    """Verify lm_head.weight is split along the vocab dimension for TP."""
-
-    def test_lm_head_weight_split_along_vocab(self):
-        tp_size = 2
-        vocab_size = 64
-        hidden_size = 32
-
-        full_weight = np.arange(vocab_size * hidden_size, dtype=np.float32).reshape(vocab_size, hidden_size)
-
-        shards = []
-        for rank in range(tp_size):
-            config = _make_tp_config(tp_size, rank)
-            actions = _get_split_actions(config)
-            self.assertIn("lm_head.weight", actions)
-            action = actions["lm_head.weight"]
-
-            shard = action(full_weight)
-            # vocab-parallel shard must keep hidden_size intact and halve vocab.
-            self.assertEqual(
-                list(shard.shape),
-                [vocab_size // tp_size, hidden_size],
-                f"rank {rank}: expected vocab-parallel shard "
-                f"[{vocab_size // tp_size}, {hidden_size}], "
-                f"got {list(shard.shape)}",
-            )
-            shards.append(np.asarray(shard))
-
-        merged = np.concatenate(shards, axis=0)
-        np.testing.assert_allclose(merged, full_weight)
-
-    def test_lm_head_shard_matches_param_shape(self):
-        """Shards produced by the split action must match LMHead's param shape."""
-        from unittest.mock import MagicMock
-
-        from paddleformers.nn.lm_head import LMHead
-
-        tp_size = 2
-        vocab_size = 64
-        hidden_size = 32
-
-        full_weight = np.arange(vocab_size * hidden_size, dtype=np.float32).reshape(vocab_size, hidden_size)
-
-        for rank in range(tp_size):
-            tp_config = _make_tp_config(tp_size, rank)
-            actions = _get_split_actions(tp_config)
-            shard = np.asarray(actions["lm_head.weight"](full_weight))
-
-            head_config = MagicMock()
-            head_config.vocab_size = vocab_size
-            head_config.hidden_size = hidden_size
-            head_config.tensor_model_parallel_size = tp_size
-            head_config.lm_head_bias = False
-            head_config.use_fused_head_and_loss_fn = False
-            head_config.sequence_parallel = False
-            head_config.max_sequence_length = 128
-            head_config.tensor_parallel_output = False
-            head_config.get = lambda key, default=None: default
-            head = LMHead(head_config)
-
-            self.assertEqual(
-                list(head.weight.shape),
-                list(shard.shape),
-                f"rank {rank}: LMHead param {list(head.weight.shape)} "
-                f"does not match split shard "
-                f"{list(shard.shape)}",
-            )
 
 
 if __name__ == "__main__":

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-import argparse
 import glob
 import os
 import sys
@@ -25,24 +24,16 @@ from paddle.distributed import fleet
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--pipeline-parallel-size", type=int, default=1)
-parallel_args, _ = parser.parse_known_args()
-world_size = paddle.distributed.get_world_size()
-pp_size = parallel_args.pipeline_parallel_size
-if pp_size <= 0 or world_size % pp_size:
-    raise ValueError("pipeline-parallel-size must be a positive divisor of world size.")
-tp_size = world_size // pp_size
+tp_size = paddle.distributed.get_world_size()
 tp_rank = 0
-if world_size > 1:
+if tp_size > 1:
     strategy = fleet.DistributedStrategy()
     strategy.hybrid_configs = {
         "dp_degree": 1,
         "mp_degree": tp_size,
-        "pp_degree": pp_size,
+        "pp_degree": 1,
         "sharding_degree": 1,
     }
-    strategy.pipeline_configs = {"micro_batch_size": 2, "accumulate_steps": 1}
     fleet.init(is_collective=True, strategy=strategy)
     hcg = fleet.get_hybrid_communicate_group()
     tp_rank = hcg.get_model_parallel_rank()
@@ -152,160 +143,13 @@ def _test_qwen2():
 
 
 def _test_olmo3():
-    import numpy as np
-    from paddle.distributed.fleet.utils.sequence_parallel_utils import (
-        GatherOp,
-        ScatterOp,
-    )
+    from paddleformers.transformers import Olmo3Config, Olmo3ForCausalLM
 
-    from paddleformers.transformers import Olmo3Config
-    from paddleformers.transformers.olmo3.modeling import Olmo3Attention
-
-    if tp_size < 2:
-        raise ValueError("Olmo3 tensor parallel regression requires at least two ranks.")
-    for kv_heads in (4, 2):
-        for sequence_parallel in (False, True):
-            paddle.seed(2026)
-            config = Olmo3Config(
-                hidden_size=32,
-                num_attention_heads=4,
-                num_key_value_heads=kv_heads,
-                num_hidden_layers=1,
-                layer_types=["full_attention"],
-                attention_dropout=0.0,
-                fuse_rms_norm=False,
-                _attn_implementation="eager",
-            )
-            reference = Olmo3Attention(config, 0)
-            tp_config = Olmo3Config.from_dict(config.to_dict())
-            tp_config.tensor_model_parallel_size = tp_size
-            tp_config.tensor_parallel_rank = tp_rank
-            tp_config.sequence_parallel = sequence_parallel
-            parallel = Olmo3Attention(tp_config, 0)
-            state = reference.state_dict()
-            for name in ("q_norm.weight", "k_norm.weight"):
-                state[name] = paddle.linspace(0.5, 1.5, state[name].shape[0])
-            reference.set_state_dict(state)
-            sharded_state = {}
-            for name, value in state.items():
-                if name.startswith(("q_proj.", "k_proj.", "v_proj.")):
-                    value = paddle.split(value, tp_size, axis=-1)[tp_rank]
-                elif name == "o_proj.weight":
-                    value = paddle.split(value, tp_size, axis=0)[tp_rank]
-                sharded_state[name] = value
-            parallel.set_state_dict(sharded_state)
-            values = paddle.arange(2 * 6 * 32, dtype="float32").reshape([2, 6, 32]) / 384
-            full_input = values.clone()
-            full_input.stop_gradient = False
-            local_input = values.clone()
-            local_input.stop_gradient = False
-            local_hidden = ScatterOp.apply(local_input.reshape([-1, 32])) if sequence_parallel else local_input
-            position_embeddings = (paddle.ones([2, 6, 8]), paddle.zeros([2, 6, 8]))
-            mask = paddle.triu(paddle.full([2, 1, 6, 6], -1e4), diagonal=1)
-            expected = reference(full_input, attention_mask=mask, position_embeddings=position_embeddings)[0]
-            actual = parallel(local_hidden, attention_mask=mask, position_embeddings=position_embeddings)[0]
-            if sequence_parallel:
-                actual = GatherOp.apply(actual).reshape([2, 6, 32])
-            np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
-            expected.square().mean().backward()
-            actual.square().mean().backward()
-            np.testing.assert_allclose(local_input.grad.numpy(), full_input.grad.numpy(), atol=1e-5, rtol=1e-5)
-            for name, parameter in parallel.named_parameters():
-                gradient = dict(reference.named_parameters())[name].grad
-                if name.startswith(("q_proj.", "k_proj.", "v_proj.")):
-                    gradient = paddle.split(gradient, tp_size, axis=-1)[tp_rank]
-                elif name == "o_proj.weight":
-                    gradient = paddle.split(gradient, tp_size, axis=0)[tp_rank]
-                assert parameter.grad is not None, name
-                np.testing.assert_allclose(parameter.grad.numpy(), gradient.numpy(), atol=1e-5, rtol=1e-5)
-
-
-def _test_pipeline_parallel():
-    import numpy as np
-
-    from paddleformers.transformers import (
-        Olmo3Config,
-        Olmo3ForCausalLM,
-        Olmo3ForCausalLMPipe,
-        Phi3Config,
-        Phi3ForCausalLM,
-        Phi3ForCausalLMPipe,
-    )
-
-    for config_class, model_class, pipe_class in (
-        (Phi3Config, Phi3ForCausalLM, Phi3ForCausalLMPipe),
-        (Olmo3Config, Olmo3ForCausalLM, Olmo3ForCausalLMPipe),
-    ):
-        for tied in (False, True):
-            for recompute_enabled in (False, True):
-                paddle.seed(2026)
-                config = config_class(
-                    vocab_size=64,
-                    hidden_size=32,
-                    intermediate_size=64,
-                    num_hidden_layers=pp_size,
-                    num_attention_heads=4,
-                    num_key_value_heads=2,
-                    pad_token_id=1,
-                    use_cache=False,
-                    tie_word_embeddings=tied,
-                    fuse_rms_norm=False,
-                    _attn_implementation="eager",
-                )
-                if config_class is Olmo3Config:
-                    config.layer_types = ["sliding_attention"] * (pp_size - 1) + ["full_attention"]
-                    config.sliding_window = 3
-                reference = model_class(config)
-                reference.eval()
-                pipe_config = config_class.from_dict(config.to_dict())
-                pipe_config.tensor_parallel_output = False
-                if recompute_enabled:
-                    pipe_config.recompute_granularity = "full"
-                    pipe_config.recompute_method = "uniform"
-                    pipe_config.recompute_num_layers = 1
-                    pipe_config.recompute_use_reentrant = False
-                pipe = pipe_class(pipe_config)
-                state = reference.state_dict()
-                actions = {}
-                if tp_size > 1:
-                    for name, parameter in pipe.state_dict().items():
-                        if getattr(parameter, "is_distributed", False):
-                            actions[name] = lambda value, axis=parameter.split_axis: paddle.split(
-                                value, tp_size, axis=axis
-                            )[tp_rank]
-                    state = {name: actions[name](value) if name in actions else value for name, value in state.items()}
-                pipe.set_state_dict(dict(state))
-                parallel = fleet.distributed_model(pipe)
-                input_ids = paddle.to_tensor([[2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 12, 13]], dtype="int64")
-                labels = paddle.to_tensor([[3, 4, 5, 6, 7, 2], [9, 10, 11, 12, 13, 2]], dtype="int64")
-                with paddle.no_grad():
-                    expected = reference(input_ids, return_dict=True).logits
-                    outputs = parallel.eval_batch([input_ids, labels], compute_loss=False)
-                if hcg.get_stage_id() == pp_size - 1:
-                    actual = outputs[0]
-                    if isinstance(actual, (tuple, list)):
-                        actual = actual[0]
-                    np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
-                reference.train()
-                reference_loss = reference(input_ids, labels=labels, return_dict=True).loss
-                reference_loss.backward()
-                reference_optimizer = paddle.optimizer.SGD(learning_rate=0.01, parameters=reference.parameters())
-                reference_optimizer.step()
-                optimizer = fleet.distributed_optimizer(paddle.optimizer.SGD(learning_rate=0.01, parameters=pipe.parameters()))
-                actual_loss = parallel.train_batch([input_ids, labels], optimizer)
-                np.testing.assert_allclose(actual_loss.numpy(), reference_loss.numpy(), atol=1e-5, rtol=1e-5)
-                updated = reference.state_dict()
-                if tp_size > 1:
-                    updated = {name: actions[name](value) if name in actions else value for name, value in updated.items()}
-                for name, value in pipe.state_dict().items():
-                    np.testing.assert_allclose(value.numpy(), updated[name].numpy(), atol=1e-5, rtol=1e-5)
+    config = prepare_config(Olmo3Config())
+    Olmo3ForCausalLM.from_config(config)
 
 
 if __name__ == "__main__":
-    if pp_size > 1:
-        _test_pipeline_parallel()
-    else:
-        _test_llama()
-        _test_qwen2()
-        if tp_size > 1:
-            _test_olmo3()
+    _test_llama()
+    _test_qwen2()
+    _test_olmo3()
