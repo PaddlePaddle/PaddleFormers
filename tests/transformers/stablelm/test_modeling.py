@@ -376,7 +376,9 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         ]
     )
     def test_invalid_execution_config(self, name, overrides, message):
-        config = self.model_tester.get_config(**overrides)
+        config = self.model_tester.get_config()
+        for key, value in overrides.items():
+            setattr(config, key, value)
         for model_class in self.all_model_classes:
             with self.subTest(model_class=model_class.__name__):
                 with self.assertRaisesRegex(ValueError, message):
