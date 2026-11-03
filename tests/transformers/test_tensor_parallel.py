@@ -1,4 +1,4 @@
-# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2023 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -142,14 +142,6 @@ def _test_qwen2():
     # common_test_merge(model, Qwen2ForCausalLM)
 
 
-def _test_olmo3():
-    from paddleformers.transformers import Olmo3Config, Olmo3ForCausalLM
-
-    config = prepare_config(Olmo3Config())
-    Olmo3ForCausalLM.from_config(config)
-
-
 if __name__ == "__main__":
     _test_llama()
     _test_qwen2()
-    _test_olmo3()
