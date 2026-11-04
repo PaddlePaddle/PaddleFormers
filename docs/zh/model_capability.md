@@ -2,7 +2,7 @@
 |模型|PT / CPT|SFT|SFT-LoRA|DPO|DPO-LoRA|
 |-|-|-|-|-|-|
 |Cohere|✓|✓|✓|✓|✓|
-|StableLM|✓|✓|✓|x|x|
+|StableLM|✓|✓|✓|✓|✓|
 |DeepSeekv3|✓|✓|✓|✓|✓|
 |🏛️ERNIE-4.5|✓|✓|✓|✓|✓|
 |Gemma3|✓|✓|✓|✓|✓|

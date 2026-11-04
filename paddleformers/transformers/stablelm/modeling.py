@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 from contextlib import nullcontext
 from functools import partial
 from typing import Optional
@@ -90,10 +89,6 @@ class StableLmRotaryEmbedding(nn.Layer):
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
-        if "dynamic" in self.rope_type and hasattr(self, "None_max_seq_len_cached"):
-            # dynamic_frequency_update writes this name when layer_type is None.
-            self.max_seq_len_cached = int(self.None_max_seq_len_cached)
-            delattr(self, "None_max_seq_len_cached")
         with paddle.amp.auto_cast(enable=False):
             inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
@@ -110,7 +105,7 @@ class StableLmRotaryEmbedding(nn.Layer):
 
 
 class StableLmLayerNormPerHead(nn.Layer):
-    def __init__(self, dim, num_heads, eps=1e-5, bias=False, tensor_parallel_size=1):
+    def __init__(self, dim, num_heads, eps=1e-5, tensor_parallel_size=1):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
@@ -118,16 +113,9 @@ class StableLmLayerNormPerHead(nn.Layer):
         self.tensor_parallel_size = tensor_parallel_size
         # A flat head-major parameter permits concatenating the original per-head checkpoint keys.
         self.weight = self.create_parameter([num_heads * dim], default_initializer=nn.initializer.Constant(1.0))
-        self.bias = (
-            self.create_parameter([num_heads * dim], is_bias=True, default_initializer=nn.initializer.Constant(0.0))
-            if bias
-            else None
-        )
-        for parameter in (self.weight, self.bias):
-            if parameter is not None:
-                parameter.is_distributed = tensor_parallel_size > 1
-                if parameter.is_distributed:
-                    parameter.split_axis = 0
+        self.weight.is_distributed = tensor_parallel_size > 1
+        if self.weight.is_distributed:
+            self.weight.split_axis = 0
 
     def forward(self, hidden_states):
         dtype = hidden_states.dtype
@@ -137,16 +125,11 @@ class StableLmLayerNormPerHead(nn.Layer):
             variance = (states - mean).square().mean(axis=-1, keepdim=True)
             states = (states - mean) * paddle.rsqrt(variance + self.eps)
             states = states * self.weight.astype("float32").reshape([1, self.num_heads, 1, self.dim])
-            if self.bias is not None:
-                states = states + self.bias.astype("float32").reshape([1, self.num_heads, 1, self.dim])
         return states.astype(dtype)
 
     def sharded_state_dict(self, structured_name_prefix=""):
         if self.tensor_parallel_size > 1:
-            axes = {"weight": 0}
-            if self.bias is not None:
-                axes["bias"] = 0
-            return build_sharded_state_dict(self.state_dict(), axes, structured_name_prefix)
+            return build_sharded_state_dict(self.state_dict(), {"weight": 0}, structured_name_prefix)
         return super().sharded_state_dict(structured_name_prefix)
 
 
@@ -157,12 +140,6 @@ def _validate_execution_config(config):
         raise ValueError("StableLM partial RoPE does not support apply_rope_fusion; use the unfused RoPE path")
     if config.fuse_swiglu and config.hidden_act != "silu":
         raise ValueError("fuse_swiglu requires hidden_act='silu'")
-    if config.recompute_granularity is not None and (
-        config.recompute_granularity != "full"
-        or config.recompute_method != "uniform"
-        or config.recompute_num_layers != 1
-    ):
-        raise ValueError("StableLM recompute supports full/uniform with recompute_num_layers=1")
 
 
 class StableLmAttention(nn.Layer):
@@ -170,7 +147,6 @@ class StableLmAttention(nn.Layer):
         super().__init__()
         self.config = config
         self.layer_idx = layer_idx
-        _validate_execution_config(config)
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = config.num_attention_heads // config.num_key_value_heads
@@ -568,6 +544,7 @@ class StableLmPretrainedModel(PretrainedModel):
 @register_base_model
 class StableLmModel(StableLmPretrainedModel):
     def __init__(self, config: StableLmConfig):
+        _validate_execution_config(config)
         super().__init__(config)
         self.config = config
         self.padding_idx = config.pad_token_id
@@ -626,22 +603,18 @@ class StableLmModel(StableLmPretrainedModel):
         if self.config.sequence_parallel and seq_length != self.config.max_sequence_length:
             raise ValueError("sequence_parallel requires input length equal to max_sequence_length")
 
-        recompute_enabled = self.training and paddle.is_grad_enabled() and self.config.recompute_granularity == "full"
+        recompute_enabled = (
+            self.training
+            and paddle.is_grad_enabled()
+            and self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+        )
         if recompute_enabled and past_key_values is not None:
             raise ValueError("past_key_values must be None during recompute training")
         if recompute_enabled and use_cache:
             logger.warning_once("use_cache=True is incompatible with recompute; disabling cache for this forward")
             use_cache = False
-        if past_key_values is not None and not use_cache:
-            if getattr(past_key_values, "offloading", False):
-                raise ValueError("Reading an offloaded cache requires use_cache=True")
-            past_key_values = copy.copy(past_key_values)
-            past_key_values.layers = [copy.copy(layer) for layer in past_key_values.layers]
-            for layer in past_key_values.layers:
-                for name, value in vars(layer).items():
-                    if isinstance(value, paddle.Tensor):
-                        setattr(layer, name, value.clone())
-
         if self.config.sequence_parallel:
             inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
             inputs_embeds = ScatterOp.apply(inputs_embeds)
@@ -685,6 +658,7 @@ class StableLmModel(StableLmPretrainedModel):
             if recompute_enabled:
                 layer_forward = partial(
                     recompute,
+                    type(decoder_layer).forward,
                     decoder_layer,
                     use_reentrant=self.config.recompute_use_reentrant and not hidden_states.stop_gradient,
                 )
@@ -698,8 +672,6 @@ class StableLmModel(StableLmPretrainedModel):
                 use_cache=use_cache,
             )
 
-        if not use_cache:
-            past_key_values = None
         hidden_states = self.norm(hidden_states)
         if output_hidden_states:
             all_hidden_states += (hidden_states,)
@@ -825,33 +797,6 @@ class StableLmEmbeddingPipe(EmbeddingPipe):
         return outputs
 
 
-class StableLmDecoderLayerPipe(StableLmDecoderLayer):
-    def forward(self, args):
-        hidden_states, mask, position_ids, position_embeddings, _ = parse_args(args)
-        row_indices = mask if mask is not None and mask.dtype == paddle.int32 else None
-        attention_mask = mask if row_indices is None else None
-        embeddings = None if position_embeddings is None else (position_embeddings[0], position_embeddings[1])
-        if embeddings is None:
-            raise ValueError("StableLM PP requires explicit rotary embeddings")
-        layer_forward = super().forward
-        if self.training and paddle.is_grad_enabled() and self.config.recompute_granularity == "full":
-            layer_forward = partial(
-                recompute,
-                layer_forward,
-                use_reentrant=self.config.recompute_use_reentrant and not hidden_states.stop_gradient,
-            )
-        hidden_states = layer_forward(
-            hidden_states,
-            attention_mask=attention_mask,
-            attn_mask_startend_row_indices=row_indices,
-            position_ids=position_ids,
-            position_embeddings=embeddings,
-        )
-        if isinstance(args, tuple):
-            return (hidden_states,) + args[1:]
-        return hidden_states
-
-
 class StableLmCriterionLayerPipe(CriterionLayer):
     def __init__(self, config):
         super().__init__(config, return_tuple=False)
@@ -868,7 +813,6 @@ class StableLmForCausalLMPipe(GeneralModelForCausalLMPipe):
     base_model_class = StableLmModel
     base_model_prefix = "model"
     _decoder_layer_cls = StableLmDecoderLayer
-    _decoder_layer_pipe_cls = StableLmDecoderLayerPipe
     _embedding_pipe_cls = StableLmEmbeddingPipe
     _rotary_emb_cls = StableLmRotaryEmbedding
     _criterion_pipe_cls = StableLmCriterionLayerPipe
@@ -880,6 +824,10 @@ class StableLmForCausalLMPipe(GeneralModelForCausalLMPipe):
     transpose_weight_keys = StableLmPretrainedModel.transpose_weight_keys
     _gen_aoa_config = StableLmForCausalLM._gen_aoa_config
     _gen_inv_aoa_config = StableLmForCausalLM._gen_inv_aoa_config
+
+    def __init__(self, config):
+        _validate_execution_config(config)
+        super().__init__(config)
 
     def add_sequential_layer(self, layer_desc, name_prefix=""):
         # The shared-weight path hardcodes EmbeddingPipe instead of using _embedding_pipe_cls.

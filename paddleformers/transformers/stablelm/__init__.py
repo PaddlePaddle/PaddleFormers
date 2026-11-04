@@ -27,7 +27,6 @@ import_structure = {
         "StableLmDecoderLayer",
         "StableLmAttention",
     ],
-    "tokenizer": ["StableLmTokenizer"],
 }
 
 if TYPE_CHECKING:
@@ -41,7 +40,6 @@ if TYPE_CHECKING:
         StableLmPretrainedModel,
         StableLmRotaryEmbedding,
     )
-    from .tokenizer import StableLmTokenizer
 
 else:
     import sys

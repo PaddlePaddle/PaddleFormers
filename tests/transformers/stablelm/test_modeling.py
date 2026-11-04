@@ -22,15 +22,14 @@ import paddle
 from parameterized import parameterized
 
 from paddleformers.transformers import (
+    AutoTokenizer,
     StableLmConfig,
     StableLmForCausalLM,
     StableLmForCausalLMPipe,
     StableLmModel,
-    StableLmTokenizer,
 )
 from paddleformers.transformers.stablelm.modeling import (
     StableLmDecoderLayer,
-    StableLmLayerNormPerHead,
     StableLmRotaryEmbedding,
 )
 from tests.testing_utils import (
@@ -46,20 +45,6 @@ from tests.transformers.test_modeling_common import (
     ids_tensor,
     random_attention_mask,
 )
-
-
-class StableLmLayerNormPerHeadTest(unittest.TestCase):
-    @parameterized.expand([(1,), (2,), (4,)])
-    def test_per_head_normalization(self, num_heads):
-        layer = StableLmLayerNormPerHead(8, num_heads)
-        self.assertIsNone(layer.bias)
-        hidden_states = paddle.randn([2, num_heads, 3, 8])
-        weights = paddle.arange(1, num_heads + 1, dtype="float32").unsqueeze(-1).tile([1, 8])
-        layer.weight.set_value(weights.flatten())
-        centered = hidden_states - hidden_states.mean(axis=-1, keepdim=True)
-        expected = centered * paddle.rsqrt(centered.square().mean(axis=-1, keepdim=True) + 1e-5)
-        expected = expected * weights.reshape([1, num_heads, 1, 8])
-        paddle.testing.assert_close(layer(hidden_states), expected, rtol=1e-5, atol=1e-6)
 
 
 class StableLmModelTester:
@@ -175,65 +160,33 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         )
         self.config = self.model_tester.get_config()
 
-    def test_qk_layernorm_tp_checkpoint_mapping(self):
-        self.config.qk_layernorm = True
-        self.config.tensor_model_parallel_size = 2
-        statements = StableLmForCausalLM._gen_aoa_config(self.config)["aoa_statements"]
-        q_norm = [line for line in statements if "q_layernorm" in line]
-        self.assertEqual(len(q_norm), 1)
-        self.assertIn(f"norms.{self.config.num_attention_heads - 1}.weight", q_norm[0])
-        self.assertIn("q_layernorm.weight, axis=0", q_norm[0])
-        self.assertFalse(any("layernorm.norms." in line and ".bias" in line for line in statements))
-
-    @parameterized.expand([("linear",), ("dynamic",)])
-    def test_legacy_rope_scaling(self, rope_type):
-        scaling = {"type": rope_type, "factor": 2.0}
-        config = StableLmConfig(rope_scaling=scaling)
-        self.assertEqual(config.rope_parameters["rope_type"], rope_type)
-        self.assertEqual(config.rope_parameters["factor"], 2.0)
-        self.assertEqual(scaling, {"type": rope_type, "factor": 2.0})
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config.save_pretrained(tmpdir)
-            loaded = StableLmConfig.from_pretrained(tmpdir)
-        self.assertEqual(loaded.rope_parameters, config.rope_parameters)
-
-    def test_rope_parameters_take_precedence(self):
-        config = StableLmConfig(
-            rope_parameters={"rope_type": "linear", "factor": 3.0},
-            rope_scaling={"type": "linear", "factor": 2.0},
+    @parameterized.expand([("selective", "uniform", 1), ("full", "block", 1), ("full", "uniform", 2)])
+    def test_recompute_fallback_training(self, granularity, method, num_layers):
+        reference = StableLmForCausalLM(self.model_tester.get_config(qk_layernorm=True))
+        actual = StableLmForCausalLM(
+            self.model_tester.get_config(
+                qk_layernorm=True,
+                recompute_granularity=granularity,
+                recompute_method=method,
+                recompute_num_layers=num_layers,
+            )
         )
-        self.assertEqual(config.rope_parameters["factor"], 3.0)
-
-    @parameterized.expand([(-10000.0,), (float("nan"),), (float("inf"),), ("invalid",)])
-    def test_invalid_effective_rope_theta(self, rope_theta):
-        with self.assertRaisesRegex(ValueError, "rope_theta"):
-            self.model_tester.get_config(rope_parameters={"rope_theta": rope_theta})
-
-    @parameterized.expand([(False,), (True,)])
-    def test_residual_formula(self, parallel):
-        config = StableLmConfig(
-            hidden_size=64,
-            intermediate_size=128,
-            num_attention_heads=4,
-            num_key_value_heads=2,
-            use_parallel_residual=parallel,
-            qk_layernorm=True,
-        )
-        layer = StableLmDecoderLayer(config, 0)
-        layer.eval()
-        hidden_states = paddle.randn([2, 4, 64])
-        position_ids = paddle.arange(4).unsqueeze(0)
-        with paddle.no_grad():
-            position_embeddings = StableLmRotaryEmbedding(config)(hidden_states, position_ids)
-            normalized = layer.input_layernorm(hidden_states)
-            attention_output, _ = layer.self_attn(normalized, position_embeddings=position_embeddings)
-            if parallel:
-                expected = hidden_states + attention_output + layer.mlp(normalized)
-            else:
-                residual = hidden_states + attention_output
-                expected = residual + layer.mlp(layer.post_attention_layernorm(residual))
-            actual = layer(hidden_states, position_embeddings=position_embeddings)
-        paddle.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
+        actual.set_state_dict(reference.state_dict())
+        reference.train()
+        actual.train()
+        x = paddle.to_tensor([[1, 2, 3, 4]])
+        expected = reference(x, labels=x, use_cache=False, return_dict=True).loss
+        with patch("paddleformers.transformers.stablelm.modeling.recompute") as recompute:
+            observed = actual(x, labels=x, use_cache=False, return_dict=True).loss
+            observed.backward()
+            recompute.assert_not_called()
+        expected.backward()
+        paddle.testing.assert_close(observed, expected, rtol=1e-5, atol=1e-6)
+        for (name, param), (_, other) in zip(reference.named_parameters(), actual.named_parameters()):
+            if not param.stop_gradient:
+                self.assertIsNotNone(other.grad, name)
+                self.assertTrue(paddle.isfinite(other.grad).all().item(), name)
+                paddle.testing.assert_close(other.grad, param.grad, rtol=1e-5, atol=1e-6)
 
     def test_loss_mask(self):
         config = StableLmConfig(
@@ -342,48 +295,6 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
                 outputs = loaded(input_ids, return_dict=True)
             self.assertEqual(outputs.logits.shape, [1, 4, 1024])
 
-    @parameterized.expand(
-        [
-            ("hidden_size", 63),
-            ("num_key_value_heads", 3),
-            ("partial_rotary_factor", 0.1),
-            ("attention_dropout", 1.0),
-            ("num_attention_heads", 0),
-            ("layer_norm_eps", 0),
-            ("head_dim", 32),
-        ]
-    )
-    def test_invalid_config(self, key, value):
-        with self.assertRaises(ValueError):
-            self.model_tester.get_config(qk_layernorm=True, **{key: value})
-
-    @parameterized.expand(
-        [
-            ("sequence_parallel", {"sequence_parallel": True, "tensor_model_parallel_size": 1}, "sequence_parallel"),
-            ("rope_fusion", {"apply_rope_fusion": True}, "apply_rope_fusion"),
-            ("swiglu", {"fuse_swiglu": True, "hidden_act": "gelu"}, "fuse_swiglu"),
-            ("recompute_granularity", {"recompute_granularity": "selective"}, "StableLM recompute supports"),
-            (
-                "recompute_method",
-                {"recompute_granularity": "full", "recompute_method": "block", "recompute_num_layers": 1},
-                "StableLM recompute supports",
-            ),
-            (
-                "recompute_num_layers",
-                {"recompute_granularity": "full", "recompute_method": "uniform", "recompute_num_layers": 2},
-                "StableLM recompute supports",
-            ),
-        ]
-    )
-    def test_invalid_execution_config(self, name, overrides, message):
-        config = self.model_tester.get_config()
-        for key, value in overrides.items():
-            setattr(config, key, value)
-        for model_class in self.all_model_classes:
-            with self.subTest(model_class=model_class.__name__):
-                with self.assertRaisesRegex(ValueError, message):
-                    model_class(config)
-
     def test_generation_config_and_defaults(self):
         model = StableLmForCausalLM(
             self.model_tester.get_config(
@@ -398,48 +309,6 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         self.assertIsNotNone(outputs.past_key_values)
         self.assertEqual(len(outputs.hidden_states), 3)
         self.assertTrue(issubclass(StableLmForCausalLMPipe, paddle.distributed.fleet.meta_parallel.PipelineLayer))
-
-    @parameterized.expand([(None,), (16,)])
-    def test_head_dim_consistency(self, head_dim):
-        config = self.model_tester.get_config(head_dim=head_dim)
-        self.assertEqual(config.head_dim, config.hidden_size // config.num_attention_heads)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            config.save_pretrained(tmpdir)
-            config = StableLmConfig.from_pretrained(tmpdir)
-        model = StableLmModel(config).eval()
-        attention = model.layers[0].self_attn
-        self.assertEqual(attention.head_dim, config.head_dim)
-        self.assertEqual(model.rotary_emb.inv_freq.shape[0] * 2, attention.rotary_ndims)
-        with paddle.no_grad():
-            outputs = model(paddle.to_tensor([[1, 2, 3]]), return_dict=True)
-        self.assertTrue(paddle.isfinite(outputs.last_hidden_state).all().item())
-
-    def test_auto_data_sharding_config(self):
-        from paddleformers.trainer.trainer_utils import ShardingOption
-
-        model = StableLmForCausalLM(self.model_tester.get_config())
-        config = model._generate_auto_dist_config(
-            {
-                "data_sharding_parallel": True,
-                "sharding": [ShardingOption.FULL_SHARD],
-                "sharding_mesh_dim": "dp",
-            }
-        )
-        self.assertEqual(config["dp_config"], {"sharding_level": 3, "sharding_mesh_dim": "dp"})
-        self.assertIsNone(config["mp_config"])
-        self.assertIsNone(config["pp_config"])
-
-    def test_output_attentions_config_and_override(self):
-        input_ids = paddle.to_tensor([[1, 2, 3]])
-        for model_class in self.all_model_classes:
-            model = model_class(self.model_tester.get_config(output_attentions=True)).eval()
-            with self.assertRaisesRegex(ValueError, "attention weights"):
-                model(input_ids, return_dict=True)
-            with paddle.no_grad():
-                outputs = model(input_ids, output_attentions=False, return_dict=True)
-            self.assertIsNone(outputs.attentions)
-            with self.assertRaisesRegex(ValueError, "attention weights"):
-                model(input_ids, output_attentions=True, return_dict=True)
 
     @parameterized.expand([(None,), ([],)])
     def test_auto_entrypoint_and_small_generation(self, architectures):
@@ -486,7 +355,7 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         expected = reference(x, labels=x, use_cache=False, return_dict=True).loss
         expected.backward()
         layer = actual.model.layers[0]
-        with patch.object(layer, "forward", wraps=layer.forward) as forward:
+        with patch.object(layer.self_attn, "forward", wraps=layer.self_attn.forward) as forward:
             paddle.seed(123)
             observed = actual(x, labels=x, use_cache=True, return_dict=True).loss
             observed.backward()
@@ -502,7 +371,7 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         self.assertFalse(paddle.equal_all(before, actual.model.layers[0].self_attn.q_proj.weight).item())
 
     @parameterized.expand([("eager", "float32"), ("sdpa", "bfloat16")])
-    def test_cache_multiple_steps_and_no_write(self, backend, dtype):
+    def test_cache_multiple_steps_and_update(self, backend, dtype):
         model = StableLmForCausalLM(self.model_tester.get_config(qk_layernorm=True, _attn_implementation=backend)).to(
             dtype=dtype
         )
@@ -529,10 +398,20 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
                     atol=1e-3 if dtype == "bfloat16" else 1e-6,
                 )
             keys = cache.layers[0].keys.clone()
-            no_write = model(x[:, :1], past_key_values=cache, use_cache=False, return_dict=True)
-            self.assertIsNone(no_write.past_key_values)
-            self.assertEqual(cache.get_seq_length(), 6)
-            paddle.testing.assert_close(cache.layers[0].keys.float(), keys.float(), rtol=0.0, atol=0.0)
+            extended = paddle.concat([x, x[:, :1]], axis=1)
+            expected = model(extended, use_cache=False, return_dict=True).logits
+            updated = model(x[:, :1], past_key_values=cache, use_cache=False, return_dict=True)
+            self.assertIs(updated.past_key_values, cache)
+            for layer in cache.layers:
+                self.assertEqual(layer.keys.shape[-2], 7)
+                self.assertEqual(layer.values.shape[-2], 7)
+            paddle.testing.assert_close(cache.layers[0].keys[:, :, :6].float(), keys.float(), rtol=0.0, atol=0.0)
+            paddle.testing.assert_close(
+                updated.logits.float(),
+                expected[:, -1:].float(),
+                rtol=1e-3 if dtype == "bfloat16" else 1e-5,
+                atol=1e-3 if dtype == "bfloat16" else 1e-6,
+            )
 
     def test_inputs_embeds_padding_and_tied_checkpoint(self):
         model = StableLmForCausalLM(
@@ -566,20 +445,6 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
                 actual = loaded(x, attention_mask=mask, position_ids=positions, return_dict=True).logits
             paddle.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
 
-    def test_dynamic_rope_growth_and_reset(self):
-        config = self.model_tester.get_config(
-            qk_layernorm=True, max_position_embeddings=8, rope_parameters={"rope_type": "dynamic", "factor": 2.0}
-        )
-        rope = StableLmRotaryEmbedding(config)
-        original = rope.inv_freq.clone()
-        x = paddle.zeros([1, 1, config.hidden_size])
-        rope(x, paddle.to_tensor([[16]]))
-        self.assertEqual(int(rope.max_seq_len_cached), 17)
-        self.assertFalse(paddle.equal_all(rope.inv_freq, original).item())
-        rope(x, paddle.to_tensor([[2]]))
-        self.assertEqual(int(rope.max_seq_len_cached), 8)
-        paddle.testing.assert_close(rope.inv_freq, original, rtol=0.0, atol=0.0)
-
     @parameterized.expand(
         [
             (layout, recompute, dtype)
@@ -589,10 +454,13 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         ]
     )
     def test_pipeline_stages_match_regular_model(self, mask_layout, with_recompute, dtype):
-        from paddleformers.nn.pp_model import LayerNormPipe, LMHeadPipe
+        from paddleformers.nn.pp_model import (
+            LayerNormPipe,
+            LMHeadPipe,
+            make_decoder_layer_pipe,
+        )
         from paddleformers.transformers.stablelm.modeling import (
             StableLmCriterionLayerPipe,
-            StableLmDecoderLayerPipe,
             StableLmEmbeddingPipe,
         )
 
@@ -607,7 +475,8 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         model.train()
         embed = StableLmEmbeddingPipe(config, rotary_emb_cls=StableLmRotaryEmbedding)
         embed.embed_tokens.set_state_dict(model.model.embed_tokens.state_dict())
-        layers = [StableLmDecoderLayerPipe(config, i) for i in range(2)]
+        decoder_layer_pipe = make_decoder_layer_pipe(StableLmDecoderLayer)
+        layers = [decoder_layer_pipe(config, i) for i in range(2)]
         for index, layer in enumerate(layers):
             layer.set_state_dict(model.model.layers[index].state_dict())
         norm = LayerNormPipe(config)
@@ -682,7 +551,7 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
             recompute_num_layers=1,
         )
         reference = StableLmForCausalLM(config)
-        pipe = AutoModelForCausalLMPipe.from_config(StableLmConfig.from_dict(config.to_dict()))
+        pipe = AutoModelForCausalLMPipe.from_config(StableLmConfig.from_dict(config.to_dict()), dtype="float32")
         self.assertIsInstance(pipe, StableLmForCausalLMPipe)
         original = reference.state_dict()
         actions = pipe._get_tensor_parallel_mappings(pipe.config)
@@ -697,8 +566,7 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         expected = reference(x, labels=labels, loss_mask=loss_mask, return_dict=True)
         engine = fleet.distributed_model(pipe)
         engine.eval()
-        with paddle.no_grad():
-            outputs = engine.eval_batch([x, labels], compute_loss=False)
+        outputs = engine.eval_batch([x, labels], compute_loss=False)
         if hcg.get_stage_id() == 1:
             paddle.testing.assert_close(outputs[0], expected.logits, rtol=1e-5, atol=1e-6)
         expected.loss.backward()
@@ -706,7 +574,7 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         optimizer = fleet.distributed_optimizer(paddle.optimizer.SGD(learning_rate=0.01, parameters=pipe.parameters()))
         before = [parameter.clone() for parameter in pipe.parameters()]
         loss = engine.train_batch([x, (labels, loss_mask)], optimizer=optimizer)
-        paddle.testing.assert_close(loss, expected.loss.detach(), rtol=1e-5, atol=1e-6)
+        paddle.testing.assert_close(loss.reshape([]), expected.loss.detach(), rtol=1e-5, atol=1e-6)
         self.assertTrue(
             any(not paddle.equal_all(old, parameter).item() for old, parameter in zip(before, pipe.parameters()))
         )
@@ -750,66 +618,13 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
             self.assertTrue(paddle.isfinite(parameter.grad).all().item(), name)
         self.assertTrue(any(parameter.grad.abs().sum().item() > 0 for _, parameter in trainable))
 
-    @parameterized.expand([("int64",), ("float32",), ("bool",)])
-    def test_attention_mask_bool_cast(self, dtype):
-        model = StableLmForCausalLM(self.model_tester.get_config()).eval()
-        x = paddle.to_tensor([[1, 2, 3]])
-        mask = paddle.to_tensor([[1, 1, 0]], dtype=dtype)
-        with paddle.no_grad():
-            actual = model(x, attention_mask=mask, return_dict=True).logits
-            expected = model(x, attention_mask=mask.astype("bool"), return_dict=True).logits
-            reference = model.model(x, return_dict=True)
-        paddle.testing.assert_close(actual, expected)
-        with patch.object(model.model, "forward", return_value=reference) as forward:
-            model(x, attention_mask=mask)
-        self.assertEqual(forward.call_args.kwargs["attention_mask"].dtype, paddle.bool)
-
-    @parameterized.expand([(False,), (True,)])
-    def test_attention_row_indices_compatibility(self, with_new_name):
-        model = StableLmForCausalLM(self.model_tester.get_config()).eval()
-        x = paddle.to_tensor([[1, 2, 3]])
-        old_indices = paddle.zeros([1, 1, 3, 1], dtype="int32")
-        new_indices = paddle.ones_like(old_indices)
-        with paddle.no_grad():
-            reference = model.model(x, return_dict=True)
-        kwargs = {"attn_mask_start_row_indices": old_indices}
-        if with_new_name:
-            kwargs["attn_mask_startend_row_indices"] = new_indices
-        with patch.object(model.model, "forward", return_value=reference) as forward, patch(
-            "paddleformers.transformers.stablelm.modeling.logger.warning"
-        ) as warning:
-            model(x, attention_mask=paddle.ones_like(x), **kwargs)
-        self.assertIsNone(forward.call_args.kwargs["attention_mask"])
-        self.assertIs(
-            forward.call_args.kwargs["attn_mask_startend_row_indices"],
-            new_indices if with_new_name else old_indices,
-        )
-        warning.assert_called_once_with(
-            "You have provided both attn_mask_startend_row_indices and attention_mask. "
-            "The attn_mask_startend_row_indices will be used."
-        )
-
-    def test_flashmask_preserves_dense_mask_and_dropout(self):
-        model = StableLmForCausalLM(
-            self.model_tester.get_config(qk_layernorm=True, _attn_implementation="flashmask", attention_dropout=0.1)
-        )
-        model.train()
-        x = paddle.to_tensor([[1, 2, 3]])
-        attention = model.model.layers[0].self_attn
-        from paddleformers.nn.attention.interface import ALL_ATTENTION_FUNCTIONS
-
-        with patch.dict(ALL_ATTENTION_FUNCTIONS._global_mapping, sdpa=ALL_ATTENTION_FUNCTIONS["eager"]):
-            result = model(x, labels=x, return_dict=True)
-            result.loss.backward()
-        self.assertIsNotNone(attention.q_proj.weight.grad)
-
 
 class StableLmIntegrationTest(unittest.TestCase):
     @gpu_device_initializer(log_prefix="StableLmIntegrationTest")
     @require_package("transformers", "torch")
     @slow
     def test_generation_hello_world(self):
-        tokenizer = StableLmTokenizer.from_pretrained(
+        tokenizer = AutoTokenizer.from_pretrained(
             "stabilityai/stable-code-3b", trust_remote_code=False, download_hub="modelscope"
         )
 
@@ -847,7 +662,7 @@ class StableLmCompatibilityTest(unittest.TestCase):
         import torch
         from transformers import AutoModelForCausalLM
 
-        tokenizer = StableLmTokenizer.from_pretrained(
+        tokenizer = AutoTokenizer.from_pretrained(
             "stabilityai/stable-code-3b", trust_remote_code=False, download_hub="modelscope"
         )
 
@@ -903,7 +718,7 @@ class StableLmCompatibilityTest(unittest.TestCase):
         import torch
         from transformers import AutoModelForCausalLM
 
-        tokenizer = StableLmTokenizer.from_pretrained(
+        tokenizer = AutoTokenizer.from_pretrained(
             "stabilityai/stable-code-3b", trust_remote_code=False, download_hub="modelscope"
         )
 

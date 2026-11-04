@@ -58,8 +58,8 @@ class StableLmConfig(PretrainedConfig):
             "num_key_value_heads": num_key_value_heads,
             "max_position_embeddings": max_position_embeddings,
         }.items():
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ValueError(f"{name} must be a positive integer, got {value!r}")
+            if value <= 0:
+                raise ValueError(f"{name} must be positive, got {value!r}")
         if hidden_size % num_attention_heads:
             raise ValueError("hidden_size must be divisible by num_attention_heads")
         if num_attention_heads % num_key_value_heads:

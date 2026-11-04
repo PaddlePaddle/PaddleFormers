@@ -487,7 +487,6 @@ import_structure = {
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
     "stablelm": [],
     "stablelm.configuration": ["StableLmConfig"],
-    "stablelm.tokenizer": ["StableLmTokenizer"],
     "stablelm.modeling": [
         "StableLmModel",
         "StableLmForCausalLM",
