@@ -114,8 +114,8 @@ class Olmo3Config(PretrainedConfig):
             ("num_attention_heads", num_attention_heads),
             ("max_position_embeddings", max_position_embeddings),
         ):
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ValueError(f"{name} must be a positive integer.")
+            if value <= 0:
+                raise ValueError(f"{name} must be positive.")
         if head_dim is None and hidden_size % num_attention_heads:
             raise ValueError("hidden_size must be divisible by num_attention_heads when head_dim is omitted.")
         self.vocab_size = vocab_size
@@ -127,12 +127,7 @@ class Olmo3Config(PretrainedConfig):
 
         if num_key_value_heads is None:
             num_key_value_heads = num_attention_heads
-        if (
-            isinstance(num_key_value_heads, bool)
-            or not isinstance(num_key_value_heads, int)
-            or num_key_value_heads <= 0
-            or num_attention_heads % num_key_value_heads
-        ):
+        if num_key_value_heads <= 0 or num_attention_heads % num_key_value_heads:
             raise ValueError("num_key_value_heads must be a positive divisor of num_attention_heads.")
 
         self.num_key_value_heads = num_key_value_heads
@@ -143,12 +138,7 @@ class Olmo3Config(PretrainedConfig):
         self.attention_dropout = attention_dropout
         self.rms_norm_eps = rms_norm_eps
         self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
-        if (
-            isinstance(self.head_dim, bool)
-            or not isinstance(self.head_dim, int)
-            or self.head_dim <= 0
-            or self.head_dim % 2
-        ):
+        if self.head_dim <= 0 or self.head_dim % 2:
             raise ValueError("head_dim must be a positive even integer for OLMo3 rotary embeddings.")
         if not 0.0 <= attention_dropout < 1.0:
             raise ValueError("attention_dropout must be in [0, 1).")
@@ -190,6 +180,6 @@ class Olmo3Config(PretrainedConfig):
         if any(layer_type not in ("full_attention", "sliding_attention") for layer_type in self.layer_types):
             raise ValueError("OLMo3 supports only full_attention and sliding_attention layers.")
         if "sliding_attention" in self.layer_types and (
-            isinstance(sliding_window, bool) or not isinstance(sliding_window, int) or sliding_window <= 0
+            sliding_window is None or sliding_window <= 0
         ):
             raise ValueError("sliding_window must be a positive integer when sliding attention is enabled.")

@@ -100,9 +100,7 @@ class Olmo3Attention(nn.Layer):
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
-        self.tensor_parallel_size = config.tensor_model_parallel_size
-        if self.tensor_parallel_size < 1:
-            raise ValueError("tensor_model_parallel_size must be positive.")
+        self.tensor_parallel_size = max(config.tensor_model_parallel_size, 1)
         if config.sequence_parallel and self.tensor_parallel_size == 1:
             raise ValueError("OLMo3 sequence parallelism requires tensor_model_parallel_size > 1.")
         if (
@@ -561,48 +559,6 @@ class Olmo3PretrainedModel(PretrainedModel):
 
         return {"aoa_statements": aoa_statements}
 
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config, is_split=True):
-        from functools import partial
-
-        from ..conversion_utils import split_or_merge_func
-
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.tensor_model_parallel_size,
-            tensor_parallel_rank=config.tensor_parallel_rank,
-            num_attention_heads=config.num_attention_heads,
-        )
-
-        actions = {
-            "embed_tokens.weight": partial(fn, is_column=False),
-            "lm_head.weight": partial(fn, is_column=False),
-        }
-        if config.get("lm_head_bias", False):
-            actions["lm_head.bias"] = partial(fn, is_column=False)
-
-        for layer_idx in range(config.num_hidden_layers):
-            prefix = f"layers.{layer_idx}"
-            actions.update(
-                {
-                    f"{prefix}.self_attn.q_proj.weight": partial(fn, is_column=True),
-                    f"{prefix}.self_attn.k_proj.weight": partial(fn, is_column=True),
-                    f"{prefix}.self_attn.v_proj.weight": partial(fn, is_column=True),
-                    f"{prefix}.self_attn.o_proj.weight": partial(fn, is_column=False),
-                    f"{prefix}.mlp.gate_proj.weight": partial(fn, is_column=True),
-                    f"{prefix}.mlp.up_proj.weight": partial(fn, is_column=True),
-                    f"{prefix}.mlp.down_proj.weight": partial(fn, is_column=False),
-                }
-            )
-            if config.attention_bias:
-                for name in ("q_proj", "k_proj", "v_proj"):
-                    actions[f"{prefix}.self_attn.{name}.bias"] = partial(fn, is_column=True)
-            if config.get("mlp_bias", False):
-                for name in ("gate_proj", "up_proj"):
-                    actions[f"{prefix}.mlp.{name}.bias"] = partial(fn, is_column=True)
-
-        return actions
-
 
 @register_base_model
 class Olmo3Model(Olmo3PretrainedModel):
@@ -620,12 +576,13 @@ class Olmo3Model(Olmo3PretrainedModel):
         self.padding_idx = config.pad_token_id
         self.vocab_size = config.vocab_size
         self.hidden_size = config.hidden_size
+        self.has_sliding_layers = "sliding_attention" in config.layer_types
 
         self.embed_tokens = GeneralEmbedding.create(
             config=config,
             num_embeddings=self.vocab_size,
             embedding_dim=self.hidden_size,
-            padding_idx=self.padding_idx,
+            padding_idx=None,
         )
         self.layers = nn.LayerList(
             [Olmo3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
@@ -723,10 +680,11 @@ class Olmo3Model(Olmo3PretrainedModel):
             full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
             causal_mask_mapping = {"full_attention": full_mask}
             attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
-            (
-                causal_mask_mapping["sliding_attention"],
-                attn_mask_startend_row_indices_mapping["sliding_attention"],
-            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
+            if self.has_sliding_layers:
+                (
+                    causal_mask_mapping["sliding_attention"],
+                    attn_mask_startend_row_indices_mapping["sliding_attention"],
+                ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
             if attn_mask_startend_row_indices is None and kv_seq_len and seq_length > 1:
                 # Cached multi-token chunks need a bottom-right aligned causal mask.
                 full_mask = self._prepare_decoder_attention_mask(
@@ -958,7 +916,8 @@ class Olmo3EmbeddingPipe(nn.Layer):
     def __init__(self, config, embed_cls=None, rotary_emb_cls=None):
         super().__init__()
         self.config = config
-        self.embed_tokens = GeneralEmbedding.create(config=config, padding_idx=config.pad_token_id)
+        self.has_sliding_layers = "sliding_attention" in config.layer_types
+        self.embed_tokens = GeneralEmbedding.create(config=config, padding_idx=None)
         self.rotary_embs = nn.LayerDict(
             {
                 "full_attention": Olmo3RotaryEmbedding(config),
@@ -988,7 +947,9 @@ class Olmo3EmbeddingPipe(nn.Layer):
             "prepare_decoder_attention_mask": Olmo3Model._prepare_decoder_attention_mask,
         }
         full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
-        sliding_mask, sliding_indices = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
+        sliding_mask, sliding_indices = None, None
+        if self.has_sliding_layers:
+            sliding_mask, sliding_indices = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
         ropes = paddle.stack(
             [
                 paddle.stack(self.rotary_embs["full_attention"](hidden_states, position_ids)),
@@ -1054,7 +1015,6 @@ class Olmo3ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _embedding_pipe_cls = Olmo3EmbeddingPipe
     _rms_norm_pipe_cls = Olmo3RMSNormPipe
     _lmhead_pipe_cls = Olmo3LMHeadPipe
-    _get_tensor_parallel_mappings = Olmo3Model._get_tensor_parallel_mappings
     _init_weights = Olmo3Model._init_weights
     _keep_in_fp32_modules = Olmo3Model._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]

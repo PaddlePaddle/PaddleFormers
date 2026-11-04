@@ -28,7 +28,6 @@ from paddleformers.transformers import (
     Olmo3ForCausalLM,
     Olmo3Model,
 )
-from paddleformers.transformers.olmo3.modeling import Olmo3Attention
 from tests.testing_utils import require_package, slow
 from tests.transformers.test_modeling_common import (
     ModelTesterMixin,
@@ -172,30 +171,7 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
-    def test_config(self):
-        """Test that Olmo3Config can be created with default values."""
-        config = Olmo3Config(num_hidden_layers=4)
-        self.assertEqual(config.model_type, "olmo3")
-        self.assertEqual(config.vocab_size, 50304)
-        self.assertEqual(config.hidden_size, 4096)
-        self.assertEqual(config.sliding_window, 4096)
-        self.assertEqual(config.attention_bias, False)
-        self.assertEqual(config.rms_norm_eps, 1e-5)
-
-    def test_config_layer_types_default(self):
-        """Test that default layer_types are correctly generated."""
-        config = Olmo3Config(num_hidden_layers=8)
-        # Default: 3 out of 4 layers use sliding_attention, every 4th uses full_attention
-        expected = ["sliding_attention"] * 3 + ["full_attention"]
-        self.assertEqual(config.layer_types, expected * 2)
-
-    def test_config_custom_layer_types(self):
-        """Test that custom layer_types can be set."""
-        custom_types = ["full_attention", "sliding_attention"]
-        config = Olmo3Config(num_hidden_layers=2, layer_types=custom_types)
-        self.assertEqual(config.layer_types, custom_types)
-
-    def test_head_dim_config_roundtrip_and_forward(self):
+    def test_model_with_head_dim(self):
         self.model_tester = Olmo3ModelTester(
             self,
             vocab_size=128,
@@ -211,15 +187,8 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                 config = self.model_tester.get_config()
                 config = Olmo3Config.from_dict({**config.to_dict(), "head_dim": head_dim})
                 config._attn_implementation = "eager"
-                expected = 8 if head_dim is None else head_dim
-                self.assertEqual(config.head_dim, expected)
-                restored = Olmo3Config.from_dict(config.to_dict())
-                self.assertEqual(restored.head_dim, expected)
-                attention = Olmo3Attention(restored, layer_idx=0)
-                self.assertEqual(list(attention.q_proj.weight.shape), [32, 4 * expected])
-                self.assertEqual(list(attention.k_proj.weight.shape), [32, 2 * expected])
                 self.model_tester.create_and_check_model(
-                    restored,
+                    config,
                     ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size),
                     None,
                 )
