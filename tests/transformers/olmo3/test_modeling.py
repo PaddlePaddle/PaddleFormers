@@ -28,6 +28,7 @@ from paddleformers.transformers import (
     Olmo3ForCausalLM,
     Olmo3Model,
 )
+from paddleformers.utils import device_guard
 from tests.testing_utils import require_package, slow
 from tests.transformers.test_modeling_common import (
     ModelTesterMixin,
@@ -392,8 +393,13 @@ class Olmo3GenerationTest(unittest.TestCase):
 
 """
 Fixed reference arrays for allenai/OLMo-3-7B-Instruct alignment.
-Reproduced with Transformers 4.57.0, PyTorch 2.9.0, CPU SDPA and BF16.
-The Paddle comparison also uses SDPA and BF16; no model revision was recorded.
+Reproduced with Transformers 4.57.0, PyTorch 2.9.0+cu130, CPU SDPA and FP32.
+The Paddle comparison also uses CPU SDPA and FP32 with unfused RMSNorm.
+The local checkpoint has no recorded upstream revision; SHA256 fingerprints:
+config.json: 6282ae812f9e494bd212e9a3233d68dc4d5f1e2569642423d2b79a3e80373ef8
+model-00001-of-00003.safetensors: e7bd4c8ba52177a815aee5929cb458a116a65799688d3e51402500a1cb77023c
+model-00002-of-00003.safetensors: ea92aa0499a2ca02400e5d87324009e172bdbfb9809f2ac501485d8224382328
+model-00003-of-00003.safetensors: d50f95e4f2ec5fc4fbce6217cbf54fd1d700928b05e5550c8ee08bf4ba948925
 The stored prompt asks: "What is the difference between a cat and a dog?"
 The tests compare ten generated token IDs exactly and require the mean absolute
 error of the first twenty logits at the last input position to be below 1e-2.
@@ -453,26 +459,26 @@ _OLMO3_REF_INPUT_IDS = [
 _OLMO3_REF_GENERATED_TOP10 = [96556, 0, 6104, 2225, 19987, 323, 12875, 527, 5526, 26159]
 
 _OLMO3_REF_FIRST_TOKEN_LOGITS_FIRST20 = [
-    3.90625,
-    9.8125,
-    4.25,
-    4.71875,
-    1.890625,
-    1.765625,
-    5.46875,
-    4.21875,
-    1.1875,
-    8.625,
-    2.53125,
-    -3.3125,
-    1.4765625,
-    -1.25,
-    0.2275390625,
-    1.5859375,
-    5.625,
-    1.28125,
-    1.2734375,
-    1.0546875,
+    3.8641438484191895,
+    9.757109642028809,
+    4.222537994384766,
+    4.725244522094727,
+    1.880645990371704,
+    1.7617301940917969,
+    5.4357686042785645,
+    4.220963001251221,
+    1.1612153053283691,
+    8.618879318237305,
+    2.527357578277588,
+    -3.317128896713257,
+    1.4765191078186035,
+    -1.2547285556793213,
+    0.2115684449672699,
+    1.5777826309204102,
+    5.592334747314453,
+    1.2720606327056885,
+    1.2675397396087646,
+    1.0419766902923584,
 ]
 
 
@@ -484,6 +490,7 @@ def _build_ref_dict():
     }
 
 
+@slow
 class Olmo3DiffTest(unittest.TestCase):
     _MODEL_ID = "allenai/OLMo-3-7B-Instruct"
 
@@ -491,19 +498,29 @@ class Olmo3DiffTest(unittest.TestCase):
     def setUpClass(cls):
         super().setUpClass()
         cls._ref = _build_ref_dict()
+        with device_guard("cpu"):
+            config = Olmo3Config.from_pretrained(cls._MODEL_ID, download_hub="modelscope")
+            config.fuse_rms_norm = False
+            config._attn_implementation = "sdpa"
+            cls._model = Olmo3ForCausalLM.from_pretrained(
+                cls._MODEL_ID,
+                dtype="float32",
+                config=config,
+                load_checkpoint_format="flex_checkpoint",
+                download_hub="modelscope",
+                load_via_cpu=True,
+            )
+            cls._model.eval()
+        cls.addClassCleanup(delattr, cls, "_model")
 
-    @slow
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        paddle.set_device("cpu")
+
     def test_diff_generated_tokens(self):
         ref = self._ref
-        pd_model = Olmo3ForCausalLM.from_pretrained(
-            self._MODEL_ID,
-            dtype="bfloat16",
-            load_checkpoint_format="flex_checkpoint",
-            _attn_implementation="sdpa",
-            download_hub="modelscope",
-            load_via_cpu=True,
-        )
-        pd_model.eval()
+        pd_model = self._model
 
         input_ids_np = np.array(ref["input_ids"], dtype=np.int64).reshape([1, len(ref["input_ids"])])
         paddle_input = paddle.to_tensor(input_ids_np)
@@ -528,18 +545,9 @@ class Olmo3DiffTest(unittest.TestCase):
             f"Generated tokens mismatch. Paddle: {pd_generated}, Reference: {ref_generated}",
         )
 
-    @slow
     def test_diff_first_token_logits(self):
         ref = self._ref
-        pd_model = Olmo3ForCausalLM.from_pretrained(
-            self._MODEL_ID,
-            dtype="bfloat16",
-            load_checkpoint_format="flex_checkpoint",
-            _attn_implementation="sdpa",
-            download_hub="modelscope",
-            load_via_cpu=True,
-        )
-        pd_model.eval()
+        pd_model = self._model
 
         input_ids_np = np.array(ref["input_ids"], dtype=np.int64).reshape([1, len(ref["input_ids"])])
         paddle_input = paddle.to_tensor(input_ids_np)

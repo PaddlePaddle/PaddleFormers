@@ -179,7 +179,5 @@ class Olmo3Config(PretrainedConfig):
         layer_type_validation(self.layer_types, self.num_hidden_layers)
         if any(layer_type not in ("full_attention", "sliding_attention") for layer_type in self.layer_types):
             raise ValueError("OLMo3 supports only full_attention and sliding_attention layers.")
-        if "sliding_attention" in self.layer_types and (
-            sliding_window is None or sliding_window <= 0
-        ):
+        if "sliding_attention" in self.layer_types and (sliding_window is None or sliding_window <= 0):
             raise ValueError("sliding_window must be a positive integer when sliding attention is enabled.")

@@ -54,6 +54,83 @@ from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Olmo3Config
 
 
+def _build_attention_masks(
+    config,
+    inputs_embeds,
+    batch_size,
+    seq_length,
+    attention_mask,
+    attn_mask_startend_row_indices,
+    prepare_decoder_attention_mask,
+    has_sliding_layers,
+    past_key_values=None,
+):
+    """Prepare per-attention-type masks while preserving cache and caller-owned mask semantics."""
+    cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
+    if isinstance(attention_mask, dict):
+        causal_mask_mapping = {}
+        attn_mask_startend_row_indices_mapping = {}
+        for attention_type, mask_result in attention_mask.items():
+            if isinstance(mask_result, tuple):
+                (
+                    causal_mask_mapping[attention_type],
+                    attn_mask_startend_row_indices_mapping[attention_type],
+                ) = mask_result
+            else:
+                causal_mask_mapping[attention_type] = mask_result
+                attn_mask_startend_row_indices_mapping[attention_type] = attn_mask_startend_row_indices
+    else:
+        mask_kwargs = {
+            "config": config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": prepare_decoder_attention_mask,
+        }
+        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        causal_mask_mapping = {"full_attention": full_mask}
+        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
+        if has_sliding_layers:
+            (
+                causal_mask_mapping["sliding_attention"],
+                attn_mask_startend_row_indices_mapping["sliding_attention"],
+            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
+        if attn_mask_startend_row_indices is None and cache_length and seq_length > 1:
+            # Cached multi-token chunks need a bottom-right aligned causal mask.
+            full_mask = prepare_decoder_attention_mask(
+                attention_mask=(
+                    paddle.ones([batch_size, cache_length + seq_length], dtype="bool")
+                    if attention_mask is None
+                    else attention_mask
+                ),
+                input_shape=(batch_size, seq_length),
+                past_key_values_length=cache_length,
+                dtype=inputs_embeds.dtype,
+            )
+            causal_mask_mapping["full_attention"] = full_mask
+            attn_mask_startend_row_indices_mapping["full_attention"] = None
+        if past_key_values is not None:
+            cache_position = paddle.arange(cache_length, cache_length + seq_length, dtype="int64")
+            for attention_type in set(config.layer_types):
+                layer_idx = config.layer_types.index(attention_type)
+                kv_length, kv_offset = past_key_values.get_mask_sizes(cache_position, layer_idx)
+                mask = causal_mask_mapping[attention_type]
+                row_indices = attn_mask_startend_row_indices_mapping[attention_type]
+                if kv_offset:
+                    if row_indices is not None:
+                        raise NotImplementedError(
+                            "Cached sliding-window decoding with sparse row indices is not supported. "
+                            "Pass a dense attention_mask instead."
+                        )
+                    if mask is not None:
+                        mask = mask[..., kv_offset : kv_offset + kv_length]
+                    causal_mask_mapping[attention_type] = mask
+    return causal_mask_mapping, attn_mask_startend_row_indices_mapping
+
+
 class _SplitProjection(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, hidden_states, group):
@@ -653,68 +730,17 @@ class Olmo3Model(Olmo3PretrainedModel):
                 paddle.arange(kv_seq_len, seq_length + kv_seq_len, dtype=paddle.int64).unsqueeze(0).tile((bsz, 1))
             )
 
-        # Create separate masks for full_attention and sliding_attention
-        if isinstance(attention_mask, dict):
-            causal_mask_mapping = {}
-            attn_mask_startend_row_indices_mapping = {}
-            for attention_type, mask_result in attention_mask.items():
-                if isinstance(mask_result, tuple):
-                    (
-                        causal_mask_mapping[attention_type],
-                        attn_mask_startend_row_indices_mapping[attention_type],
-                    ) = mask_result
-                else:
-                    causal_mask_mapping[attention_type] = mask_result
-                    attn_mask_startend_row_indices_mapping[attention_type] = attn_mask_startend_row_indices
-        else:
-            mask_kwargs = {
-                "config": self.config,
-                "inputs_embeds": inputs_embeds,
-                "batch_size": bsz,
-                "seq_length": seq_length,
-                "cache_length": kv_seq_len,
-                "attention_mask": attention_mask,
-                "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
-                "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
-            }
-            full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
-            causal_mask_mapping = {"full_attention": full_mask}
-            attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
-            if self.has_sliding_layers:
-                (
-                    causal_mask_mapping["sliding_attention"],
-                    attn_mask_startend_row_indices_mapping["sliding_attention"],
-                ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
-            if attn_mask_startend_row_indices is None and kv_seq_len and seq_length > 1:
-                # Cached multi-token chunks need a bottom-right aligned causal mask.
-                full_mask = self._prepare_decoder_attention_mask(
-                    attention_mask=(
-                        paddle.ones([bsz, kv_seq_len + seq_length], dtype="bool")
-                        if attention_mask is None
-                        else attention_mask
-                    ),
-                    input_shape=(bsz, seq_length),
-                    past_key_values_length=kv_seq_len,
-                    dtype=inputs_embeds.dtype,
-                )
-                causal_mask_mapping["full_attention"] = full_mask
-                attn_mask_startend_row_indices_mapping["full_attention"] = None
-            if past_key_values is not None:
-                cache_position = paddle.arange(kv_seq_len, kv_seq_len + seq_length, dtype="int64")
-                for attention_type in set(self.config.layer_types):
-                    layer_idx = self.config.layer_types.index(attention_type)
-                    kv_length, kv_offset = past_key_values.get_mask_sizes(cache_position, layer_idx)
-                    mask = causal_mask_mapping[attention_type]
-                    row_indices = attn_mask_startend_row_indices_mapping[attention_type]
-                    if kv_offset:
-                        if row_indices is not None:
-                            raise NotImplementedError(
-                                "Cached sliding-window decoding with sparse row indices is not supported. "
-                                "Pass a dense attention_mask instead."
-                            )
-                        if mask is not None:
-                            mask = mask[..., kv_offset : kv_offset + kv_length]
-                        causal_mask_mapping[attention_type] = mask
+        causal_mask_mapping, attn_mask_startend_row_indices_mapping = _build_attention_masks(
+            config=self.config,
+            inputs_embeds=inputs_embeds,
+            batch_size=bsz,
+            seq_length=seq_length,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            prepare_decoder_attention_mask=self._prepare_decoder_attention_mask,
+            has_sliding_layers=self.has_sliding_layers,
+            past_key_values=past_key_values,
+        )
 
         hidden_states = inputs_embeds
 
@@ -936,20 +962,18 @@ class Olmo3EmbeddingPipe(nn.Layer):
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").unsqueeze(0).expand([batch_size, seq_length])
         sparse = mask is not None and mask.ndim >= 3 and mask.dtype == paddle.int32
-        mask_kwargs = {
-            "config": self.config,
-            "inputs_embeds": hidden_states,
-            "batch_size": batch_size,
-            "seq_length": seq_length,
-            "cache_length": 0,
-            "attention_mask": None if sparse else mask,
-            "attn_mask_startend_row_indices": mask if sparse else None,
-            "prepare_decoder_attention_mask": Olmo3Model._prepare_decoder_attention_mask,
-        }
-        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
-        sliding_mask, sliding_indices = None, None
-        if self.has_sliding_layers:
-            sliding_mask, sliding_indices = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
+        causal_masks, row_indices = _build_attention_masks(
+            config=self.config,
+            inputs_embeds=hidden_states,
+            batch_size=batch_size,
+            seq_length=seq_length,
+            attention_mask=None if sparse else mask,
+            attn_mask_startend_row_indices=mask if sparse else None,
+            prepare_decoder_attention_mask=Olmo3Model._prepare_decoder_attention_mask,
+            has_sliding_layers=self.has_sliding_layers,
+        )
+        full_mask, full_indices = causal_masks["full_attention"], row_indices["full_attention"]
+        sliding_mask, sliding_indices = causal_masks.get("sliding_attention"), row_indices.get("sliding_attention")
         ropes = paddle.stack(
             [
                 paddle.stack(self.rotary_embs["full_attention"](hidden_states, position_ids)),
