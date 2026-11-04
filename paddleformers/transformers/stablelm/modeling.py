@@ -762,11 +762,6 @@ class StableLmForCausalLM(StableLmPretrainedModel):
             attentions=outputs.attentions,
         )
 
-    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, inputs_embeds=None, **kwargs):
-        return super().prepare_inputs_for_generation(
-            input_ids, past_key_values=past_key_values, inputs_embeds=inputs_embeds, **kwargs
-        )
-
 
 class StableLmEmbeddingPipe(EmbeddingPipe):
     def forward(self, args):

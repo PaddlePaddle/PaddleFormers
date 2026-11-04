@@ -295,17 +295,19 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
                 outputs = loaded(input_ids, return_dict=True)
             self.assertEqual(outputs.logits.shape, [1, 4, 1024])
 
-    def test_generation_config_and_defaults(self):
+    def test_generation_and_forward_defaults(self):
         model = StableLmForCausalLM(
             self.model_tester.get_config(
                 qk_layernorm=True, use_cache=True, output_hidden_states=True, return_dict=True
             )
         )
         model.eval()
-        self.assertTrue(model.can_generate())
-        self.assertIsNotNone(model.generation_config)
         with paddle.no_grad():
             outputs = model(paddle.to_tensor([[1, 2, 3]]))
+            generated = model.generate(
+                paddle.to_tensor([[1, 2, 3]]), min_new_tokens=2, max_new_tokens=2, decode_strategy="greedy_search"
+            )
+        self.assertEqual(list(generated[0].shape), [1, 2])
         self.assertIsNotNone(outputs.past_key_values)
         self.assertEqual(len(outputs.hidden_states), 3)
         self.assertTrue(issubclass(StableLmForCausalLMPipe, paddle.distributed.fleet.meta_parallel.PipelineLayer))
