@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "weight",
+    "file": "initial.pdparams",
+    "bytes": 99595,
+    "sha256": "c3155341bb33cca7d73e67b9854a8d1825bfa942d8f89b87333803080154f96b"
+  },
+  {
+    "kind": "weight",
+    "file": "inference.pdparams",
+    "bytes": 99595,
+    "sha256": "e6214cfb34e455fe91b21efae86ce74f15e5621e4713526cf16ef5e66d00af2c"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/tokenizer.json",
+    "bytes": 14021,
+    "sha256": "5f9e112efc5fcab475aba3c75d32efad315728a8070bc499591f72960ca6f6c9"
+  },
+  {
+    "kind": "asset",
+    "file": "data/images24.npz",
+    "bytes": 3613374,
+    "sha256": "37ada9317bb4676633e6e4da9df5cdfd9c66e882fbcb2192cf95c405ffb2e3d5"
+  },
+  {
+    "kind": "asset",
+    "file": "data/images_manifest.json",
+    "bytes": 1655,
+    "sha256": "784f3ae0ed49f00e284557d2a21a6b92829e6963ccc0d32df47cbc2b0a467267"
+  }
+]
