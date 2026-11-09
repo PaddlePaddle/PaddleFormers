@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import math
 from copy import deepcopy
 
 from ..configuration_utils import PretrainedConfig, layer_type_validation
@@ -106,18 +105,6 @@ class Olmo3Config(PretrainedConfig):
         layer_types=None,
         **kwargs,
     ):
-        for name, value in (
-            ("vocab_size", vocab_size),
-            ("hidden_size", hidden_size),
-            ("intermediate_size", intermediate_size),
-            ("num_hidden_layers", num_hidden_layers),
-            ("num_attention_heads", num_attention_heads),
-            ("max_position_embeddings", max_position_embeddings),
-        ):
-            if value <= 0:
-                raise ValueError(f"{name} must be positive.")
-        if head_dim is None and hidden_size % num_attention_heads:
-            raise ValueError("hidden_size must be divisible by num_attention_heads when head_dim is omitted.")
         self.vocab_size = vocab_size
         self.max_position_embeddings = max_position_embeddings
         self.hidden_size = hidden_size
@@ -127,8 +114,6 @@ class Olmo3Config(PretrainedConfig):
 
         if num_key_value_heads is None:
             num_key_value_heads = num_attention_heads
-        if num_key_value_heads <= 0 or num_attention_heads % num_key_value_heads:
-            raise ValueError("num_key_value_heads must be a positive divisor of num_attention_heads.")
 
         self.num_key_value_heads = num_key_value_heads
         self.hidden_act = hidden_act
@@ -138,27 +123,11 @@ class Olmo3Config(PretrainedConfig):
         self.attention_dropout = attention_dropout
         self.rms_norm_eps = rms_norm_eps
         self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
-        if self.head_dim <= 0 or self.head_dim % 2:
-            raise ValueError("head_dim must be a positive even integer for OLMo3 rotary embeddings.")
-        if not 0.0 <= attention_dropout < 1.0:
-            raise ValueError("attention_dropout must be in [0, 1).")
-        for name, value in (
-            ("rope_theta", rope_theta),
-            ("rms_norm_eps", rms_norm_eps),
-            ("initializer_range", initializer_range),
-        ):
-            if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{name} must be positive and finite.")
 
         self.rope_theta = rope_theta
         self.rope_scaling = deepcopy(rope_scaling)
         self.rope_parameters = deepcopy(kwargs.pop("rope_parameters", rope_scaling))
-        if self.rope_parameters is not None and not isinstance(self.rope_parameters, dict):
-            raise ValueError("rope_parameters must be a dictionary.")
         standardize_rope_params(self, rope_theta=self.rope_theta)
-        resolved_theta = self.rope_parameters["rope_theta"]
-        if not isinstance(resolved_theta, (int, float)) or not math.isfinite(resolved_theta) or resolved_theta <= 0:
-            raise ValueError("rope_parameters.rope_theta must be positive and finite.")
         rope_config_validation(self)
 
         super().__init__(
@@ -177,7 +146,5 @@ class Olmo3Config(PretrainedConfig):
                 for i in range(self.num_hidden_layers)
             ]
         layer_type_validation(self.layer_types, self.num_hidden_layers)
-        if any(layer_type not in ("full_attention", "sliding_attention") for layer_type in self.layer_types):
-            raise ValueError("OLMo3 supports only full_attention and sliding_attention layers.")
         if "sliding_attention" in self.layer_types and (sliding_window is None or sliding_window <= 0):
             raise ValueError("sliding_window must be a positive integer when sliding attention is enabled.")

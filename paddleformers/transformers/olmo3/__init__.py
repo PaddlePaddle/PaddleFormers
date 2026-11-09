@@ -18,9 +18,9 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "tokenizer": ["Olmo3Tokenizer"],
     "configuration": ["Olmo3Config"],
     "modeling": [
+        "Olmo3ModelProvider",
         "Olmo3PretrainedModel",
         "Olmo3Model",
         "Olmo3ForCausalLM",
@@ -31,7 +31,6 @@ import_structure = {
 if TYPE_CHECKING:
     from .configuration import *
     from .modeling import *
-    from .tokenizer import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
