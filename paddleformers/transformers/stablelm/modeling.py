@@ -570,6 +570,28 @@ class StableLmModel(StableLmPretrainedModel):
         )
         self.rotary_emb = StableLmRotaryEmbedding(config=config)
 
+    @staticmethod
+    def _recompute_layer(
+        layer,
+        hidden_states,
+        attention_mask=None,
+        attn_mask_startend_row_indices=None,
+        position_ids=None,
+        position_embeddings=None,
+        past_key_values=None,
+        use_cache=False,
+    ):
+        # Keep Layer hooks without sharing the PP wrapper's unbound forward signature cache.
+        return layer(
+            hidden_states,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            position_ids=position_ids,
+            position_embeddings=position_embeddings,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+        )
+
     def forward(
         self,
         input_ids: paddle.Tensor | None = None,
@@ -583,6 +605,7 @@ class StableLmModel(StableLmPretrainedModel):
         output_hidden_states: bool | None = None,
         output_attentions: bool | None = None,
     ) -> BaseModelOutputWithPast | tuple:
+        """Run the model; attention weights are unsupported and requesting them raises ValueError."""
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         if output_attentions:
             raise ValueError("StableLM does not currently return attention weights")
@@ -658,7 +681,7 @@ class StableLmModel(StableLmPretrainedModel):
             if recompute_enabled:
                 layer_forward = partial(
                     recompute,
-                    type(decoder_layer).forward,
+                    self._recompute_layer,
                     decoder_layer,
                     use_reentrant=self.config.recompute_use_reentrant and not hidden_states.stop_gradient,
                 )
@@ -712,6 +735,7 @@ class StableLmForCausalLM(StableLmPretrainedModel):
         output_attentions: bool | None = None,
         **kwargs,
     ) -> CausalLMOutputWithPast | tuple:
+        """Compute causal LM outputs; requesting attention weights raises ValueError."""
         if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
             attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict

@@ -49,36 +49,15 @@ class StableLmConfig(PretrainedConfig):
         pad_token_id=None,
         **kwargs,
     ):
-        for name, value in {
-            "vocab_size": vocab_size,
-            "hidden_size": hidden_size,
-            "intermediate_size": intermediate_size,
-            "num_hidden_layers": num_hidden_layers,
-            "num_attention_heads": num_attention_heads,
-            "num_key_value_heads": num_key_value_heads,
-            "max_position_embeddings": max_position_embeddings,
-        }.items():
-            if value <= 0:
-                raise ValueError(f"{name} must be positive, got {value!r}")
         if hidden_size % num_attention_heads:
             raise ValueError("hidden_size must be divisible by num_attention_heads")
         if num_attention_heads % num_key_value_heads:
             raise ValueError("num_attention_heads must be divisible by num_key_value_heads")
-        for name, value in {"hidden_dropout": hidden_dropout, "attention_dropout": attention_dropout}.items():
-            if not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value < 1:
-                raise ValueError(f"{name} must be in [0, 1), got {value!r}")
         if not isinstance(partial_rotary_factor, (int, float)) or not 0 < partial_rotary_factor <= 1:
             raise ValueError("partial_rotary_factor must be in (0, 1]")
         rotary_dim = int(hidden_size // num_attention_heads * partial_rotary_factor)
         if rotary_dim <= 0 or rotary_dim % 2:
             raise ValueError("partial RoPE dimension must be positive and even")
-        for name, value in {
-            "layer_norm_eps": layer_norm_eps,
-            "initializer_range": initializer_range,
-            "rope_theta": rope_theta,
-        }.items():
-            if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-                raise ValueError(f"{name} must be positive and finite")
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size

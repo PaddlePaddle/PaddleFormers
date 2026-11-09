@@ -357,11 +357,17 @@ class StableLmModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         expected = reference(x, labels=x, use_cache=False, return_dict=True).loss
         expected.backward()
         layer = actual.model.layers[0]
+        hook_calls = []
+        pre_hook = layer.register_forward_pre_hook(lambda *_: hook_calls.append("pre"))
+        post_hook = layer.register_forward_post_hook(lambda *_: hook_calls.append("post"))
         with patch.object(layer.self_attn, "forward", wraps=layer.self_attn.forward) as forward:
             paddle.seed(123)
             observed = actual(x, labels=x, use_cache=True, return_dict=True).loss
+            self.assertEqual(hook_calls, ["pre", "post"])
             observed.backward()
             self.assertGreaterEqual(forward.call_count, 2)
+        pre_hook.remove()
+        post_hook.remove()
         paddle.testing.assert_close(observed, expected, rtol=1e-5, atol=1e-6)
         for (name, param), (_, other) in zip(reference.named_parameters(), actual.named_parameters()):
             if not param.stop_gradient:
