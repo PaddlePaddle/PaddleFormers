@@ -41,7 +41,7 @@
 |LLaMA4-Text|x|x|x|x|✓|✓|
 |MiniMax-Text-01|x|x|x|x|✓|✓|
 |OLMo2|✓|✓|-|x|✓|✓|
-|MiMo|✓|✓|-|x|✓|✓|
+|MiMo|x|x|-|x|x|x|
 |Phi4|✓|✓|-|x|✓|✓|
 |Qwen2|✓|✓|x|x|✓|✓|
 |Qwen3|✓|✓|✓|✓|✓|✓|

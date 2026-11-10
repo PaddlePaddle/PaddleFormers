@@ -118,7 +118,15 @@ def get_lora_target_modules(model):
             ".*mlp.w2.*",
             ".*mlp.c_proj.*",
         ]
-    elif model.config.model_type in {"qwen2", "mimo"}:
+    elif model.config.model_type == "mimo":
+        # MTP is checkpoint-only; do not add trainable adapters to its layers.
+        target_modules = [
+            "(?!.*mtp_layers).*qkv_proj.*",
+            "(?!.*mtp_layers).*up_gate_proj.*",
+            "(?!.*mtp_layers).*down_proj.*",
+            "(?!.*mtp_layers).*o_proj.*",
+        ]
+    elif model.config.model_type == "qwen2":
         target_modules = [
             ".*qkv_proj.*",
             ".*up_gate_proj.*",

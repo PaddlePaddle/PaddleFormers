@@ -14,6 +14,7 @@
 """Paddle MiMo model."""
 from __future__ import annotations
 
+import copy
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -24,13 +25,16 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as Qwen2MLP
 from ...nn.norm import Norm as GeneralNorm
+from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...utils.log import logger
 from ..cache_utils import Cache
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..qwen2.modeling import (
     Qwen2Attention,
-    Qwen2ForCausalLMPipe,
+    Qwen2DecoderLayer,
     Qwen2Model,
     Qwen2PretrainedModel,
+    Qwen2RotaryEmbedding,
 )
 from .configuration import MiMoConfig
 
@@ -104,8 +108,6 @@ class MiMoPretrainedModel(Qwen2PretrainedModel):
     def _gen_aoa_config(cls, config: MiMoConfig):
         aoa_config = super()._gen_aoa_config(config)
         model_prefix = "" if cls == cls.base_model_class else "model."
-        if not config.tie_word_embeddings and not getattr(cls, "is_fleet", False):
-            aoa_config["aoa_statements"] += ["lm_head.weight -> lm_head.weight"]
 
         for layer_id in range(config.num_nextn_predict_layers):
             mtp_prefix = f"model.mtp_layers.{layer_id}"
@@ -142,8 +144,6 @@ class MiMoPretrainedModel(Qwen2PretrainedModel):
     def _gen_inv_aoa_config(cls, config: MiMoConfig):
         aoa_config = super()._gen_inv_aoa_config(config)
         model_prefix = "" if cls == cls.base_model_class else "model."
-        if not config.tie_word_embeddings and not getattr(cls, "is_fleet", False):
-            aoa_config["aoa_statements"] += ["lm_head.weight -> lm_head.weight"]
 
         for layer_id in range(config.num_nextn_predict_layers):
             mtp_prefix = f"model.mtp_layers.{layer_id}"
@@ -174,14 +174,23 @@ class MiMoPretrainedModel(Qwen2PretrainedModel):
                     f"{mtp_prefix}.mlp.up_proj.weight, fused_ffn"
                 ),
             ]
-            for proj in ("q", "k", "v"):
-                aoa_config["aoa_statements"] += [
-                    f"{mtp_prefix}.self_attn.{proj}_proj.weight^T -> {mtp_prefix}.self_attn.{proj}_proj.weight"
-                ]
-            aoa_config["aoa_statements"] += [
-                f"{mtp_prefix}.mlp.gate_proj.weight^T -> {mtp_prefix}.mlp.gate_proj.weight",
-                f"{mtp_prefix}.mlp.up_proj.weight^T -> {mtp_prefix}.mlp.up_proj.weight",
-            ]
+        # Materialize macro outputs before serialization. The macros use
+        # intermediate names for grouped K/V and fused FFN projections.
+        for layer_id in range(config.num_hidden_layers):
+            for projection in ("k", "v"):
+                key = f"model.layers.{layer_id}.self_attn.{projection}_proj.bias"
+                aoa_config["aoa_statements"].append(f"{key} -> {key}")
+        for layer_id in range(config.num_nextn_predict_layers):
+            prefix = f"model.mtp_layers.{layer_id}"
+            for projection in ("q", "k", "v"):
+                key = f"{prefix}.self_attn.{projection}_proj.weight"
+                aoa_config["aoa_statements"].append(f"{key}^T -> {key}")
+            for projection in ("k", "v"):
+                key = f"{prefix}.self_attn.{projection}_proj.bias"
+                aoa_config["aoa_statements"].append(f"{key} -> {key}")
+            for projection in ("gate", "up"):
+                key = f"{prefix}.mlp.{projection}_proj.weight"
+                aoa_config["aoa_statements"].append(f"{key}^T -> {key}")
         return aoa_config
 
 
@@ -191,13 +200,13 @@ class MiMoModel(Qwen2Model):
     def __init__(self, config: MiMoConfig):
         super().__init__(config)
         self.mtp_layers = nn.LayerList([MiMoMTPLayer(config) for _ in range(config.num_nextn_predict_layers)])
+        # MTP tensors are retained for checkpoint round trips, not optimized by
+        # the causal-LM loss. An auxiliary MTP training objective is not enabled.
+        for parameter in self.mtp_layers.parameters():
+            parameter.stop_gradient = True
 
     def forward(self, *args, **kwargs) -> Union[Tuple, BaseModelOutputWithPast]:
         return super().forward(*args, **kwargs)
-
-
-class MiMoForCausalLMPipe(Qwen2ForCausalLMPipe):
-    config_class = MiMoConfig
 
 
 MiMoPretrainedModel.base_model_class = MiMoModel
@@ -211,7 +220,11 @@ class MiMoForCausalLM(MiMoPretrainedModel):
         super().__init__(config)
         self.model = MiMoModel(config)
         self.lm_head = GeneralLMHead(config)
-        self.criterion = CriterionLayer(config)
+        # The checkpoint MTP count describes stored auxiliary tensors, not an
+        # enabled training objective. Use the ordinary LM criterion explicitly.
+        loss_config = copy.copy(config)
+        loss_config.num_nextn_predict_layers = 0
+        self.criterion = CriterionLayer(loss_config)
         self.tie_weights()
 
     def forward(
@@ -229,6 +242,10 @@ class MiMoForCausalLM(MiMoPretrainedModel):
         **kwargs,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+            logger.warning("Both masks were supplied; using attn_mask_startend_row_indices.")
+            attention_mask = None
 
         outputs = self.model(
             input_ids=input_ids,
@@ -259,16 +276,28 @@ class MiMoForCausalLM(MiMoPretrainedModel):
         )
 
 
-class MiMoForCausalLMDeprecated(MiMoForCausalLM):
-    pass
+class MiMoForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = MiMoConfig
+    _decoder_layer_cls = Qwen2DecoderLayer
+    _init_weights = MiMoModel._init_weights
+    _keep_in_fp32_modules = MiMoModel._keep_in_fp32_modules
+    _rotary_emb_cls = Qwen2RotaryEmbedding
+    transpose_weight_keys = MiMoModel.transpose_weight_keys
+    _gen_aoa_config = MiMoForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = MiMoForCausalLM._gen_inv_aoa_config
+
+    def __init__(self, config, **kwargs):
+        if config.num_nextn_predict_layers:
+            raise ValueError(
+                "MiMo pipeline training requires num_nextn_predict_layers=0; MTP training is not enabled."
+            )
+        super().__init__(config, **kwargs)
 
 
 __all__ = [
-    "MiMoConfig",
     "MiMoModel",
     "MiMoPretrainedModel",
     "MiMoMTPLayer",
     "MiMoForCausalLM",
     "MiMoForCausalLMPipe",
-    "MiMoForCausalLMDeprecated",
 ]

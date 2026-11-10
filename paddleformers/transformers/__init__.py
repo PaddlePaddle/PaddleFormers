@@ -280,7 +280,6 @@ import_structure = {
         "MiMoMTPLayer",
         "MiMoForCausalLM",
         "MiMoForCausalLMPipe",
-        "MiMoForCausalLMDeprecated",
     ],
     "optimization": [
         "LinearDecayWithWarmup",

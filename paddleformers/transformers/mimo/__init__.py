@@ -20,13 +20,11 @@ from ...utils.lazy_import import _LazyModule
 import_structure = {
     "configuration": ["MiMoConfig"],
     "modeling": [
-        "MiMoConfig",
         "MiMoModel",
         "MiMoPretrainedModel",
         "MiMoMTPLayer",
         "MiMoForCausalLM",
         "MiMoForCausalLMPipe",
-        "MiMoForCausalLMDeprecated",
     ],
 }
 
