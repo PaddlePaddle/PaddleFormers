@@ -18,13 +18,10 @@ import unittest
 
 import paddle
 
-from paddleformers.transformers import MiniCPMConfig
 from paddleformers.transformers import (
-    MiniCPMForCausalLMDeprecated as MiniCPMForCausalLM,
-)
-from paddleformers.transformers import (
+    MiniCPMConfig,
+    MiniCPMForCausalLM,
     MiniCPMForSequenceClassification,
-    MiniCPMForTokenClassification,
     MiniCPMModel,
 )
 from tests.testing_utils import gpu_device_initializer
@@ -50,9 +47,6 @@ class MiniCPMModelTester:
         vocab_size=99,
         hidden_size=32,
         num_hidden_layers=5,
-        max_window_layers=5,
-        use_sliding_window=False,
-        sliding_window=1024,
         num_attention_heads=4,
         num_key_value_heads=2,
         intermediate_size=37,
@@ -79,9 +73,6 @@ class MiniCPMModelTester:
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
-        self.max_window_layers = max_window_layers
-        self.use_sliding_window = use_sliding_window
-        self.sliding_window = sliding_window
         self.num_attention_heads = num_attention_heads
         self.num_key_value_heads = num_key_value_heads
         self.intermediate_size = intermediate_size
@@ -122,9 +113,6 @@ class MiniCPMModelTester:
             vocab_size=self.vocab_size,
             hidden_size=self.hidden_size,
             num_hidden_layers=self.num_hidden_layers,
-            max_window_layers=self.max_window_layers,
-            use_sliding_window=self.use_sliding_window,
-            sliding_window=self.sliding_window,
             num_attention_heads=self.num_attention_heads,
             num_key_value_heads=self.num_key_value_heads,
             intermediate_size=self.intermediate_size,
@@ -285,7 +273,6 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     pipeline_model_mapping = {
         "feature-extraction": MiniCPMModel,
         "text-classification": MiniCPMForSequenceClassification,
-        "token-classification": MiniCPMForTokenClassification,
         "text-generation": MiniCPMForCausalLM,
         "zero-shot": MiniCPMForSequenceClassification,
     }
@@ -368,20 +355,6 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
         self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
 
-    def test_MiniCPM_token_classification_model(self):
-        config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
-        config.num_labels = 3
-        input_ids = input_dict["input_ids"]
-        attention_mask = paddle.not_equal(input_ids, paddle.ones_like(input_ids))
-        token_labels = ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.num_labels)
-        model = MiniCPMForTokenClassification(config=config)
-        model.eval()
-        result = model(input_ids, attention_mask=attention_mask, labels=token_labels, return_dict=True)
-        self.assertEqual(
-            result.logits.shape,
-            [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.num_labels],
-        )
-
     @unittest.skip("MiniCPM buffers include complex numbers, which breaks this test")
     def test_save_load_fast_init_from_base(self):
         pass
@@ -401,3 +374,115 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 @unittest.skip("MiniCPM D2S generation uses remote tiny checkpoint that will be added with CE assets.")
 class MiniCPMGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
     internal_testing_model = "PaddleFormers/tiny-random-minicpm"
+
+
+class MiniCPMReviewRegressionTest(unittest.TestCase):
+    def test_pp_component_chain_matches_forward_and_gradients(self):
+        import numpy as np
+
+        from paddleformers.nn.pp_model import (
+            EmbeddingPipe,
+            RMSNormPipe,
+            make_decoder_layer_pipe,
+        )
+        from paddleformers.transformers.minicpm.modeling import MiniCPMForCausalLMPipe
+
+        model = MiniCPMForCausalLM(self.config)
+        model.eval()
+        pipe_cls = MiniCPMForCausalLMPipe
+        embedding = EmbeddingPipe(self.config, pipe_cls._embed_cls, pipe_cls._rotary_emb_cls)
+        embedding.embed_tokens.set_state_dict(model.model.embed_tokens.state_dict())
+        decoder_cls = make_decoder_layer_pipe(pipe_cls._decoder_layer_cls)
+        layers = [decoder_cls(self.config, layer_idx=i) for i in range(self.config.num_hidden_layers)]
+        for layer, reference in zip(layers, model.model.layers):
+            layer.set_state_dict(reference.state_dict())
+            layer.eval()
+        norm = RMSNormPipe(self.config)
+        norm.set_state_dict(model.model.norm.state_dict())
+        head = pipe_cls._lmhead_pipe_cls(self.config)
+        head.set_state_dict(model.lm_head.state_dict())
+        if self.config.tie_word_embeddings:
+            head.weight = embedding.embed_tokens.weight
+        ids = paddle.to_tensor([[1, 2, 3]])
+        expected = model(ids)[0]
+        mask = paddle.tril(paddle.ones([1, 1, 3, 3], dtype="float32"))
+        actual = embedding((ids, mask))
+        for layer in layers:
+            actual = layer(actual)
+        actual = head(norm(actual))
+        np.testing.assert_allclose(actual.numpy(), expected.numpy(), rtol=1e-6, atol=1e-7)
+        actual.square().mean().backward()
+        expected.square().mean().backward()
+        np.testing.assert_allclose(
+            embedding.embed_tokens.weight.grad.numpy(),
+            model.model.embed_tokens.weight.grad.numpy(),
+            rtol=1e-5,
+            atol=1e-7,
+        )
+
+    def test_safetensors_flex_roundtrip(self):
+        import tempfile
+
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as directory:
+            model = MiniCPMForCausalLM(self.config)
+            model.eval()
+            ids = paddle.to_tensor([[1, 2, 3]])
+            expected = model(ids)[0].numpy()
+            model.save_pretrained(directory, safe_serialization=True)
+            restored = MiniCPMForCausalLM.from_pretrained(directory, load_checkpoint_format="flex_checkpoint")
+            restored.eval()
+            self.assertEqual(set(model.state_dict()), set(restored.state_dict()))
+            for name, value in model.state_dict().items():
+                np.testing.assert_array_equal(value.numpy(), restored.state_dict()[name].numpy(), err_msg=name)
+            np.testing.assert_array_equal(expected, restored(ids)[0].numpy())
+
+    def setUp(self):
+        paddle.set_device("cpu")
+        self.config = MiniCPMConfig(
+            vocab_size=32,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            scale_emb=3.0,
+            dim_model_base=8,
+            scale_depth=1.4,
+            _attn_implementation="eager",
+            fuse_rms_norm=False,
+        )
+
+    def test_hf_defaults(self):
+        config = MiniCPMConfig()
+        self.assertEqual((config.vocab_size, config.hidden_size, config.num_hidden_layers), (32000, 4096, 32))
+        self.assertEqual((config.bos_token_id, config.eos_token_id, config.pad_token_id), (1, 2, None))
+        self.assertEqual(config.num_key_value_heads, config.num_attention_heads)
+        self.assertEqual((config.scale_emb, config.dim_model_base, config.scale_depth), (1, 1, 1))
+        self.assertFalse(hasattr(config, "sliding_window"))
+
+    def test_pp_scaling_components(self):
+        import numpy as np
+
+        from paddleformers.transformers.minicpm.modeling import (
+            MiniCPMLMHeadPipe,
+            _create_scaled_embedding,
+        )
+
+        embedding = _create_scaled_embedding(self.config)
+        ids = paddle.to_tensor([[1, 2, 3]])
+        expected = paddle.nn.functional.embedding(ids, embedding.weight) * self.config.scale_emb
+        np.testing.assert_allclose(embedding(ids).numpy(), expected.numpy())
+        head = MiniCPMLMHeadPipe(self.config)
+        hidden = paddle.randn([1, 3, self.config.hidden_size])
+        expected = paddle.matmul(hidden / 2, head.weight, transpose_y=True)
+        np.testing.assert_allclose(head(hidden).numpy(), expected.numpy())
+
+    def test_cpu_forward_backward(self):
+        model = MiniCPMForCausalLM(self.config)
+        ids = paddle.to_tensor([[1, 2, 3]])
+        result = model(ids, labels=ids, return_dict=True)
+        self.assertEqual(list(result.logits.shape), [1, 3, 32])
+        result.loss.backward()
+        self.assertIsNotNone(model.model.embed_tokens.weight.grad)

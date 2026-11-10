@@ -20,10 +20,9 @@
 """Paddle MiniCPM model."""
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import paddle
-import paddle.distributed as dist
 from paddle import Tensor, nn
 from paddle.distributed.fleet.recompute.recompute import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
@@ -35,19 +34,14 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP as MiniCPMMLP
 from ...nn.norm import Norm as GeneralNorm
+from ...nn.pp_model import GeneralModelForCausalLMPipe, LMHeadPipe, parse_args
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..contrastive_loss import SimpleContrastiveLoss
-from ..embedding_utils import dist_gather_tensor_with_gradient
-from ..masking_utils import (
-    create_causal_mask_and_row_indices,
-    create_sliding_window_causal_mask_and_row_indices,
-)
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
     SequenceClassifierOutputWithPast,
-    TokenClassifierOutput,
 )
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
@@ -71,10 +65,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
 
 
 class MiniCPMAttention(nn.Layer):
-    """
-    Multi-headed attention from 'Attention Is All You Need' paper. Modified to use sliding window attention: Longformer
-    and "Generating Long Sequences with Sparse Transformers".
-    """
+    """Multi-headed causal self-attention."""
 
     def __init__(self, config: MiniCPMConfig, layer_idx: int = 0):
         super().__init__()
@@ -121,7 +112,6 @@ class MiniCPMAttention(nn.Layer):
             config=config,
             tp_plan="rowwise",
         )
-        self.sliding_window = config.sliding_window if config.layer_types[layer_idx] == "sliding_attention" else None
 
     def forward(
         self,
@@ -276,12 +266,11 @@ class MiniCPMPretrainedModel(PretrainedModel):
             ]
         }
 
-        if model_prefix != "model.":
-            aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
-                f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
-                f"model.norm.weight -> {model_prefix}norm.weight",
-            ]
+        aoa_config["aoa_statements"] += [
+            f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
+            f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
+            f"model.norm.weight -> {model_prefix}norm.weight",
+        ]
 
         if is_fleet:
             aoa_config["aoa_statements"] += [
@@ -467,9 +456,6 @@ class MiniCPMModel(MiniCPMPretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = MiniCPMRotaryEmbedding(config=config)
-        self.has_sliding_layers = getattr(
-            self.config, "sliding_window", None
-        ) is not None and "sliding_attention" in getattr(self.config, "layer_types", [])
 
     @paddle.jit.not_to_static
     def recompute_training_full(
@@ -563,12 +549,6 @@ class MiniCPMModel(MiniCPMPretrainedModel):
         causal_mask_mapping = {"full_attention": full_mask}
         attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
 
-        # if model has sliding layer
-        if self.has_sliding_layers:
-            (
-                causal_mask_mapping["sliding_attention"],
-                attn_mask_startend_row_indices_mapping["sliding_attention"],
-            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
         hidden_states = inputs_embeds
 
         # create position embeddings to be shared across the decoder layers
@@ -717,9 +697,6 @@ class MiniCPMForCausalLM(MiniCPMPretrainedModel):
         )
 
 
-MiniCPMForCausalLMDeprecated = MiniCPMForCausalLM
-
-
 class MiniCPMForSequenceClassification(MiniCPMPretrainedModel):
     def __init__(self, config: MiniCPMConfig):
         super().__init__(config)
@@ -814,148 +791,40 @@ class MiniCPMForSequenceClassification(MiniCPMPretrainedModel):
         )
 
 
-class MiniCPMForTokenClassification(MiniCPMPretrainedModel):
-    def __init__(self, config: MiniCPMConfig):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-        self.model = MiniCPMModel(config)
-        if getattr(config, "classifier_dropout", None) is not None:
-            classifier_dropout = config.classifier_dropout
-        elif getattr(config, "hidden_dropout", None) is not None:
-            classifier_dropout = config.hidden_dropout
-        else:
-            classifier_dropout = 0.1
-        self.dropout = nn.Dropout(classifier_dropout)
-        self.score = GeneralLinear.create(config.hidden_size, config.num_labels, has_bias=False, linear_type="default")
-
-    def forward(
-        self,
-        input_ids: paddle.Tensor = None,
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[paddle.Tensor] = None,
-        labels: Optional[paddle.Tensor] = None,
-        use_cache: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
-        r"""
-        labels (`paddle.Tensor` of shape `(batch_size,)`, *optional*):
-            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
-            config.num_labels - 1]`. If `config.num_labels == 1` a regression loss is computed (Mean-Square loss), If
-            `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-        """
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        outputs = self.model(
-            input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            return_dict=return_dict,
-        )
-        sequence_output = outputs[0]
-        sequence_output = self.dropout(sequence_output)
-        logits = self.score(sequence_output)
-
-        loss = None
-        if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            loss = loss_fct(logits.reshape([-1, self.num_labels]), labels.reshape([-1]))
-
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
-
-        return TokenClassifierOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
+def _scale_embedding_output(layer, inputs, output):
+    return output * layer.scale_emb
 
 
-class MiniCPMSentenceEmbedding(MiniCPMPretrainedModel):
-    def __init__(
-        self,
-        config: MiniCPMConfig,
-        embedding_temperature: float = 0.02,
-    ):
-        """MiniCPMSentenceEmbedding
-        For getting larger batch_size, we use tensor parallel to get larger batch_size.
+def _create_scaled_embedding(config):
+    embedding = GeneralEmbedding.create(config)
+    embedding.scale_emb = config.scale_emb
+    embedding.register_forward_post_hook(_scale_embedding_output)
+    return embedding
 
-        Args:
-            config (MiniCPMConfig): _description_
-            model (MiniCPMModel): _description_
-            embedding_temperature (float, optional): _description_. Defaults to 0.02.
-        """
-        super(MiniCPMSentenceEmbedding, self).__init__(config)
-        self.config = config
-        self.model = MiniCPMModel(config)
-        self.in_batch_negative_loss = SimpleContrastiveLoss(embedding_temperature)
-        self.world_size = dist.get_world_size()
-        self.process_rank = dist.get_rank()
-        self.embedding_negatives_cross_device = config.embedding_negatives_cross_device
-        if self.world_size <= 1:
-            self.embedding_negatives_cross_device = False
 
-    def forward(
-        self,
-        query: Optional[Dict[str, paddle.Tensor]] = None,
-        passages: Optional[Dict[str, paddle.Tensor]] = None,
-        return_encode=False,
-    ):
-        """forward"""
-        q_reps = self.encode(**query)
-        p_reps = self.encode(**passages)
+class MiniCPMLMHeadPipe(LMHeadPipe):
+    def forward(self, args):
+        hidden_states, _, _, _, _ = parse_args(args)
+        return GeneralLMHead.forward(self, hidden_states / (self.config.hidden_size / self.config.dim_model_base))
 
-        q_reps = nn.functional.normalize(q_reps, axis=-1)
-        p_reps = nn.functional.normalize(p_reps, axis=-1)
 
-        if return_encode:
-            return q_reps, p_reps
-
-        if self.embedding_negatives_cross_device:
-            q_reps = dist_gather_tensor_with_gradient(q_reps)
-            p_reps = dist_gather_tensor_with_gradient(p_reps)
-
-        loss = self.in_batch_negative_loss(q_reps, p_reps)
-        return loss
-
-    def encode(
-        self,
-        input_ids,
-        attention_mask=None,
-        position_ids=None,
-        embedding_indices=None,
-        return_dict=False,
-        **kwargs,
-    ):
-        """encode"""
-        input_type = type(input_ids)
-        outputs = self.model(
-            input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            return_dict=return_dict,
-            **kwargs,
-        )
-        if isinstance(outputs, input_type):
-            hidden_states = outputs
-        else:
-            hidden_states = outputs[0]
-        last_hidden_states = hidden_states.gather_nd(embedding_indices)
-        return last_hidden_states
+class MiniCPMForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = MiniCPMConfig
+    _decoder_layer_cls = MiniCPMDecoderLayer
+    _init_weights = MiniCPMModel._init_weights
+    _keep_in_fp32_modules = MiniCPMModel._keep_in_fp32_modules
+    _embed_cls = staticmethod(_create_scaled_embedding)
+    _rotary_emb_cls = MiniCPMRotaryEmbedding
+    _lmhead_pipe_cls = MiniCPMLMHeadPipe
+    transpose_weight_keys = MiniCPMModel.transpose_weight_keys
+    _gen_aoa_config = MiniCPMForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = MiniCPMForCausalLM._gen_inv_aoa_config
 
 
 __all__ = [
     "MiniCPMModel",
     "MiniCPMPretrainedModel",
     "MiniCPMForCausalLM",
+    "MiniCPMForCausalLMPipe",
     "MiniCPMForSequenceClassification",
-    "MiniCPMForTokenClassification",
-    "MiniCPMSentenceEmbedding",
-    "MiniCPMForCausalLMDeprecated",
 ]
