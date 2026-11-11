@@ -262,6 +262,17 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "llama4.configuration": ["Llama4Config", "Llama4TextConfig", "Llama4VisionConfig"],
+    "llama4.image_processor": ["Llama4ImageProcessor", "Llama4ImageProcessorKwargs"],
+    "llama4.image_processor_fast": ["Llama4ImageProcessorFast"],
+    "llama4.modeling": [
+        "Llama4ForCausalLM",
+        "Llama4TextDecoderLayer",
+        "Llama4TextModel",
+        "Llama4TextPretrainedModel",
+    ],
+    "llama4.multimodal": ["Llama4ForConditionalGeneration", "Llama4VisionEncoderLayer", "Llama4VisionModel"],
+    "llama4.processor": ["Llama4Processor", "Llama4ProcessorKwargs"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -372,7 +383,16 @@ import_structure = {
         "Qwen3NextForCausalLMPipe",
         "Qwen3NextPretrainingCriterion",
     ],
+    "molmo.configuration": ["MolmoConfig"],
+    "molmo.image_processing": ["MolmoImageProcessor"],
+    "molmo.modeling": [
+        "MolmoModel",
+        "MolmoPretrainedModel",
+        "MolmoForCausalLM",
+    ],
+    "molmo.processing": ["MolmoProcessor"],
     "llama": [],
+    "llama4": [],
     "qwen2": [],
     "glm_ocr": [],
     "qwen3": [],
@@ -385,6 +405,7 @@ import_structure = {
     "qwen3_vl": [],
     "qwen3_5": [],
     "qwen3_vl_moe": [],
+    "molmo": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
@@ -601,6 +622,7 @@ if TYPE_CHECKING:
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .molmo import *
     from .olmo2 import *
     from .intern_lm3 import *
     from .intern_lm2_5 import *

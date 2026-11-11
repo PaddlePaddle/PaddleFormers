@@ -1,30 +1,36 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Paddle Idefics3 image processor."""
 
 from __future__ import annotations
 
 import math
-from io import BytesIO
-from urllib.request import urlopen
 
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image
 
 from ..feature_extraction_utils import BatchFeature
 from ..image_processing_utils import BaseImageProcessor
-from ..image_utils import IMAGENET_STANDARD_MEAN, IMAGENET_STANDARD_STD
+from ..image_utils import IMAGENET_STANDARD_MEAN, IMAGENET_STANDARD_STD, load_image
 
 MAX_IMAGE_SIZE = 4096
 
 
 def _to_pil(image) -> Image.Image:
-    if isinstance(image, str):
-        with urlopen(image) as response:
-            image = Image.open(BytesIO(response.read()))
-    if isinstance(image, Image.Image):
-        return ImageOps.exif_transpose(image).convert("RGB")
+    if isinstance(image, (str, Image.Image)):
+        return load_image(image)
     if hasattr(image, "numpy"):
         image = image.numpy()
     array = np.asarray(image)
@@ -169,7 +175,6 @@ class Idefics3ImageProcessor(BaseImageProcessor):
         do_rescale = kwargs.get("do_rescale", self.do_rescale)
         do_normalize = kwargs.get("do_normalize", self.do_normalize)
         do_image_splitting = kwargs.get("do_image_splitting", self.do_image_splitting)
-        do_pad = kwargs.get("do_pad", self.do_pad)
         return_row_col_info = kwargs.get("return_row_col_info", self.return_row_col_info)
         size = kwargs.get("size", self.size)
         max_image_size = kwargs.get("max_image_size", self.max_image_size)
@@ -201,20 +206,18 @@ class Idefics3ImageProcessor(BaseImageProcessor):
             rows.append(sample_rows)
             cols.append(sample_cols)
 
-        if do_pad:
-            max_height = max((image.shape[-2] for sample in processed_samples for image in sample), default=1)
-            max_width = max((image.shape[-1] for sample in processed_samples for image in sample), default=1)
-            num_images = sum(len(sample) for sample in processed_samples)
-            pixel_values = np.zeros((num_images, 3, max_height, max_width), dtype="float32")
-            image_idx = 0
-            for sample in processed_samples:
-                for image in sample:
-                    _, height, width = image.shape
-                    pixel_values[image_idx, :, :height, :width] = image
-                    image_idx += 1
-            data = {"pixel_values": pixel_values}
-        else:
-            data = {"pixel_values": processed_samples}
+        # The model consumes a flat [num_images, channels, height, width] tensor.
+        # Keep that shape for every input batch, including callers that pass
+        # ``do_pad=False``; returning nested samples here becomes a 5-D tensor
+        # during collation and breaks batches containing more than one sample.
+        flat_images = [image for sample in processed_samples for image in sample]
+        max_height = max((image.shape[-2] for image in flat_images), default=1)
+        max_width = max((image.shape[-1] for image in flat_images), default=1)
+        pixel_values = np.zeros((len(flat_images), 3, max_height, max_width), dtype="float32")
+        for image_idx, image in enumerate(flat_images):
+            _, height, width = image.shape
+            pixel_values[image_idx, :, :height, :width] = image
+        data = {"pixel_values": pixel_values}
 
         if return_row_col_info:
             data["rows"] = rows
@@ -242,12 +245,10 @@ class Idefics3ImageProcessor(BaseImageProcessor):
             max_size = _longest_edge(max_image_size)
             if width >= height:
                 resized_width = math.ceil(width / max_size) * max_size
-                resized_height = int(width / aspect_ratio)
-                resized_height = math.ceil(height / max_size) * max_size
+                resized_height = math.ceil((resized_width / aspect_ratio) / max_size) * max_size
             else:
                 resized_height = math.ceil(height / max_size) * max_size
-                resized_width = int(height * aspect_ratio)
-                resized_width = math.ceil(width / max_size) * max_size
+                resized_width = math.ceil((resized_height * aspect_ratio) / max_size) * max_size
             if resized_height > max_size or resized_width > max_size:
                 num_rows = math.ceil(resized_height / max_size)
                 num_cols = math.ceil(resized_width / max_size)

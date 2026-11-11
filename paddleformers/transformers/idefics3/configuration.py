@@ -1,6 +1,17 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Idefics3 model configuration."""
 
 from ..auto.configuration import CONFIG_MAPPING
@@ -42,8 +53,19 @@ class Idefics3VisionConfig(PretrainedConfig):
 
 class Idefics3Config(PretrainedConfig):
     model_type = "idefics3"
+    is_composition = True
     sub_configs = {"vision_config": Idefics3VisionConfig, "text_config": CONFIG_MAPPING}
     keys_to_ignore_at_inference = ["past_key_values"]
+    _text_config_passthrough_exclusions = {
+        "_name_or_path",
+        "model_type",
+        "dtype",
+        "_attn_implementation_internal",
+        "architectures",
+        "sub_configs",
+        "vision_config",
+        "text_config",
+    }
 
     def __init__(
         self,
@@ -78,14 +100,16 @@ class Idefics3Config(PretrainedConfig):
         self.use_cache = use_cache
         self.image_token_id = image_token_id
         self.scale_factor = scale_factor
+        self.architectures = kwargs.get("architectures", ["Idefics3ForConditionalGeneration"])
         if "_attn_implementation" in kwargs:
             self.vision_config._attn_implementation = kwargs["_attn_implementation"]
             self.text_config._attn_implementation = kwargs["_attn_implementation"]
 
     def __setattr__(self, key, value):
+        text_config = super().__getattribute__("__dict__").get("text_config")
         if (
-            (text_config := super().__getattribute__("__dict__").get("text_config")) is not None
-            and key not in ["_name_or_path", "model_type", "dtype", "_attn_implementation_internal"]
+            text_config is not None
+            and key not in self._text_config_passthrough_exclusions
             and key in text_config.__dict__
         ):
             setattr(text_config, key, value)
@@ -93,14 +117,10 @@ class Idefics3Config(PretrainedConfig):
             super().__setattr__(key, value)
 
     def __getattribute__(self, key):
-        if "text_config" in super().__getattribute__("__dict__") and key not in [
-            "_name_or_path",
-            "model_type",
-            "dtype",
-            "_attn_implementation_internal",
-        ]:
-            text_config = super().__getattribute__("text_config")
-            if key in text_config.__dict__:
+        if key not in super().__getattribute__("_text_config_passthrough_exclusions"):
+            config_dict = super().__getattribute__("__dict__")
+            text_config = config_dict.get("text_config")
+            if text_config is not None and key in text_config.__dict__:
                 return getattr(text_config, key)
         return super().__getattribute__(key)
 

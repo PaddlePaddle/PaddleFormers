@@ -1,6 +1,17 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Paddle Idefics3 model."""
 
 from __future__ import annotations
@@ -11,13 +22,12 @@ from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.nn as nn
-import paddle.nn.functional as F
 
 from ...generation import GenerationMixin
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ..activations import ACT2FN
-from ..auto.modeling import AutoModel
 from ..llama.modeling import LlamaModel
 from ..model_outputs import (
     BaseModelOutput,
@@ -100,6 +110,7 @@ class Idefics3VisionEmbeddings(nn.Layer):
 class Idefics3VisionAttention(nn.Layer):
     def __init__(self, config: Idefics3VisionConfig):
         super().__init__()
+        self.config = config
         self.embed_dim = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.head_dim = self.embed_dim // self.num_heads
@@ -122,13 +133,18 @@ class Idefics3VisionAttention(nn.Layer):
         query = self._shape(self.q_proj(hidden_states), batch_size, seq_len)
         key = self._shape(self.k_proj(hidden_states), batch_size, seq_len)
         value = self._shape(self.v_proj(hidden_states), batch_size, seq_len)
-        attn_weights = paddle.matmul(query, key, transpose_y=True) * self.scale
-        if attention_mask is not None:
-            attn_weights = attn_weights + attention_mask
-        attn_weights = F.softmax(attn_weights.astype("float32"), axis=-1).astype(query.dtype)
-        attn_weights = F.dropout(attn_weights, p=self.dropout, training=self.training)
-        attn_output = paddle.matmul(attn_weights, value)
-        attn_output = attn_output.transpose([0, 2, 1, 3]).reshape([batch_size, seq_len, self.embed_dim])
+        attention_interface = ALL_ATTENTION_FUNCTIONS[
+            getattr(self.config, "_attn_implementation", "eager")
+        ]
+        attn_output, attn_weights = attention_interface(
+            self,
+            query,
+            key,
+            value,
+            attention_mask=attention_mask,
+            dropout=0.0 if not self.training else self.dropout,
+            scaling=self.scale,
+        )
         return self.out_proj(attn_output), attn_weights
 
 
@@ -227,8 +243,6 @@ class Idefics3PreTrainedModel(PretrainedModel):
         prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
         text_src = "model.text_model"
         text_dst = f"{prefix}text_model"
-        text_layers = getattr(config.text_config, "num_hidden_layers", 0)
-
         statements = [
             "lm_head.weight -> lm_head.weight",
             f"model.connector.modality_projection.proj.weight^T -> {prefix}connector.modality_projection.proj.weight",
@@ -241,46 +255,44 @@ class Idefics3PreTrainedModel(PretrainedModel):
             f"{text_src}.norm.weight -> {text_dst}.norm.weight",
         ]
 
-        for layer_id in range(config.vision_config.num_hidden_layers):
-            src = f"model.vision_model.encoder.layers.{layer_id}"
-            dst = f"{prefix}vision_model.encoder.layers.{layer_id}"
-            statements.extend(
-                [
-                    f"{src}.self_attn.q_proj.weight^T -> {dst}.self_attn.q_proj.weight",
-                    f"{src}.self_attn.q_proj.bias -> {dst}.self_attn.q_proj.bias",
-                    f"{src}.self_attn.k_proj.weight^T -> {dst}.self_attn.k_proj.weight",
-                    f"{src}.self_attn.k_proj.bias -> {dst}.self_attn.k_proj.bias",
-                    f"{src}.self_attn.v_proj.weight^T -> {dst}.self_attn.v_proj.weight",
-                    f"{src}.self_attn.v_proj.bias -> {dst}.self_attn.v_proj.bias",
-                    f"{src}.self_attn.out_proj.weight^T -> {dst}.self_attn.out_proj.weight",
-                    f"{src}.self_attn.out_proj.bias -> {dst}.self_attn.out_proj.bias",
-                    f"{src}.layer_norm1.weight -> {dst}.layer_norm1.weight",
-                    f"{src}.layer_norm1.bias -> {dst}.layer_norm1.bias",
-                    f"{src}.mlp.fc1.weight^T -> {dst}.mlp.fc1.weight",
-                    f"{src}.mlp.fc1.bias -> {dst}.mlp.fc1.bias",
-                    f"{src}.mlp.fc2.weight^T -> {dst}.mlp.fc2.weight",
-                    f"{src}.mlp.fc2.bias -> {dst}.mlp.fc2.bias",
-                    f"{src}.layer_norm2.weight -> {dst}.layer_norm2.weight",
-                    f"{src}.layer_norm2.bias -> {dst}.layer_norm2.bias",
-                ]
-            )
+        vision_src = "model.vision_model.encoder.layers.$LAYER_ID"
+        vision_dst = f"{prefix}vision_model.encoder.layers.$LAYER_ID"
+        statements.extend(
+            [
+                f"{vision_src}.self_attn.q_proj.weight^T -> {vision_dst}.self_attn.q_proj.weight",
+                f"{vision_src}.self_attn.q_proj.bias -> {vision_dst}.self_attn.q_proj.bias",
+                f"{vision_src}.self_attn.k_proj.weight^T -> {vision_dst}.self_attn.k_proj.weight",
+                f"{vision_src}.self_attn.k_proj.bias -> {vision_dst}.self_attn.k_proj.bias",
+                f"{vision_src}.self_attn.v_proj.weight^T -> {vision_dst}.self_attn.v_proj.weight",
+                f"{vision_src}.self_attn.v_proj.bias -> {vision_dst}.self_attn.v_proj.bias",
+                f"{vision_src}.self_attn.out_proj.weight^T -> {vision_dst}.self_attn.out_proj.weight",
+                f"{vision_src}.self_attn.out_proj.bias -> {vision_dst}.self_attn.out_proj.bias",
+                f"{vision_src}.layer_norm1.weight -> {vision_dst}.layer_norm1.weight",
+                f"{vision_src}.layer_norm1.bias -> {vision_dst}.layer_norm1.bias",
+                f"{vision_src}.mlp.fc1.weight^T -> {vision_dst}.mlp.fc1.weight",
+                f"{vision_src}.mlp.fc1.bias -> {vision_dst}.mlp.fc1.bias",
+                f"{vision_src}.mlp.fc2.weight^T -> {vision_dst}.mlp.fc2.weight",
+                f"{vision_src}.mlp.fc2.bias -> {vision_dst}.mlp.fc2.bias",
+                f"{vision_src}.layer_norm2.weight -> {vision_dst}.layer_norm2.weight",
+                f"{vision_src}.layer_norm2.bias -> {vision_dst}.layer_norm2.bias",
+            ]
+        )
 
-        for layer_id in range(text_layers):
-            src_l = f"{text_src}.layers.{layer_id}"
-            dst_l = f"{text_dst}.layers.{layer_id}"
-            statements.extend(
-                [
-                    f"{src_l}.self_attn.q_proj.weight^T -> {dst_l}.self_attn.q_proj.weight",
-                    f"{src_l}.self_attn.k_proj.weight^T -> {dst_l}.self_attn.k_proj.weight",
-                    f"{src_l}.self_attn.v_proj.weight^T -> {dst_l}.self_attn.v_proj.weight",
-                    f"{src_l}.self_attn.o_proj.weight^T -> {dst_l}.self_attn.o_proj.weight",
-                    f"{src_l}.input_layernorm.weight -> {dst_l}.input_layernorm.weight",
-                    f"{src_l}.post_attention_layernorm.weight -> {dst_l}.post_attention_layernorm.weight",
-                    f"{src_l}.mlp.gate_proj.weight^T -> {dst_l}.mlp.gate_proj.weight",
-                    f"{src_l}.mlp.up_proj.weight^T -> {dst_l}.mlp.up_proj.weight",
-                    f"{src_l}.mlp.down_proj.weight^T -> {dst_l}.mlp.down_proj.weight",
-                ]
-            )
+        text_src = f"{text_src}.layers.$LAYER_ID"
+        text_dst = f"{text_dst}.layers.$LAYER_ID"
+        statements.extend(
+            [
+                f"{text_src}.self_attn.q_proj.weight^T -> {text_dst}.self_attn.q_proj.weight",
+                f"{text_src}.self_attn.k_proj.weight^T -> {text_dst}.self_attn.k_proj.weight",
+                f"{text_src}.self_attn.v_proj.weight^T -> {text_dst}.self_attn.v_proj.weight",
+                f"{text_src}.self_attn.o_proj.weight^T -> {text_dst}.self_attn.o_proj.weight",
+                f"{text_src}.input_layernorm.weight -> {text_dst}.input_layernorm.weight",
+                f"{text_src}.post_attention_layernorm.weight -> {text_dst}.post_attention_layernorm.weight",
+                f"{text_src}.mlp.gate_proj.weight^T -> {text_dst}.mlp.gate_proj.weight",
+                f"{text_src}.mlp.up_proj.weight^T -> {text_dst}.mlp.up_proj.weight",
+                f"{text_src}.mlp.down_proj.weight^T -> {text_dst}.mlp.down_proj.weight",
+            ]
+        )
 
         return {"aoa_statements": statements}
 
@@ -308,29 +320,28 @@ class Idefics3VisionTransformer(Idefics3PreTrainedModel):
             "model.vision_model.post_layernorm.weight -> post_layernorm.weight",
             "model.vision_model.post_layernorm.bias -> post_layernorm.bias",
         ]
-        for layer_id in range(config.num_hidden_layers):
-            src = f"model.vision_model.encoder.layers.{layer_id}"
-            dst = f"encoder.layers.{layer_id}"
-            statements.extend(
-                [
-                    f"{src}.self_attn.q_proj.weight^T -> {dst}.self_attn.q_proj.weight",
-                    f"{src}.self_attn.q_proj.bias -> {dst}.self_attn.q_proj.bias",
-                    f"{src}.self_attn.k_proj.weight^T -> {dst}.self_attn.k_proj.weight",
-                    f"{src}.self_attn.k_proj.bias -> {dst}.self_attn.k_proj.bias",
-                    f"{src}.self_attn.v_proj.weight^T -> {dst}.self_attn.v_proj.weight",
-                    f"{src}.self_attn.v_proj.bias -> {dst}.self_attn.v_proj.bias",
-                    f"{src}.self_attn.out_proj.weight^T -> {dst}.self_attn.out_proj.weight",
-                    f"{src}.self_attn.out_proj.bias -> {dst}.self_attn.out_proj.bias",
-                    f"{src}.layer_norm1.weight -> {dst}.layer_norm1.weight",
-                    f"{src}.layer_norm1.bias -> {dst}.layer_norm1.bias",
-                    f"{src}.mlp.fc1.weight^T -> {dst}.mlp.fc1.weight",
-                    f"{src}.mlp.fc1.bias -> {dst}.mlp.fc1.bias",
-                    f"{src}.mlp.fc2.weight^T -> {dst}.mlp.fc2.weight",
-                    f"{src}.mlp.fc2.bias -> {dst}.mlp.fc2.bias",
-                    f"{src}.layer_norm2.weight -> {dst}.layer_norm2.weight",
-                    f"{src}.layer_norm2.bias -> {dst}.layer_norm2.bias",
-                ]
-            )
+        src = "model.vision_model.encoder.layers.$LAYER_ID"
+        dst = "encoder.layers.$LAYER_ID"
+        statements.extend(
+            [
+                f"{src}.self_attn.q_proj.weight^T -> {dst}.self_attn.q_proj.weight",
+                f"{src}.self_attn.q_proj.bias -> {dst}.self_attn.q_proj.bias",
+                f"{src}.self_attn.k_proj.weight^T -> {dst}.self_attn.k_proj.weight",
+                f"{src}.self_attn.k_proj.bias -> {dst}.self_attn.k_proj.bias",
+                f"{src}.self_attn.v_proj.weight^T -> {dst}.self_attn.v_proj.weight",
+                f"{src}.self_attn.v_proj.bias -> {dst}.self_attn.v_proj.bias",
+                f"{src}.self_attn.out_proj.weight^T -> {dst}.self_attn.out_proj.weight",
+                f"{src}.self_attn.out_proj.bias -> {dst}.self_attn.out_proj.bias",
+                f"{src}.layer_norm1.weight -> {dst}.layer_norm1.weight",
+                f"{src}.layer_norm1.bias -> {dst}.layer_norm1.bias",
+                f"{src}.mlp.fc1.weight^T -> {dst}.mlp.fc1.weight",
+                f"{src}.mlp.fc1.bias -> {dst}.mlp.fc1.bias",
+                f"{src}.mlp.fc2.weight^T -> {dst}.mlp.fc2.weight",
+                f"{src}.mlp.fc2.bias -> {dst}.mlp.fc2.bias",
+                f"{src}.layer_norm2.weight -> {dst}.layer_norm2.weight",
+                f"{src}.layer_norm2.bias -> {dst}.layer_norm2.bias",
+            ]
+        )
         return {"aoa_statements": statements}
 
     def __init__(self, config: Idefics3VisionConfig):
@@ -379,7 +390,10 @@ class Idefics3Model(Idefics3PreTrainedModel):
         if getattr(config.text_config, "model_type", None) == "llama":
             self.text_model = LlamaModel(config.text_config)
         else:
-            self.text_model = AutoModel.from_config(config.text_config)
+            raise ValueError(
+                "Idefics3 currently supports only a Llama text_config, "
+                f"but received model_type={getattr(config.text_config, 'model_type', None)!r}."
+            )
         self.image_token_id = config.image_token_id
         self.image_seq_len = int(
             ((config.vision_config.image_size // config.vision_config.patch_size) ** 2) / (config.scale_factor**2)
@@ -613,23 +627,62 @@ class Idefics3ForConditionalGeneration(Idefics3PreTrainedModel, GenerationMixin)
             model_inputs["image_hidden_states"] = None
         return model_inputs
 
-    @staticmethod
-    def expand_inputs_for_generation(input_ids, expand_size, attention_mask=None, **model_kwargs):
-        if expand_size == 1:
-            if attention_mask is not None:
-                model_kwargs["attention_mask"] = attention_mask
-            return input_ids, model_kwargs
+    def _get_image_tile_nums(self, input_ids):
+        """Return the number of encoded visual tiles belonging to each sample.
 
-        input_ids, model_kwargs = GenerationMixin.expand_inputs_for_generation(
+        ``pixel_values`` and ``image_hidden_states`` are flattened over the
+        batch by the processor.  During sampling/beam search the text batch is
+        expanded, so visual inputs have to be expanded by sample boundaries as
+        well.  Every visual tile contributes exactly ``image_seq_len`` image
+        tokens to its sample prompt.
+        """
+        if input_ids is None:
+            raise ValueError("`input_ids` is required to determine image tile counts.")
+
+        image_token_counts = (input_ids == self.image_token_id).astype("int64").sum(axis=1)
+        image_seq_len = int(self.model.image_seq_len)
+        if image_seq_len <= 0:
+            raise ValueError(f"`image_seq_len` must be positive, got {image_seq_len}.")
+
+        remainder = image_token_counts % image_seq_len
+        if bool(paddle.any(remainder).item()):
+            counts = image_token_counts.numpy().tolist()
+            raise ValueError(
+                "The number of image tokens in each sample must be divisible by "
+                f"image_seq_len={image_seq_len}; got counts={counts}."
+            )
+
+        return [int(value) for value in (image_token_counts // image_seq_len).numpy().tolist()]
+
+    def expand_inputs_for_generation(self, input_ids, expand_size, attention_mask=None, **model_kwargs):
+        source_input_ids = input_ids
+        input_ids, model_kwargs = super().expand_inputs_for_generation(
             input_ids,
-            expand_size,
+            expand_size=expand_size,
             attention_mask=attention_mask,
             **model_kwargs,
         )
+        if expand_size == 1:
+            return input_ids, model_kwargs
 
-        image_hidden_states = model_kwargs.get("image_hidden_states")
-        if image_hidden_states is not None:
-            model_kwargs["image_hidden_states"] = image_hidden_states.repeat_interleave(expand_size, axis=0)
+        image_tile_nums = self._get_image_tile_nums(source_input_ids)
+
+        def _repeat_interleave_samples(x, lengths, repeat_times):
+            if sum(lengths) != x.shape[0]:
+                raise ValueError(
+                    f"Image inputs do not match the image tokens: expected {sum(lengths)} visual samples, "
+                    f"but got {x.shape[0]}."
+                )
+            samples = paddle.split(x, lengths, axis=0)
+            repeat_args = [repeat_times] + [1] * (x.ndim - 1)
+            return paddle.concat([sample.tile(repeat_args) for sample in samples], axis=0)
+
+        for key in ("pixel_values", "image_hidden_states"):
+            visual_inputs = model_kwargs.get(key)
+            if visual_inputs is not None:
+                model_kwargs[key] = _repeat_interleave_samples(
+                    visual_inputs, lengths=image_tile_nums, repeat_times=expand_size
+                )
         return input_ids, model_kwargs
 
 

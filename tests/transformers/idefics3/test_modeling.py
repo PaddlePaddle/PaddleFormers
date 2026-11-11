@@ -1,6 +1,17 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from __future__ import annotations
 
 import copy
@@ -249,6 +260,44 @@ class Idefics3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
         self.assertEqual(outputs.last_hidden_state.shape, [1, 3, config.text_config.hidden_size])
         self.assertEqual(outputs.image_hidden_states.shape, [1, 1, config.text_config.hidden_size])
 
+    def test_expand_inputs_for_generation_keeps_per_sample_image_boundaries(self):
+        config = self.model_tester.get_config()
+        model = Idefics3ForConditionalGeneration(config).eval()
+        image_seq_len = model.model.image_seq_len
+        input_ids = paddle.to_tensor(
+            [
+                [1] + [self.model_tester.image_token_id] * image_seq_len + [5],
+                [1, 6, self.model_tester.pad_token_id],
+            ],
+            dtype="int64",
+        )
+        attention_mask = paddle.ones_like(input_ids)
+        image_hidden_states = paddle.arange(
+            config.text_config.hidden_size,
+            dtype="float32",
+        ).reshape([1, 1, config.text_config.hidden_size])
+
+        expanded_ids, expanded_kwargs = model.expand_inputs_for_generation(
+            input_ids,
+            expand_size=2,
+            attention_mask=attention_mask,
+            image_hidden_states=image_hidden_states,
+        )
+
+        self.assertEqual(expanded_ids.shape[0], 4)
+        self.assertEqual(expanded_kwargs["attention_mask"].shape[0], 4)
+        self.assertEqual(expanded_kwargs["image_hidden_states"].shape[0], 2)
+        self.assertTrue(
+            paddle.allclose(
+                expanded_kwargs["image_hidden_states"][0], image_hidden_states[0]
+            )
+        )
+        self.assertTrue(
+            paddle.allclose(
+                expanded_kwargs["image_hidden_states"][1], image_hidden_states[0]
+            )
+        )
+
     def test_model_rejects_5d_pixel_values(self):
         config = self.model_tester.get_config()
         model = Idefics3Model(config)
@@ -368,6 +417,56 @@ class Idefics3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
 
             self.assertEqual(outputs[0].shape[0], inputs_dict["input_ids"].shape[0] * 2)
             self.assertEqual(outputs[0].shape[1], inputs_dict["input_ids"].shape[1] + self.max_new_tokens)
+
+
+class Idefics3GenerationExpansionTest(unittest.TestCase):
+    def test_visual_inputs_are_expanded_per_sample(self):
+        config = Idefics3Config(
+            image_token_id=4,
+            pad_token_id=0,
+            scale_factor=2,
+            text_config={
+                "model_type": "llama",
+                "hidden_size": 8,
+                "intermediate_size": 16,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 2,
+                "num_key_value_heads": 2,
+                "vocab_size": 16,
+                "max_position_embeddings": 16,
+                "fuse_rms_norm": False,
+            },
+            vision_config={
+                "hidden_size": 4,
+                "intermediate_size": 8,
+                "num_hidden_layers": 1,
+                "num_attention_heads": 2,
+                "image_size": 8,
+                "patch_size": 4,
+            },
+        )
+        model = Idefics3ForConditionalGeneration(config).eval()
+        input_ids = paddle.to_tensor([[1, 4, 5], [1, 4, 4]], dtype="int64")
+        attention_mask = paddle.ones(input_ids.shape, dtype="int64")
+        pixel_values = paddle.arange(3 * 3 * 8 * 8, dtype="float32").reshape([3, 3, 8, 8])
+        image_hidden_states = paddle.arange(3 * 1 * 8, dtype="float32").reshape([3, 1, 8])
+
+        expanded_ids, model_kwargs = model.expand_inputs_for_generation(
+            input_ids,
+            expand_size=2,
+            attention_mask=attention_mask,
+            pixel_values=pixel_values,
+            image_hidden_states=image_hidden_states,
+        )
+
+        self.assertEqual(expanded_ids.shape, [4, 3])
+        self.assertEqual(model_kwargs["attention_mask"].shape, [4, 3])
+        self.assertEqual(model_kwargs["pixel_values"].shape, [6, 3, 8, 8])
+        self.assertEqual(model_kwargs["image_hidden_states"].shape, [6, 1, 8])
+        self.assertTrue(paddle.equal_all(model_kwargs["pixel_values"][0], pixel_values[0]))
+        self.assertTrue(paddle.equal_all(model_kwargs["pixel_values"][1], pixel_values[0]))
+        self.assertTrue(paddle.equal_all(model_kwargs["pixel_values"][2], pixel_values[1]))
+        self.assertTrue(paddle.equal_all(model_kwargs["pixel_values"][5], pixel_values[2]))
 
 
 @unittest.skip("Idefics3 tiny checkpoint is not available yet.")

@@ -43,6 +43,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
         ("llama", "LlamaConfig"),
+        ("llama4", "Llama4Config"),
+        ("llama4_text", "Llama4TextConfig"),
         ("kimi_k2", "KimiK2Config"),
         ("kimi_k3", "KimiK3Config"),
         ("qwen2", "Qwen2Config"),
@@ -80,6 +82,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("glm_ocr", "GlmOcrConfig"),
         ("idefics3", "Idefics3Config"),
         ("idefics3_vision", "Idefics3VisionConfig"),
+        ("molmo", "MolmoConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
         ("olmo2", "Olmo2Config"),
@@ -108,6 +111,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
         ("llama", "Llama"),
+        ("llama4", "Llama4ForConditionalGeneration"),
+        ("llama4_text", "Llama4TextModel"),
         ("kimi_k3", "KimiK3"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
@@ -123,6 +128,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("hyperencoder", "HyperEncoderModelFleet"),
         ("seed_oss", "SeedOssForCausalLM"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
+        ("molmo", "MolmoModel"),
         ("minimax", "MiniMaxForCausalLM"),
         ("phi4_multimodal", "Phi4MultimodalModel"),
         ("minicpm", "MiniCPM"),
@@ -154,6 +160,7 @@ MULTI_MODELS_MAPPING = OrderedDict(
 
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
+        ("llama4_text", "llama4"),
         ("paligemma", "paligemma2"),
         ("gemma3", "gemma3"),
         ("qwen2_5_vl_text", "qwen2_5_vl"),

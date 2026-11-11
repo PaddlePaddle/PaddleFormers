@@ -145,7 +145,9 @@ def resize(
                 acceptable_dtypes.append(paddle.uint8)
 
         image = image.reshape(-1, num_channels, old_height, old_width)
-        strides = image.stride()
+        strides = image.strides if hasattr(image, "strides") else image.stride()
+        if callable(strides):
+            strides = strides()
         if image.is_contiguous() and image.shape[0] == 1 and numel != strides[0]:
             new_strides = list(strides)
             new_strides[0] = numel
@@ -155,13 +157,26 @@ def resize(
         if need_cast:
             image = image.to(dtype=paddle.float32)
 
-        image = interpolate(
-            image,
-            size=[new_height, new_width],
-            mode=interpolation,
-            align_corners=align_corners,
-            antialias=antialias,
-        )
+        try:
+            image = interpolate(
+                image,
+                size=[new_height, new_width],
+                mode=interpolation,
+                align_corners=align_corners,
+                antialias=antialias,
+            )
+        except TypeError as error:
+            # ``antialias`` was added after the oldest Paddle version
+            # supported by PaddleFormers.  Keep resize usable on those
+            # versions while retaining the flag where it is available.
+            if "antialias" not in str(error):
+                raise
+            image = interpolate(
+                image,
+                size=[new_height, new_width],
+                mode=interpolation,
+                align_corners=align_corners,
+            )
 
         if need_cast:
             if interpolation == "bicubic" and dtype == paddle.uint8:
@@ -361,8 +376,8 @@ def normalize(image: paddle.Tensor, mean: list[float], std: list[float], inplace
         std = std.view(-1, 1, 1)
 
     if inplace:
-        image = image.sub_(mean)
+        image = image.subtract_(mean)
     else:
-        image = image.sub(mean)
+        image = image.subtract(mean)
 
-    return image.div_(std)
+    return image.divide_(std) if inplace else image.divide(std)
