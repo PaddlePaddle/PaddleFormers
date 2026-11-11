@@ -204,7 +204,8 @@ with (a.output / "loss.jsonl").open("w") as f:
         opt.step()
         opt.clear_grad()
         value = float(loss)
-        assert np.isfinite(value)
+        if not np.isfinite(value):
+            raise FloatingPointError(f"Non-finite training loss: {value}")
         paddle.device.synchronize()
         row = dict(step=step, loss=value, ms=1000 * (time.perf_counter() - t))
         f.write(json.dumps(row) + "\n")

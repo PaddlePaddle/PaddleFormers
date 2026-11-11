@@ -11,7 +11,10 @@ import paddle
 from PIL import Image
 from safetensors.numpy import save_file
 
-from paddleformers.transformers import AutoModelForConditionalGeneration
+from paddleformers.transformers import (
+    AutoModelForCausalLM,
+    AutoModelForConditionalGeneration,
+)
 from paddleformers.transformers.lfm2_vl.configuration import (
     Lfm2Config,
     Lfm2VlConfig,
@@ -52,6 +55,41 @@ def get_config():
 
 
 class Lfm2VlModelTest(unittest.TestCase):
+    def test_text_auto_model_loads_hf_linear_weights(self):
+        self._check_text_hf_round_trip(tied=True)
+
+    def test_text_auto_model_loads_untied_head_and_conv_bias(self):
+        self._check_text_hf_round_trip(tied=False)
+
+    def _check_text_hf_round_trip(self, tied):
+        from paddleformers.transformers.lfm2_vl.modeling_lfm2 import Lfm2ForCausalLM
+
+        config = get_config().text_config
+        config.tie_word_embeddings = tied
+        config.conv_bias = not tied
+        config.architectures = ["Lfm2ForCausalLM"]
+        reference = Lfm2ForCausalLM(config).eval()
+        hf_weights = {}
+        for name, tensor in reference.state_dict().items():
+            array = tensor.numpy()
+            if name.endswith(".weight") and name.split(".")[-2] in reference.transpose_weight_keys:
+                array = array.T.copy()
+            hf_weights[name] = array
+        with tempfile.TemporaryDirectory() as directory:
+            config.save_pretrained(directory)
+            save_file(hf_weights, os.path.join(directory, "model.safetensors"), metadata={"format": "pt"})
+            actual = AutoModelForCausalLM.from_pretrained(directory, convert_from_hf=True).eval()
+            exported = os.path.join(directory, "exported")
+            actual.save_pretrained(exported, save_checkpoint_format="flex_checkpoint")
+            reloaded = AutoModelForCausalLM.from_pretrained(exported).eval()
+        self.assertIsInstance(actual, Lfm2ForCausalLM)
+        for name, expected in reference.state_dict().items():
+            np.testing.assert_array_equal(actual.state_dict()[name].numpy(), expected.numpy(), err_msg=name)
+            np.testing.assert_array_equal(reloaded.state_dict()[name].numpy(), expected.numpy(), err_msg=name)
+        ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
+        with paddle.no_grad():
+            np.testing.assert_allclose(actual(ids).logits.numpy(), reference(ids).logits.numpy(), atol=1e-6, rtol=1e-6)
+
     def test_text_layer_types_must_match_hidden_layers(self):
         with self.assertRaisesRegex(ValueError, "num_hidden_layers"):
             Lfm2Config(num_hidden_layers=2, layer_types=["full_attention"])

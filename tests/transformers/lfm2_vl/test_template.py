@@ -66,6 +66,12 @@ class Lfm2VlTemplateTest(unittest.TestCase):
         self.assertIn("<|img_row_1_col_1|>", processed[0]["content"])
         self.assertIn("<|img_thumbnail|>", processed[0]["content"])
         self.assertEqual(plugin.process_tokens([11, 396, 397, 400, 0], processor), [11, -100, -100, -100, 0])
+        labels = [-100, 396, 397, 400, 0]
+        self.assertEqual(
+            plugin.process_tokens([11, 396, 397, 400, 0], processor, labels=labels),
+            [-100, -100, -100, -100, 0],
+        )
+        self.assertEqual(labels, [-100, 396, 397, 400, 0])
 
     def test_plugin_provides_common_collator_aliases(self):
         processor = get_processor()

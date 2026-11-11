@@ -427,7 +427,10 @@ class Lfm2VlPlugin(BasePlugin):
         return messages
 
     @override
-    def process_tokens(self, tokens, processor):
+    def process_tokens(self, tokens, processor, labels=None):
+        labels = deepcopy(tokens) if labels is None else deepcopy(labels)
+        if len(labels) != len(tokens):
+            raise ValueError("LFM2-VL tokens and labels must have the same length.")
         image_processor = processor.image_processor
         masked_tokens = [
             processor.image_token,
@@ -444,7 +447,7 @@ class Lfm2VlPlugin(BasePlugin):
         unk_token_id = getattr(processor.tokenizer, "unk_token_id", None)
         if unk_token_id is not None:
             masked_token_ids.discard(unk_token_id)
-        return [-100 if token in masked_token_ids else token for token in tokens]
+        return [-100 if token in masked_token_ids else label for token, label in zip(tokens, labels)]
 
     @override
     def get_mm_inputs(

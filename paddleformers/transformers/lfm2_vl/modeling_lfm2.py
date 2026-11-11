@@ -161,9 +161,54 @@ class Lfm2DecoderLayer(nn.Layer):
 
 
 class Lfm2PreTrainedModel(PretrainedModel):
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "out_proj", "in_proj", "w1", "w2", "w3"]
     config_class = Lfm2Config
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
+
+    @classmethod
+    def _checkpoint_weights(cls, config):
+        weights = [("embed_tokens.weight", False), ("embedding_norm.weight", False)]
+        for index, layer_type in enumerate(config.layer_types):
+            prefix = f"layers.{index}."
+            weights.extend((prefix + name + ".weight", False) for name in ("operator_norm", "ffn_norm"))
+            weights.extend((prefix + "feed_forward." + name + ".weight", True) for name in ("w1", "w2", "w3"))
+            if layer_type == "full_attention":
+                weights.extend(
+                    (prefix + "self_attn." + name + ".weight", True)
+                    for name in ("q_proj", "k_proj", "v_proj", "out_proj")
+                )
+                weights.extend(
+                    (prefix + "self_attn." + name + ".weight", False) for name in ("q_layernorm", "k_layernorm")
+                )
+            else:
+                for name in ("in_proj", "out_proj", "conv"):
+                    weights.append((prefix + "conv." + name + ".weight", name != "conv"))
+                    if config.conv_bias:
+                        weights.append((prefix + "conv." + name + ".bias", False))
+        return weights
+
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        prefix = "" if cls == cls.base_model_class else "model."
+        statements = [
+            f"model.{name}{'^T' if transpose else ''} -> {prefix}{name}"
+            for name, transpose in cls._checkpoint_weights(config)
+        ]
+        if prefix and not config.tie_word_embeddings:
+            statements.append("lm_head.weight -> lm_head.weight")
+        return {"aoa_statements": statements}
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config):
+        prefix = "" if cls == cls.base_model_class else "model."
+        statements = [
+            f"{prefix}{name}{'^T' if transpose else ''} -> model.{name}"
+            for name, transpose in cls._checkpoint_weights(config)
+        ]
+        if prefix and not config.tie_word_embeddings:
+            statements.append("lm_head.weight -> lm_head.weight")
+        return {"aoa_statements": statements}
 
 
 @register_base_model

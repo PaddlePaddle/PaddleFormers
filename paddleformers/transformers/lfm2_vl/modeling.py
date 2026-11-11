@@ -31,7 +31,7 @@ from ..model_outputs import (
 from ..model_utils import PretrainedModel, dtype_guard, register_base_model
 from ..utils import get_checkpoint_shard_files
 from .configuration import Lfm2VlConfig
-from .modeling_lfm2 import Lfm2Model
+from .modeling_lfm2 import Lfm2ForCausalLM, Lfm2Model, Lfm2PreTrainedModel
 
 
 def _resolve_hf_checkpoint_dir(pretrained_model_name_or_path, **kwargs):
@@ -462,6 +462,9 @@ class Lfm2VlForConditionalGeneration(Lfm2VlPreTrainedModel):
 
 
 __all__ = [
+    "Lfm2ForCausalLM",
+    "Lfm2Model",
+    "Lfm2PreTrainedModel",
     "Lfm2VlForConditionalGeneration",
     "Lfm2VlModel",
     "Lfm2VlPreTrainedModel",
