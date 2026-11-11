@@ -26,27 +26,27 @@ import time
 import types
 from pathlib import Path
 
-p = argparse.ArgumentParser()
-p.add_argument("--mode", choices=["dynamic", "cinn"], required=True)
-p.add_argument("--output", type=Path, required=True)
-p.add_argument("--static-config-get", action="store_true")
-p.add_argument("--steps", type=int, default=20)
-p.add_argument("--initial-checkpoint", type=Path)
-p.add_argument("--extended", action="store_true")
-p.add_argument("--inference-only", action="store_true")
-p.add_argument(
+parser = argparse.ArgumentParser()
+parser.add_argument("--mode", choices=["dynamic", "cinn"], required=True)
+parser.add_argument("--output", type=Path, required=True)
+parser.add_argument("--static-config-get", action="store_true")
+parser.add_argument("--steps", type=int, default=20)
+parser.add_argument("--initial-checkpoint", type=Path)
+parser.add_argument("--extended", action="store_true")
+parser.add_argument("--inference-only", action="store_true")
+parser.add_argument(
     "--resume",
     type=Path,
     help="Training-state checkpoint; output must be a new segment directory",
 )
-p.add_argument("--save-every", type=int, default=500)
-p.add_argument(
+parser.add_argument("--save-every", type=int, default=500)
+parser.add_argument(
     "--probe-gradients",
     action="store_true",
     help="Save first-step gradients before optimizer update",
 )
-p.add_argument("--boundary", choices=["full", "layers"], default="full")
-a = p.parse_args()
+parser.add_argument("--boundary", choices=["full", "layers"], default="full")
+args = parser.parse_args()
 repo = str(Path(__file__).resolve().parents[3])
 sys.path.insert(0, repo)
 import numpy as np
@@ -55,40 +55,46 @@ from transformers import AutoTokenizer
 
 from paddleformers.transformers import Olmo2Config, Olmo2ForCausalLM
 from tests.cinn.checkpoint_utils import strict_set_state_dict
+from tests.cinn.olmo2.runtime_utils import (
+    benchmark_forward,
+    check_loss,
+    validate_inference_checkpoint,
+)
 
-a.output.mkdir(parents=True, exist_ok=False)
+validate_inference_checkpoint(args.inference_only, args.initial_checkpoint)
+args.output.mkdir(parents=True, exist_ok=False)
 paddle.set_device("gpu:0")
 paddle.seed(20261007)
 source = os.environ["CINN_ASSET_DIR"]
-c = Olmo2Config.from_pretrained(source)
-c.hidden_size = 64
-c.intermediate_size = 128
-c.num_hidden_layers = 2
-c.num_attention_heads = 4
-c.num_key_value_heads = 2
-c.head_dim = 16
-c.max_position_embeddings = 128
-c.attention_dropout = 0.0
-c._attn_implementation = "eager"
-c.use_cache = False
-model = Olmo2ForCausalLM(c)
-if a.initial_checkpoint:
-    if a.initial_checkpoint.exists():
-        strict_set_state_dict(model, paddle.load(str(a.initial_checkpoint)))
+config = Olmo2Config.from_pretrained(source)
+config.hidden_size = 64
+config.intermediate_size = 128
+config.num_hidden_layers = 2
+config.num_attention_heads = 4
+config.num_key_value_heads = 2
+config.head_dim = 16
+config.max_position_embeddings = 128
+config.attention_dropout = 0.0
+config._attn_implementation = "eager"
+config.use_cache = False
+model = Olmo2ForCausalLM(config)
+if args.initial_checkpoint:
+    if args.initial_checkpoint.exists():
+        strict_set_state_dict(model, paddle.load(str(args.initial_checkpoint)))
     else:
-        raise FileNotFoundError(a.initial_checkpoint)
-c.save_pretrained(str(a.output / "config"))
-paddle.save(model.state_dict(), str(a.output / "initial.pdparams"))
-if a.static_config_get:
+        raise FileNotFoundError(args.initial_checkpoint)
+config.save_pretrained(str(args.output / "config"))
+paddle.save(model.state_dict(), str(args.output / "initial.pdparams"))
+if args.static_config_get:
 
     @paddle.jit.not_to_static
     def config_get(self, key, default=None):
         return getattr(self, key, default)
 
-    c.get = types.MethodType(config_get, c)
+    config.get = types.MethodType(config_get, config)
 tokenizer = AutoTokenizer.from_pretrained(source, local_files_only=True)
 rows = [json.loads(s) for s in (Path(__file__).parent / "data/gsm8k_24.jsonl").read_text().splitlines()][
-    : 24 if a.extended else 20
+    : 24 if args.extended else 20
 ]
 tokens = []
 labels = []
@@ -100,7 +106,7 @@ for row in rows:
     lab[max(n - 1, 0) :] = [-100] * (64 - max(n - 1, 0))
     tokens.append(ids[:-1])
     labels.append(lab)
-np.savez(a.output / "inputs.npz", tokens=tokens, labels=labels)
+np.savez(args.output / "inputs.npz", tokens=tokens, labels=labels)
 
 
 class Net(paddle.nn.Layer):
@@ -119,20 +125,20 @@ source_commit = (
     else subprocess.check_output(["git", "-C", repo, "rev-parse", "HEAD"], text=True).strip()
 )
 meta = {
-    "mode": a.mode,
+    "mode": args.mode,
     "seed": 20261007,
     "parameters": sum(int(v.numel()) for v in model.parameters()),
     "paddle": paddle.__version__,
     "paddle_commit": paddle.version.commit,
     "source_commit": source_commit,
     "precision": "FP32 TF32 off",
-    "steps": a.steps,
+    "steps": args.steps,
     "sequence_length": 64,
     "blacklist": [],
     "initialization": "fixed random tiny, NOT pretrained; OLMo2 tokenizer; 20 GSM8K train + 4 heldout; prefix LM",
 }
-meta["static_config_get"] = a.static_config_get
-meta["boundary"] = a.boundary
+meta["static_config_get"] = args.static_config_get
+meta["boundary"] = args.boundary
 meta["learning_rate"] = 2e-5
 meta["data_sha256"] = hashlib.sha256((Path(__file__).parent / "data/gsm8k_24.jsonl").read_bytes()).hexdigest()
 h = hashlib.sha256()
@@ -140,50 +146,33 @@ for name, tensor in sorted(model.state_dict().items()):
     h.update(name.encode())
     h.update(tensor.numpy().tobytes())
 meta["initial_parameter_hash"] = h.hexdigest()
-meta["steps"] = a.steps
+meta["steps"] = args.steps
 meta["training_samples"] = 20
-meta["validation_samples"] = 4 if a.extended else 0
-if a.initial_checkpoint:
+meta["validation_samples"] = 4 if args.extended else 0
+if args.initial_checkpoint:
     import hashlib
 
-    meta["initial_checkpoint_sha256"] = hashlib.sha256(a.initial_checkpoint.read_bytes()).hexdigest()
-(a.output / "run.json").write_text(json.dumps(meta, indent=2))
+    meta["initial_checkpoint_sha256"] = hashlib.sha256(args.initial_checkpoint.read_bytes()).hexdigest()
+(args.output / "run.json").write_text(json.dumps(meta, indent=2))
 print(meta, flush=True)
-if a.mode == "cinn" and a.boundary == "layers":
+if args.mode == "cinn" and args.boundary == "layers":
     for layer in model.model.layers:
         layer.forward = paddle.jit.to_static(layer.forward, full_graph=True, backend="CINN")
-if a.mode == "cinn" and a.boundary == "full":
+if args.mode == "cinn" and args.boundary == "full":
     net = paddle.jit.to_static(
         net,
         full_graph=True,
         backend="CINN",
         input_spec=[paddle.static.InputSpec([1, 64], "int64")],
     )
-if a.inference_only:
-    assert a.initial_checkpoint and a.initial_checkpoint.exists()
+if args.inference_only:
     net.eval()
-    durations = []
-    x = paddle.to_tensor([tokens[0]], dtype="int64")
-    with paddle.no_grad():
-        for j in range(40):
-            paddle.device.synchronize()
-            start = time.perf_counter()
-            out = net(x)
-            paddle.device.synchronize()
-            if j >= 10:
-                durations.append(1000 * (time.perf_counter() - start))
-        np.save(a.output / "logits.npy", out.numpy())
-    (a.output / "inference.json").write_text(
-        json.dumps(
-            {
-                "median_ms": float(np.median(durations)),
-                "times_ms": durations,
-                "warmup": 10,
-                "iterations": 30,
-                "scope": "independent checkpoint reload; fixed-input forward, not generation",
-            },
-            indent=2,
-        )
+    benchmark_forward(
+        net,
+        paddle.to_tensor([tokens[0]], dtype="int64"),
+        args.output,
+        "independent checkpoint reload; fixed-input forward, not generation",
+        save_logits=True,
     )
     print("INFERENCE_FINISHED", flush=True)
     sys.exit(0)
@@ -191,8 +180,8 @@ optimizer = paddle.optimizer.AdamW(learning_rate=2e-5, weight_decay=0.01, parame
 import random
 
 start_step = 0
-if a.resume:
-    saved = paddle.load(str(a.resume))
+if args.resume:
+    saved = paddle.load(str(args.resume))
     for key in (
         "mode",
         "source_commit",
@@ -214,14 +203,14 @@ if a.resume:
     paddle.set_cuda_rng_state(saved["cuda_rng"])
     np.random.set_state(saved["numpy_rng"])
     random.setstate(saved["python_rng"])
-    if a.steps <= start_step:
+    if args.steps <= start_step:
         raise ValueError("--steps must exceed checkpoint step")
 meta.update(
     start_step=start_step,
-    resume=str(a.resume) if a.resume else None,
-    save_every=a.save_every,
+    resume=str(args.resume) if args.resume else None,
+    save_every=args.save_every,
 )
-(a.output / "run.json").write_text(json.dumps(meta, indent=2))
+(args.output / "run.json").write_text(json.dumps(meta, indent=2))
 
 
 def save_training_state(step):
@@ -237,9 +226,9 @@ def save_training_state(step):
         labels=labels,
         meta=meta,
     )
-    temporary = a.output / "training_state.tmp"
+    temporary = args.output / "training_state.tmp"
     paddle.save(payload, str(temporary))
-    os.replace(temporary, a.output / "training_state.pdstate")
+    os.replace(temporary, args.output / "training_state.pdstate")
 
 
 def evaluate(step):
@@ -254,26 +243,27 @@ def evaluate(step):
             )
             for j in range(20, 24)
         ]
-    with (a.output / "validation.jsonl").open("a") as vf:
+    with (args.output / "validation.jsonl").open("a") as vf:
         vf.write(json.dumps({"step": step, "loss": float(np.mean(values))}) + "\n")
     net.train()
 
 
-if a.extended:
+if args.extended:
     evaluate(start_step)
 net.train()
-with (a.output / "loss.jsonl").open("w") as f:
-    for i in range(start_step, a.steps):
+with (args.output / "loss.jsonl").open("w") as f:
+    for i in range(start_step, args.steps):
         x = paddle.to_tensor([tokens[i % 20]], dtype="int64")
         y = paddle.to_tensor([labels[i % 20]], dtype="int64")
         paddle.device.synchronize()
         t = time.perf_counter()
         out = net(x)
         if i == 0:
-            np.save(a.output / "initial_logits.npy", out.detach().numpy())
+            np.save(args.output / "initial_logits.npy", out.detach().numpy())
         loss = paddle.nn.functional.cross_entropy(out, y)
+        loss_value = check_loss(loss, i)
         loss.backward()
-        if a.probe_gradients and i == start_step:
+        if args.probe_gradients and i == start_step:
             missing = [n for n, v in model.named_parameters() if not v.stop_gradient and v.grad is None]
             if missing:
                 raise RuntimeError(f"Missing trainable gradients: {missing}")
@@ -282,50 +272,33 @@ with (a.output / "loss.jsonl").open("w") as f:
                     raise RuntimeError(f"Nonfinite gradient: {name}")
             paddle.save(
                 {n: v.grad for n, v in model.named_parameters() if v.grad is not None},
-                str(a.output / "first_gradients.pdparams"),
+                str(args.output / "first_gradients.pdparams"),
             )
         optimizer.step()
         optimizer.clear_grad()
         paddle.device.synchronize()
-        r = {"step": i, "loss": float(loss), "ms": 1000 * (time.perf_counter() - t)}
-        assert np.isfinite(r["loss"])
+        r = {"step": i, "loss": loss_value, "ms": 1000 * (time.perf_counter() - t)}
         f.write(json.dumps(r) + "\n")
         f.flush()
-        if i % 100 == 0 or i + 1 == a.steps:
+        if i % 100 == 0 or i + 1 == args.steps:
             print(r, flush=True)
-        if a.extended and (i + 1) % 100 == 0:
+        if args.extended and (i + 1) % 100 == 0:
             evaluate(i + 1)
-        if a.save_every > 0 and (i + 1) % a.save_every == 0:
+        if args.save_every > 0 and (i + 1) % args.save_every == 0:
             save_training_state(i + 1)
-save_training_state(a.steps)
+save_training_state(args.steps)
 net.eval()
 with paddle.no_grad():
     np.save(
-        a.output / "final_logits.npy",
+        args.output / "final_logits.npy",
         net(paddle.to_tensor([tokens[0]], dtype="int64")).numpy(),
     )
-if a.extended:
-    paddle.save(model.state_dict(), str(a.output / "final.pdparams"))
-    durations = []
-    x = paddle.to_tensor([tokens[0]], dtype="int64")
-    with paddle.no_grad():
-        for j in range(40):
-            paddle.device.synchronize()
-            start = time.perf_counter()
-            net(x)
-            paddle.device.synchronize()
-            if j >= 10:
-                durations.append(1000 * (time.perf_counter() - start))
-    (a.output / "inference.json").write_text(
-        json.dumps(
-            {
-                "median_ms": float(np.median(durations)),
-                "times_ms": durations,
-                "warmup": 10,
-                "iterations": 30,
-                "scope": "in-process final-weight fixed-input forward, not generation or independent reload",
-            },
-            indent=2,
-        )
+if args.extended:
+    paddle.save(model.state_dict(), str(args.output / "final.pdparams"))
+    benchmark_forward(
+        net,
+        paddle.to_tensor([tokens[0]], dtype="int64"),
+        args.output,
+        "in-process final-weight fixed-input forward, not generation or independent reload",
     )
 print("FINISHED", flush=True)
