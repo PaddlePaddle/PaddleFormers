@@ -1583,6 +1583,124 @@ class Gemma3Plugin(BasePlugin):
 
 
 @dataclass
+class Llama4Plugin(BasePlugin):
+    masked_tokens: Optional[list[str]] = None
+
+    @override
+    def _get_mm_inputs(self, images, videos, audios, processor, **kwargs):
+        # Llama4's image processor chooses tiles from the original resolution.
+        # BasePlugin's pixel-budget resize changes that choice.
+        if not images:
+            return {}
+        images = [(self._img_download(image) if isinstance(image, str) else image).convert("RGB") for image in images]
+        imglens = kwargs.get("imglens")
+        if imglens is not None:
+            images = _make_batched_images(images, imglens)
+        return processor.image_processor(images, return_tensors="pd")
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        if not images:
+            return messages
+
+        aspect_ratios = mm_inputs.get("aspect_ratios")
+        if aspect_ratios is None or len(aspect_ratios) != len(images):
+            raise ValueError("Llama 4 requires one aspect ratio for each input image.")
+
+        messages = deepcopy(messages)
+        image_index = 0
+        num_patches_per_chunk = processor._num_patches_per_chunk()
+        for message in messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                image_string = processor._prompt_split_image(aspect_ratios[image_index], num_patches_per_chunk)
+                if not self.expand_mm_tokens:
+                    image_string = self.image_token
+                content = content.replace(IMAGE_PLACEHOLDER, image_string, 1)
+                image_index += 1
+            message["content"] = content
+        return messages
+
+
+@dataclass
+class MolmoPlugin(BasePlugin):
+    image_start_token: str = "<im_start>"
+    image_end_token: str = "<im_end>"
+    image_col_token: str = "<im_col>"
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(kwargs.get("messages", []), images, videos, audios)
+        if len(videos) != 0 or len(audios) != 0:
+            raise ValueError("MolmoPlugin only supports image inputs.")
+        if len(images) == 0:
+            return {}
+
+        pil_images = [
+            self._img_download(image).convert("RGB") if isinstance(image, str) else image for image in images
+        ]
+        return processor.process(images=pil_images, text="", return_tensors="pd")
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        messages = deepcopy(messages)
+        tokenizer = getattr(processor, "tokenizer")
+        user_token = tokenizer.encode(" User", add_special_tokens=False)
+        if len(user_token) != 1:
+            raise ValueError("Molmo tokenizer should encode ' User' as a single token.")
+
+        image_prefix = ""
+        if len(images) > 0:
+            input_ids = mm_inputs["input_ids"].numpy().tolist()
+            try:
+                user_idx = input_ids.index(user_token[0])
+            except ValueError as exc:
+                raise ValueError("Unable to locate Molmo user prompt token in image prefix.") from exc
+            image_prefix = tokenizer.decode(input_ids[:user_idx], skip_special_tokens=False)
+
+        first_user = True
+        for message in messages:
+            if message["role"] != "user":
+                continue
+            content = message["content"].replace(IMAGE_PLACEHOLDER, "").strip()
+            if first_user:
+                message["content"] = f"{image_prefix} User: {content}"
+                first_user = False
+            else:
+                message["content"] = f" User: {content}"
+
+        return messages
+
+
+@dataclass
 class GlmOcrPlugin(BasePlugin):
     """
     GLM-OCR 专用插件：
@@ -1790,8 +1908,10 @@ PLUGINS = {
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
     "gemma3": Gemma3Plugin,
+    "llama4": Llama4Plugin,
     "qwen2_omni": Qwen2OmniPlugin,
     "glm_ocr": GlmOcrPlugin,
+    "molmo": MolmoPlugin,
     "kimi_k3": KimiK3Plugin,
 }
 
