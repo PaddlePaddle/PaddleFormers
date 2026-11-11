@@ -1,5 +1,7 @@
 # MiniMax tiny CINN 复现
 
+2026-11-11 在 fa2ffb50c974a72b3d715e35846b8136149a5425 上移除测试侧 MoE 替换后，正式实现双端各 20 步和同权重独立推理通过：loss 最大差 9.54e-7、41 项首步梯度最大差 5.73e-6、logits 最大差 8.82e-6。环境为下述 Paddle 3.5.0.dev20260722；这是短程数值回归，不是重新完成长程收敛或 Stage3 验收。
+
 随机 tiny 框架测试，FP32、TF32关闭、batch1、seq64。数据是 GSM8K 前24条，question+换行+answer，经 assets 测试 tokenizer 构造下一 token 标签；前20训练、4留出。不代表完整 MiniMax 任务质量。
 
 ## 环境
