@@ -6,7 +6,7 @@
 
 V100S 32GB、Python3.10.20、Paddle3.5.0.dev20260722（08de6be508389d5277b02e78fbc8742f1ed78160）、编译 CUDA12.6；transformers5.3.0、tokenizers0.22.2、numpy1.26.4及 PaddleFormers requirements。无 AMP/分布式。
 
-从当前 checkout 导入 PaddleFormers，源码 commit 写入结果元数据，不要求外部源码快照。CINN 编译完整 forward wrapper，loss/optimizer 在动态侧；config.get 保留 Python。仅 CINN 安装 minimax_moe_functional.py 的等价专家累加适配，消除旧静态条件分支梯度丢失；没有移除专家或冻结参数。适配不修改源码工作树。
+从当前 checkout 导入 PaddleFormers，源码 commit 写入结果元数据，不要求外部源码快照。CINN 编译完整 forward wrapper，loss/optimizer 在动态侧；config.get 保留 Python。动态图与 CINN 都直接运行正式 MiniMaxSparseMoeBlock：专家累加使用无条件的函数式 index_add，不再依赖 token_idx.shape[0] 分支，也不安装测试侧 forward 替换补丁。所有专家仍按固定顺序执行，包括没有本地 token 的专家；没有移除专家或冻结参数。模型单测覆盖空专家场景下的输出、输入梯度及全部参数梯度，单卡验证不代表已完成 Stage3 多卡验收。
 
 ## 运行
 
@@ -19,10 +19,10 @@ export PYTHON_BIN=/path/to/python
 bash tests/cinn/minimax/run_model.sh
 bash tests/cinn/minimax/run_model_cinn.sh
 "$PYTHON_BIN" tests/cinn/minimax/compare_results.py tests/cinn/minimax/results
-MODE=dynamic STEPS=30000 RESULTS_DIR=results/full bash tests/cinn/minimax/train.sh
-MODE=cinn STEPS=30000 RESULTS_DIR=results/full bash tests/cinn/minimax/train.sh
-MODE=dynamic RESULTS_DIR=results/infer1 bash tests/cinn/minimax/infer.sh
-MODE=cinn RESULTS_DIR=results/infer1 bash tests/cinn/minimax/infer.sh
+MODE=dynamic STEPS=30000 RESULTS_DIR=tests/cinn/minimax/results/full bash tests/cinn/minimax/train.sh
+MODE=cinn STEPS=30000 RESULTS_DIR=tests/cinn/minimax/results/full bash tests/cinn/minimax/train.sh
+MODE=dynamic RESULTS_DIR=tests/cinn/minimax/results/infer1 bash tests/cinn/minimax/infer.sh
+MODE=cinn RESULTS_DIR=tests/cinn/minimax/results/infer1 bash tests/cinn/minimax/infer.sh
 ```
 
 快速入口20步真实更新训练加独立推理，AdamW lr2e-5/weight_decay0.01。推理固定文本前向，非 generate，10预热/30计时，排除预处理/H2D/编译；每步前后 GPU 同步。GPU_ID 默认0。需用新 RESULTS_DIR，拒绝覆盖。RESUME 可指定可信完整状态文件，两端状态不可互换；模型/优化器/RNG 每500步及结束保存。
@@ -32,6 +32,10 @@ MODE=cinn RESULTS_DIR=results/infer1 bash tests/cinn/minimax/infer.sh
 results/<mode>-train 包含 loss.jsonl、validation.jsonl、first_gradients.pdparams 等；<mode>-infer 保存 logits.npy 及 inference.json。两端独立推理必须使用同一个 inference.pdparams，不能比较各自训练产生的不同权重。入口检查 CINN 编译日志标志，不满足即失败。吞吐提升=(动态 ms/CINNms-1)×100%，不能与延迟下降混用。运行产物与权重不提交。
 
 历史30000步仅证明固定子集充分拟合；本次新入口回归是短程训推和梯度检查，不宣称重新完成长跑。
+
+compare_results.py 的短程回归阈值为 --loss-atol 1e-5、--grad-atol 1e-4、--logits-atol 1e-4，rtol 均为 0；超限、非有限值或缺失梯度均失败，实际阈值打印在结果中。test_compare_results.py 用合成负例验证 loss/梯度偏差 0.1 时失败（含 python -O）；这些负例不是模型精度数据。长程训练轨迹是否收敛应单独判断，不能直接套用短程逐点阈值。
+
+按交付约定保留 run_model.sh / run_model_cinn.sh 两个便捷入口，它们共用 run_model_common.sh，不维护重复的运行逻辑。tests/cinn 为显式 GPU 手工回归入口，不属于默认 CI；生产 MoE 的回归放在 tests/transformers/minimax/test_modeling.py。
 
 2026-10-07 本地入口回归通过：两端各20步，loss 最大绝对差9.54e-7；41项首步梯度均保留，最大绝对差5.73e-6；共同 checkpoint 独立推理 logits 最大绝对差8.83e-6。该短测只用于验证交付入口，不替代长程收敛材料。
 

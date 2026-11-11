@@ -27,7 +27,6 @@ run_task() {
     local task=$1 output="$output_root/$MODE-$1"
     [[ ! -e "$output" ]] || { echo "Refusing to overwrite $output" >&2; exit 3; }
     local args=(--mode "$MODE" --output "$output" --static-config-get --extended --probe-gradients)
-    if [[ "$MODE" = cinn ]]; then args+=(--functional-moe); fi
     if [[ "$task" = infer ]]; then
         args+=(--inference-only --initial-checkpoint "$CHECKPOINT_DIR/inference.pdparams")
     else
@@ -35,6 +34,9 @@ run_task() {
         if [[ -n ${RESUME:-} ]]; then args+=(--resume "$RESUME"); fi
     fi
     "$PYTHON_BIN" "$here/run_model.py" "${args[@]}" 2>&1 | tee "$output.log"
-    if [[ "$MODE" = cinn ]]; then grep -q 'Compiling subgraph with CINN backend' "$output.log"; fi
+    if [[ "$MODE" = cinn ]] && ! grep -q 'Compiling subgraph with CINN backend' "$output.log"; then
+        echo "CINN compilation was not confirmed in $output.log; check the Paddle build and compiler logs." >&2
+        exit 4
+    fi
 }
 if [[ "$TASK" = all ]]; then run_task train; run_task infer; else run_task "$TASK"; fi

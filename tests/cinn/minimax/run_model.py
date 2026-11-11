@@ -44,7 +44,6 @@ p.add_argument(
     action="store_true",
     help="Save first-step gradients before optimizer update",
 )
-p.add_argument("--functional-moe", action="store_true")
 a = p.parse_args()
 repo = str(Path(__file__).resolve().parents[3])
 sys.path.insert(0, repo)
@@ -54,10 +53,6 @@ from transformers import AutoTokenizer
 
 from paddleformers.transformers import MiniMaxConfig, MiniMaxForCausalLM
 
-if a.functional_moe:
-    from minimax_moe_functional import install
-
-    install()
 a.output.mkdir(parents=True, exist_ok=False)
 paddle.set_device("gpu:0")
 paddle.seed(20260922)
@@ -122,10 +117,14 @@ meta = {
     "steps": 20,
     "sequence_length": 64,
     "blacklist": [],
-    "initialization": "fresh fixed-seed random; tiny CE config; original tokenizer",
+    "initialization": (
+        f"loaded checkpoint {a.initial_checkpoint.name}"
+        if a.initial_checkpoint
+        else "fresh fixed-seed random; tiny CE config; original tokenizer"
+    ),
 }
 meta["static_config_get"] = a.static_config_get
-meta["functional_moe"] = a.functional_moe
+meta["moe_implementation"] = "production_functional_accumulation"
 meta["steps"] = a.steps
 meta["training_samples"] = 20
 meta["validation_samples"] = 4 if a.extended else 0
@@ -142,11 +141,10 @@ if a.mode == "cinn":
         backend="CINN",
         input_spec=[paddle.static.InputSpec([1, 64], "int64")],
     )
-if a.inference_only:
-    assert a.initial_checkpoint and a.initial_checkpoint.exists()
-    net.eval()
+
+
+def benchmark_forward(net, x, output, scope, save_logits=False):
     durations = []
-    x = paddle.to_tensor([tokens[0]], dtype="int64")
     with paddle.no_grad():
         for j in range(40):
             paddle.device.synchronize()
@@ -155,18 +153,32 @@ if a.inference_only:
             paddle.device.synchronize()
             if j >= 10:
                 durations.append(1000 * (time.perf_counter() - start))
-        np.save(a.output / "logits.npy", out.numpy())
-    (a.output / "inference.json").write_text(
+        if save_logits:
+            np.save(output / "logits.npy", out.numpy())
+    (output / "inference.json").write_text(
         json.dumps(
             {
                 "median_ms": float(np.median(durations)),
                 "times_ms": durations,
                 "warmup": 10,
                 "iterations": 30,
-                "scope": "independent checkpoint reload; fixed-input forward, not generation",
+                "scope": scope,
             },
             indent=2,
         )
+    )
+
+
+if a.inference_only:
+    if not a.initial_checkpoint or not a.initial_checkpoint.is_file():
+        raise ValueError("Inference requires an existing --initial-checkpoint file")
+    net.eval()
+    benchmark_forward(
+        net,
+        paddle.to_tensor([tokens[0]], dtype="int64"),
+        a.output,
+        "independent checkpoint reload; fixed-input forward, not generation",
+        save_logits=True,
     )
     print("INFERENCE_FINISHED", flush=True)
     sys.exit(0)
@@ -181,11 +193,9 @@ if a.resume:
         "source_commit",
         "initial_checkpoint_sha256",
         "static_config_get",
-        "functional_moe",
+        "moe_implementation",
     ):
-        # Checkpoints predating the opt-in MoE fix use the original implementation.
-        default = False if key == "functional_moe" else None
-        if saved["meta"].get(key, default) != meta.get(key, default):
+        if saved["meta"].get(key) != meta.get(key):
             raise ValueError(f"Resume mismatch: {key}")
     if saved["tokens"] != tokens or saved["labels"] != labels:
         raise ValueError("Resume data mismatch")
@@ -264,7 +274,8 @@ with (a.output / "loss.jsonl").open("w") as f:
         optimizer.clear_grad()
         paddle.device.synchronize()
         r = {"step": i, "loss": float(loss), "ms": 1000 * (time.perf_counter() - t)}
-        assert np.isfinite(r["loss"])
+        if not np.isfinite(r["loss"]):
+            raise FloatingPointError(f"Non-finite training loss at step {i}: {r['loss']}")
         f.write(json.dumps(r) + "\n")
         f.flush()
         print(r, flush=True)
@@ -281,26 +292,10 @@ with paddle.no_grad():
     )
 if a.extended:
     paddle.save(model.state_dict(), str(a.output / "final.pdparams"))
-    durations = []
-    x = paddle.to_tensor([tokens[0]], dtype="int64")
-    with paddle.no_grad():
-        for j in range(40):
-            paddle.device.synchronize()
-            start = time.perf_counter()
-            net(x)
-            paddle.device.synchronize()
-            if j >= 10:
-                durations.append(1000 * (time.perf_counter() - start))
-    (a.output / "inference.json").write_text(
-        json.dumps(
-            {
-                "median_ms": float(np.median(durations)),
-                "times_ms": durations,
-                "warmup": 10,
-                "iterations": 30,
-                "scope": "in-process final-weight fixed-input forward, not generation or independent reload",
-            },
-            indent=2,
-        )
+    benchmark_forward(
+        net,
+        paddle.to_tensor([tokens[0]], dtype="int64"),
+        a.output,
+        "in-process final-weight fixed-input forward, not generation or independent reload",
     )
 print("FINISHED", flush=True)
