@@ -1,6 +1,6 @@
 # Llama Guard4 图文 tiny 动态图/CINN
 
-本目录是随机初始化的框架测试模型（25997120参数），不是完整 Llama Guard4，也不评价安全分类能力。仅图文，不含音频。FP32、关闭 TF32、batch1、seq64、28×28图像；文本为图像类别 ID 描述，20训练/4留出真实图片。实际网络由当前源码 `tests/transformers/llama4/test_multimodal.py:get_tiny_config` 构建，将文本词表设为202048、image token 设为200092；assets/config.json 来自上游缩层资产，不用它构建本次 tiny，实际配置保存在运行产物 config/中。
+本目录是随机初始化的框架测试模型（25997120参数），不是完整 Llama Guard4，也不评价安全分类能力。仅图文，不含音频。FP32、关闭 TF32、batch1、seq64、28×28图像；文本为图像类别 ID 描述，20训练/4留出真实图片。实际网络使用本目录 `tiny_config.json` 构建，文本词表为202048、image token 为200092；assets/config.json 来自上游缩层资产，不用它构建本次 tiny，实际配置保存在运行产物 config/中。
 
 ## 环境和源码
 
@@ -55,7 +55,8 @@ results/<mode>-train 下有逐步 loss.jsonl、validation.jsonl、grads.npz、fi
 2026-11-06 local regression on develop f7fa77f: 20 training steps and independent inference passed in both modes. Loss max difference 1.19e-7; 63 gradients retained after mapping the CINN vision wrapper prefix back to the original names, gradient max difference 5.25e-6; same-checkpoint logits max difference 5.36e-6. This is an entry regression, not a new convergence run.
 
 Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing assets/ and data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. Obtain the bundles from the contributor; public download links will be added later. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
-# 权重与配置校验
+
+## 权重与配置校验
 
 本入口使用随脚本提交的 tiny_config.json，不再导入模型单测内部的配置函数。该配置固化自历史入口的实际运行配置；已用两份交付 checkpoint 验证 63 项 state_dict 条目逐项完整加载。外部 assets/config.json 是上游缩层配置，不应直接替代本入口的 tiny 配置。
 
