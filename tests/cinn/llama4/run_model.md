@@ -29,6 +29,8 @@ git clone https://github.com/PaddlePaddle/PaddleFormers.git /path/to/PaddleForme
 
 ## 入口
 
+两个 Llama 入口委托 `tests/cinn/llama_runner.py` 共享训练、推理和断点恢复逻辑；本入口固定为文本模型，不再包含另一模型的不可达分支。导入入口不会启动 GPU。`tests/cinn/test_llama_runner.py` 覆盖参数校验、计时契约和断点恢复等价性；续训分段也保存首步 logits 和梯度探针。
+
 ```bash
 cd /path/to/PaddleFormers
 export CINN_RESOURCE_DIR=/path/to/llama4-resources

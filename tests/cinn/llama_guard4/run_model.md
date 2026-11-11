@@ -20,6 +20,8 @@ data/images24.npz 与 images_manifest.json 是历史测试的小图像集与来�
 
 ## 运行
 
+两个 Llama 入口委托 `tests/cinn/llama_runner.py` 共享训练、推理和断点恢复逻辑；本入口固定为图文 Guard 模型，保留本目录配置与视觉编译边界。导入入口不会启动 GPU。`tests/cinn/test_llama_runner.py` 覆盖参数校验、计时契约和断点恢复等价性；续训分段也保存首步 logits 和梯度探针。
+
 ```bash
 cd /path/to/PaddleFormers
 export CINN_RESOURCE_DIR=/path/to/llama_guard4-resources
