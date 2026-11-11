@@ -21,10 +21,10 @@ export PYTHON_BIN=/path/to/python
 bash tests/cinn/molmo/run_model.sh
 bash tests/cinn/molmo/run_model_cinn.sh
 "$PYTHON_BIN" tests/cinn/molmo/compare_results.py tests/cinn/molmo/results
-MODE=dynamic STEPS=30000 RESULTS_DIR=results/full bash tests/cinn/molmo/train.sh
-MODE=cinn STEPS=30000 RESULTS_DIR=results/full bash tests/cinn/molmo/train.sh
-MODE=dynamic RESULTS_DIR=results/infer1 bash tests/cinn/molmo/infer.sh
-MODE=cinn RESULTS_DIR=results/infer1 bash tests/cinn/molmo/infer.sh
+MODE=dynamic STEPS=30000 RESULTS_DIR=tests/cinn/molmo/results/full bash tests/cinn/molmo/train.sh
+MODE=cinn STEPS=30000 RESULTS_DIR=tests/cinn/molmo/results/full bash tests/cinn/molmo/train.sh
+MODE=dynamic RESULTS_DIR=tests/cinn/molmo/results/infer1 bash tests/cinn/molmo/infer.sh
+MODE=cinn RESULTS_DIR=tests/cinn/molmo/results/infer1 bash tests/cinn/molmo/infer.sh
 ```
 
 默认每端 20 步真实 AdamW 更新加独立进程固定前向推理；学习率 2e-5。推理不是 generate，预热 10 次、计时 30 次，GPU 同步，排除预处理、H2D 和首次编译。GPU_ID 默认为 0，重复运行必须指定新的 RESULTS_DIR。CINN 日志缺少编译标志则入口失败。
@@ -35,7 +35,9 @@ MODE=cinn RESULTS_DIR=results/infer1 bash tests/cinn/molmo/infer.sh
 
 历史长跑用于固定子集拟合；本次交付短测仅验证脚本移植及数值、梯度路径，不宣称重新完成长程训练，不代表原始完整模型质量或泛化能力。
 
-2026-10-07 本地交付回归通过：两端各20步，loss 最大绝对差4.77e-7；共同权重独立推理 logits 最大差2.83e-5；72项首步梯度均保留，最大绝对差1.46e-3。本次仅为短程入口验证。
+短程比较阈值：--loss-atol 1e-5、--grad-atol 2e-3、--logits-atol 1e-4，rtol 均为 0。超限或非有限值直接失败，阈值记录在输出中。合成负例单测验证 loss/梯度偏差 0.1 时必定失败，包含 python -O；不将负例当作模型精度数据。Molmo 的梯度阈值依据历史实测 1.46e-3 留余量设为 2e-3，没有照搬其他模型的 1e-4。上述阈值用于短程回归，不能替代长程收敛判断。
+
+按交付约定保留 run_model.sh / run_model_cinn.sh，底层调用同一 run_model_common.sh；该目录是显式 GPU 手工入口，未声称接入默认 CI。续跑会保存当前分段首步的梯度，而不是遗漏此文件。
 
 
 外部资源暂不上传：CINN_RESOURCE_DIR 下需包含 assets/tokenizer.json、data/images24.npz 和 data/images_manifest.json，均按 asset_manifest.json 校验。图片使用遵守 ImageNet 数据条款。资源和权重请联系贡献者获取，公开下载入口待后续维护。上述历史结果不代表当前 checkout 已重新完成长跑。

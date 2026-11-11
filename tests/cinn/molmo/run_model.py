@@ -49,23 +49,6 @@ p.add_argument(
 )
 p.add_argument("--infer", action="store_true")
 p.add_argument(
-    "--split",
-    action="store_true",
-    help="Compile vision and decoder blocks; retain outer validation/merge in dynamic mode",
-)
-p.add_argument(
-    "--split-blocks",
-    action="store_true",
-    help="Narrow vision boundary to individual transformer blocks",
-)
-p.add_argument("--trace-boundaries", action="store_true")
-p.add_argument("--split-text-parts", action="store_true")
-p.add_argument(
-    "--split-safe",
-    action="store_true",
-    help="Vision blocks and text MLP only; text attention remains dynamic",
-)
-p.add_argument(
     "--split-rope",
     action="store_true",
     help="Also compile full text attention, with RoPE coefficient expansion outside",
@@ -133,26 +116,16 @@ meta = {
     "scope": "tiny random model, not full-scale task convergence",
     "adaptation": "config.get Python-only boundary; no tensor changes or blacklists",
 }
-(a.output / "run.json").write_text(json.dumps(meta, indent=2))
-meta["compile_scope"] = (
-    "vision backbone and decoder blocks; outer merge/checks/LM head dynamic" if a.split else "whole forward"
-)
-if a.split_blocks:
-    meta["compile_scope"] = "individual vision residual blocks and decoder blocks; other operations dynamic"
-if a.split_text_parts:
-    meta[
-        "compile_scope"
-    ] = "vision residual blocks, text self-attention and MLP; text residual/norm and outer operations dynamic"
-if a.split_safe:
-    meta[
-        "compile_scope"
-    ] = "vision residual blocks and text MLP only; text attention, norms and outer operations dynamic"
+meta["compile_scope"] = "whole forward"
 if a.split_rope:
     meta[
         "compile_scope"
     ] = "vision residual blocks, text MLP, full text attention core; RoPE coefficient head-axis expansion and outer residual/norm/merge dynamic"
+if a.mode == "dynamic":
+    meta["compile_scope"] = "none (dynamic)"
 (a.output / "run.json").write_text(json.dumps(meta, indent=2))
-np.savez(a.output / "inputs.npz", **{str(i): v.numpy() for i, v in enumerate(samples[0][0])})
+input_index = 20 if a.infer else 0
+np.savez(a.output / "inputs.npz", **{str(i): v.numpy() for i, v in enumerate(samples[input_index][0])})
 
 
 class Net(paddle.nn.Layer):
@@ -173,42 +146,18 @@ class Net(paddle.nn.Layer):
 
 net = Net()
 if a.split_rope:
+    import atexit
+
     from molmo_attention_boundary import install
 
-    install(model, compile_core=a.mode == "cinn")
-if a.trace_boundaries:
-
-    def before(layer, args):
-        print("ENTER", layer.full_name(), flush=True)
-
-    def after(layer, args, out):
-        print("EXIT", layer.full_name(), flush=True)
-
-    for layer in [
-        *model.model.vision_backbone.image_vit.transformer.resblocks,
-        *model.model.layers,
-        *[part for layer in model.model.layers for part in [layer.self_attn, layer.mlp]],
-    ]:
-        layer.register_forward_pre_hook(before)
-        layer.register_forward_post_hook(after)
+    restore_attention_boundary = install(model, compile_core=a.mode == "cinn")
+    atexit.register(restore_attention_boundary)
 if a.mode == "cinn":
-    if a.split or a.split_blocks or a.split_text_parts or a.split_safe or a.split_rope:
-        if a.split_blocks or a.split_text_parts or a.split_safe or a.split_rope:
-            for block in model.model.vision_backbone.image_vit.transformer.resblocks:
-                block.forward = paddle.jit.to_static(block.forward, full_graph=True, backend="CINN")
-        else:
-            model.model.vision_backbone.forward = paddle.jit.to_static(
-                model.model.vision_backbone.forward, full_graph=True, backend="CINN"
-            )
+    if a.split_rope:
+        for block in model.model.vision_backbone.image_vit.transformer.resblocks:
+            block.forward = paddle.jit.to_static(block.forward, full_graph=True, backend="CINN")
         for layer in model.model.layers:
-            if a.split_text_parts or a.split_safe or a.split_rope:
-                if a.split_text_parts:
-                    layer.self_attn.forward = paddle.jit.to_static(
-                        layer.self_attn.forward, full_graph=True, backend="CINN"
-                    )
-                layer.mlp.forward = paddle.jit.to_static(layer.mlp.forward, full_graph=True, backend="CINN")
-            else:
-                layer.forward = paddle.jit.to_static(layer.forward, full_graph=True, backend="CINN")
+            layer.mlp.forward = paddle.jit.to_static(layer.mlp.forward, full_graph=True, backend="CINN")
     else:
         net = paddle.jit.to_static(
             net,
@@ -246,19 +195,7 @@ import random
 
 start_step = 0
 if a.resume:
-    # Locally produced legacy checkpoints contain PosixPath in CLI arguments.
-    # Permit only that class during loading; retain the restricted unpickler.
-    from paddle.framework import restricted_unpickler
-
-    previous_allowed = restricted_unpickler._ALLOWED_CLASSES.get("pathlib")
-    restricted_unpickler._ALLOWED_CLASSES["pathlib"] = {"PosixPath"}
-    try:
-        saved = paddle.load(str(a.resume))
-    finally:
-        if previous_allowed is None:
-            restricted_unpickler._ALLOWED_CLASSES.pop("pathlib", None)
-        else:
-            restricted_unpickler._ALLOWED_CLASSES["pathlib"] = previous_allowed
+    saved = paddle.load(str(a.resume))
     for key in [
         "mode",
         "seed",
@@ -269,13 +206,7 @@ if a.resume:
     ]:
         if saved["meta"].get(key) != meta.get(key):
             raise ValueError(f"Resume mismatch: {key}")
-    for key in [
-        "split",
-        "split_blocks",
-        "split_text_parts",
-        "split_safe",
-        "split_rope",
-    ]:
+    for key in ["split_rope"]:
         if saved["arguments"].get(key) != getattr(a, key):
             raise ValueError(f"Resume boundary mismatch: {key}")
     model.set_state_dict(saved["model"])
@@ -328,11 +259,11 @@ with (a.output / "loss.jsonl").open("w") as f:
         paddle.device.synchronize()
         t = time.perf_counter()
         out = net(*args)
-        if i == 0:
+        if i == start_step:
             np.save(a.output / "initial.npy", out.detach().numpy())
         loss = paddle.nn.functional.cross_entropy(out, y)
         loss.backward()
-        if i == 0:
+        if i == start_step:
             np.savez(
                 a.output / "grads.npz",
                 **{n: v.grad.numpy() for n, v in model.named_parameters() if v.grad is not None},
@@ -341,7 +272,8 @@ with (a.output / "loss.jsonl").open("w") as f:
         opt.clear_grad()
         paddle.device.synchronize()
         row = {"step": i, "loss": float(loss), "ms": 1000 * (time.perf_counter() - t)}
-        assert np.isfinite(row["loss"])
+        if not np.isfinite(row["loss"]):
+            raise FloatingPointError(f"Non-finite training loss at step {i}: {row['loss']}")
         f.write(json.dumps(row) + "\n")
         f.flush()
         print(row, flush=True)
