@@ -44,6 +44,7 @@ from paddleformers.transformers.qwen3_omni_moe.processor import (
     Qwen3OmniMoeProcessorKwargs,
 )
 
+from ...transformers.fastvlm.constants import IMAGE_TOKEN_INDEX
 from ...utils.log import logger
 from .augment_utils import (
     JpegCompression,
@@ -394,7 +395,7 @@ class BasePlugin(MMPluginMixin):
 
 @dataclass
 class FastVLMPlugin(BasePlugin):
-    image_token_id: int = -200
+    image_token_id: int = IMAGE_TOKEN_INDEX
 
     @override
     def process_messages(

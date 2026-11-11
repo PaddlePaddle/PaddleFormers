@@ -20,6 +20,16 @@ from typing import Dict, List, Optional, Tuple, Union
 import paddle
 
 
+def _conv2d_fp32(inputs, weight, bias=None, **conv_kwargs):
+    """Accumulate sensitive convolutions in FP32, preserving the input dtype."""
+    return paddle.nn.functional.conv2d(
+        inputs.astype("float32"),
+        weight.astype("float32"),
+        bias.astype("float32") if bias is not None else None,
+        **conv_kwargs,
+    ).astype(inputs.dtype)
+
+
 def _cfg(url="", **kwargs):
     return {
         "url": url,
@@ -184,15 +194,15 @@ class MobileOneBlock(paddle.nn.Layer):
         """Apply forward pass."""
         if self.inference_mode:
             if x.dtype == paddle.bfloat16 and self.groups == self.in_channels:
-                output = paddle.nn.functional.conv2d(
-                    x.astype("float32"),
-                    self.reparam_conv.weight.astype("float32"),
-                    self.reparam_conv.bias.astype("float32"),
+                output = _conv2d_fp32(
+                    x,
+                    self.reparam_conv.weight,
+                    self.reparam_conv.bias,
                     stride=self.reparam_conv._stride,
                     padding=self.reparam_conv._padding,
                     dilation=self.reparam_conv._dilation,
                     groups=self.reparam_conv._groups,
-                ).astype(x.dtype)
+                )
             else:
                 output = self.reparam_conv(x)
             return self.activation(self.se(output))
@@ -408,15 +418,15 @@ class ReparamLargeKernelConv(paddle.nn.Layer):
         """Apply forward pass."""
         if hasattr(self, "lkb_reparam"):
             if x.dtype == paddle.bfloat16 and self.groups == self.in_channels:
-                out = paddle.nn.functional.conv2d(
-                    x.astype("float32"),
-                    self.lkb_reparam.weight.astype("float32"),
-                    self.lkb_reparam.bias.astype("float32"),
+                out = _conv2d_fp32(
+                    x,
+                    self.lkb_reparam.weight,
+                    self.lkb_reparam.bias,
                     stride=self.lkb_reparam._stride,
                     padding=self.lkb_reparam._padding,
                     dilation=self.lkb_reparam._dilation,
                     groups=self.lkb_reparam._groups,
-                ).astype(x.dtype)
+                )
             else:
                 out = self.lkb_reparam(x)
         else:
@@ -747,15 +757,15 @@ class RepMixer(paddle.nn.Layer):
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         if hasattr(self, "reparam_conv"):
             if x.dtype == paddle.bfloat16:
-                x = paddle.nn.functional.conv2d(
-                    x.astype("float32"),
-                    self.reparam_conv.weight.astype("float32"),
-                    self.reparam_conv.bias.astype("float32"),
+                x = _conv2d_fp32(
+                    x,
+                    self.reparam_conv.weight,
+                    self.reparam_conv.bias,
                     stride=self.reparam_conv._stride,
                     padding=self.reparam_conv._padding,
                     dilation=self.reparam_conv._dilation,
                     groups=self.reparam_conv._groups,
-                ).astype(x.dtype)
+                )
             else:
                 x = self.reparam_conv(x)
             return x
@@ -855,15 +865,15 @@ class ConvFFN(paddle.nn.Layer):
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         if x.dtype == paddle.bfloat16:
             depthwise = self.conv.conv
-            x = paddle.nn.functional.conv2d(
-                x.astype("float32"),
-                depthwise.weight.astype("float32"),
+            x = _conv2d_fp32(
+                x,
+                depthwise.weight,
                 None,
                 stride=depthwise._stride,
                 padding=depthwise._padding,
                 dilation=depthwise._dilation,
                 groups=depthwise._groups,
-            ).astype(x.dtype)
+            )
             x = self.conv.bn(x)
         else:
             x = self.conv(x)
@@ -928,15 +938,15 @@ class RepCPE(paddle.nn.Layer):
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         if hasattr(self, "reparam_conv"):
             if x.dtype == paddle.bfloat16:
-                x = paddle.nn.functional.conv2d(
-                    x.astype("float32"),
-                    self.reparam_conv.weight.astype("float32"),
-                    self.reparam_conv.bias.astype("float32"),
+                x = _conv2d_fp32(
+                    x,
+                    self.reparam_conv.weight,
+                    self.reparam_conv.bias,
                     stride=self.reparam_conv._stride,
                     padding=self.reparam_conv._padding,
                     dilation=self.reparam_conv._dilation,
                     groups=self.reparam_conv._groups,
-                ).astype(x.dtype)
+                )
             else:
                 x = self.reparam_conv(x)
             return x

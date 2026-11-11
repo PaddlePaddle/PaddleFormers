@@ -15,6 +15,7 @@
 """FastVLM configuration."""
 
 from ..qwen2.configuration import Qwen2Config
+from .constants import IMAGE_TOKEN_INDEX
 
 
 class FastVLMConfig(Qwen2Config):
@@ -29,7 +30,7 @@ class FastVLMConfig(Qwen2Config):
         mm_projector_type="mlp2x_gelu",
         mm_patch_merge_type="flat",
         image_aspect_ratio="pad",
-        image_token_index=-200,
+        image_token_index=IMAGE_TOKEN_INDEX,
         unfreeze_mm_vision_tower=True,
         tokenizer_model_max_length=8192,
         tokenizer_padding_side="right",

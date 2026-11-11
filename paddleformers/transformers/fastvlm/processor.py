@@ -10,10 +10,8 @@ from ..auto.tokenizer import AutoTokenizer
 from ..feature_extraction_utils import BatchFeature
 from ..processing_utils import ProcessorMixin
 from .configuration import FastVLMConfig
+from .constants import IMAGE_TOKEN, IMAGE_TOKEN_INDEX
 from .image_processor import FastVLMImageProcessor
-
-IMAGE_TOKEN = "<image>"
-IMAGE_TOKEN_INDEX = -200
 
 
 class FastVLMProcessor(ProcessorMixin):

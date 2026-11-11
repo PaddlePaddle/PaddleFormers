@@ -25,6 +25,96 @@ from paddleformers.transformers.fastvlm.processor import FastVLMProcessor
 
 
 class FastVLMModelTest(unittest.TestCase):
+    def test_shared_image_token_defaults(self):
+        from paddleformers.datasets.template.mm_plugin import FastVLMPlugin
+        from paddleformers.datasets.template.template import FastVLMTemplate
+        from paddleformers.transformers.fastvlm.constants import IMAGE_TOKEN_INDEX
+        from paddleformers.transformers.fastvlm.processor import (
+            IMAGE_TOKEN_INDEX as PROCESSOR_IMAGE_TOKEN_INDEX,
+        )
+
+        self.assertEqual(FastVLMConfig().image_token_index, IMAGE_TOKEN_INDEX)
+        self.assertEqual(FastVLMPlugin("<image>", None, None).image_token_id, IMAGE_TOKEN_INDEX)
+        self.assertEqual(FastVLMTemplate.__dataclass_fields__["image_token_id"].default, IMAGE_TOKEN_INDEX)
+        self.assertEqual(PROCESSOR_IMAGE_TOKEN_INDEX, IMAGE_TOKEN_INDEX)
+
+    def _check_qkv_against_fp32(self, dtype):
+        from paddleformers.transformers.fastvlm.modeling import FastVLMQKVLinear
+
+        layer = FastVLMQKVLinear(self.config).to(dtype=dtype)
+        layer.weight.set_value(
+            paddle.linspace(-0.0625, 0.0625, layer.weight.numel()).reshape(layer.weight.shape).astype(dtype)
+        )
+        layer.bias.set_value(paddle.linspace(-0.125, 0.125, layer.bias.numel()).astype(dtype))
+        inputs = (
+            paddle.linspace(-0.5, 0.5, 2 * 3 * self.config.hidden_size)
+            .reshape([2, 3, self.config.hidden_size])
+            .astype(dtype)
+        )
+        inputs.stop_gradient = False
+        reference_inputs = inputs.astype("float32").detach()
+        reference_inputs.stop_gradient = False
+        reference_weight = layer.weight.astype("float32").detach()
+        reference_weight.stop_gradient = False
+        reference_bias = layer.bias.astype("float32").detach()
+        reference_bias.stop_gradient = False
+        expected = paddle.nn.functional.linear(reference_inputs, reference_weight, reference_bias)
+        actual = layer(inputs)
+        tolerance = 2e-3 if dtype == "bfloat16" else 1e-6
+        np.testing.assert_allclose(actual.astype("float32").numpy(), expected.numpy(), atol=tolerance, rtol=tolerance)
+        actual.astype("float32").square().mean().backward()
+        expected.square().mean().backward()
+        for actual_gradient, expected_gradient in (
+            (inputs.grad, reference_inputs.grad),
+            (layer.weight.grad, reference_weight.grad),
+            (layer.bias.grad, reference_bias.grad),
+        ):
+            np.testing.assert_allclose(
+                actual_gradient.astype("float32").numpy(), expected_gradient.numpy(), atol=tolerance, rtol=tolerance
+            )
+
+    def test_qkv_fp32_output_and_gradients(self):
+        self._check_qkv_against_fp32("float32")
+
+    def test_qkv_bf16_output_and_gradients_against_fp32(self):
+        if (
+            not paddle.is_compiled_with_cuda()
+            or not paddle.device.cuda.device_count()
+            or not paddle.amp.is_bfloat16_supported()
+        ):
+            self.skipTest("Native BF16 CUDA requires a supported GPU (for example A100); do not emulate this test")
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        paddle.set_device("gpu:0")
+        self._check_qkv_against_fp32("bfloat16")
+
+    def test_fp32_convolution_helper(self):
+        from paddleformers.transformers.fastvlm.modeling_vision import _conv2d_fp32
+
+        for dtype in ("float32", "bfloat16"):
+            for use_bias in (False, True):
+                with self.subTest(dtype=dtype, bias=use_bias):
+                    inputs = paddle.randn([1, 4, 7, 7]).astype(dtype)
+                    weight = paddle.randn([4, 1, 3, 3]).astype(dtype)
+                    bias = paddle.randn([4]).astype(dtype) if use_bias else None
+                    inputs.stop_gradient = False
+                    weight.stop_gradient = False
+                    options = dict(stride=2, padding=2, dilation=2, groups=4)
+                    expected = paddle.nn.functional.conv2d(
+                        inputs.astype("float32"),
+                        weight.astype("float32"),
+                        None if bias is None else bias.astype("float32"),
+                        **options,
+                    ).astype(dtype)
+                    actual = _conv2d_fp32(inputs, weight, bias, **options)
+                    self.assertEqual(actual.dtype, inputs.dtype)
+                    np.testing.assert_array_equal(actual.astype("float32").numpy(), expected.astype("float32").numpy())
+                    expected_grads = paddle.grad(expected.astype("float32").sum(), [inputs, weight], retain_graph=True)
+                    actual_grads = paddle.grad(actual.astype("float32").sum(), [inputs, weight])
+                    for actual_grad, expected_grad in zip(actual_grads, expected_grads):
+                        np.testing.assert_array_equal(
+                            actual_grad.astype("float32").numpy(), expected_grad.astype("float32").numpy()
+                        )
+
     def setUp(self):
         self.config = FastVLMConfig(
             vocab_size=128,

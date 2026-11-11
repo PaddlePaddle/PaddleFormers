@@ -27,6 +27,7 @@ from typing_extensions import override
 
 from paddleformers.utils.log import logger
 
+from ...transformers.fastvlm.constants import IMAGE_TOKEN, IMAGE_TOKEN_INDEX
 from .formatter import (
     EmptyFormatter,
     FunctionFormatter,
@@ -220,8 +221,8 @@ class Template:
 
 @dataclass
 class FastVLMTemplate(Template):
-    image_token: str = "<image>"
-    image_token_id: int = -200
+    image_token: str = IMAGE_TOKEN
+    image_token_id: int = IMAGE_TOKEN_INDEX
 
     @override
     def _convert_elements_to_ids(self, tokenizer: "PreTrainedTokenizer", elements: "SLOTS") -> list[int]:
