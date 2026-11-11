@@ -36,6 +36,7 @@ from paddleformers.transformers import (
     DeepseekOCR2Config,
     DeepseekOCR2ForConditionalGeneration,
 )
+from tests.cinn.checkpoint_utils import strict_set_state_dict
 
 p = argparse.ArgumentParser()
 p.add_argument("--mode", choices=["dynamic", "cinn"], required=True)
@@ -102,11 +103,11 @@ model = DeepseekOCR2ForConditionalGeneration(c)
 if a.no_vision_cache:
     model.model.qwen2_model.model.model.config.use_cache = False
 if a.checkpoint:
-    model.set_state_dict(paddle.load(str(a.checkpoint)))
+    strict_set_state_dict(model, paddle.load(str(a.checkpoint)))
 resume_state = paddle.load(str(a.resume)) if a.resume else None
 start_step = resume_state["step"] if resume_state else 0
 if resume_state:
-    model.set_state_dict(resume_state["model"])
+    strict_set_state_dict(model, resume_state["model"])
 c.save_pretrained(str(a.output / "config"))
 if a.static_config_get:
     import types
