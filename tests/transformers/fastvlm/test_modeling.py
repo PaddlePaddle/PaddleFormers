@@ -3,6 +3,7 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 
+import json
 import os
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ from unittest import mock
 import numpy as np
 import paddle
 from PIL import Image
+from safetensors.numpy import save_file
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 from transformers import PreTrainedTokenizerFast
@@ -185,6 +187,94 @@ class FastVLMModelTest(unittest.TestCase):
         self.assertIsInstance(processor, FastVLMProcessor)
         self.assertIs(processor.tokenizer, tokenizer)
         self.assertEqual(processor.image_processor.crop_size, {"height": 64, "width": 64})
+
+    def test_checkpoint_resolution_errors_are_not_swallowed(self):
+        from paddleformers.transformers.model_utils import PretrainedModel
+
+        for error in (OSError("network failure"), ValueError("bad index"), FileNotFoundError("missing shard")):
+            with self.subTest(error=error), mock.patch(
+                "paddleformers.transformers.fastvlm.modeling._resolve_hf_checkpoint_dir", side_effect=error
+            ), mock.patch.object(PretrainedModel, "from_pretrained") as fallback:
+                with self.assertRaises(type(error)) as caught:
+                    FastVLMForConditionalGeneration.from_pretrained("test/fastvlm")
+                self.assertIs(caught.exception, error)
+                fallback.assert_not_called()
+
+    def test_invalid_hf_index_and_missing_shard_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.safetensors.index.json")
+            weight_map = {"model.vision_tower.vision_tower.model.weight": "missing.safetensors"}
+            for contents, error in (
+                ("{broken", json.JSONDecodeError),
+                ("{}", KeyError),
+                (json.dumps({"weight_map": weight_map}), FileNotFoundError),
+            ):
+                with self.subTest(contents=contents):
+                    with open(path, "w", encoding="utf-8") as file:
+                        file.write(contents)
+                    with self.assertRaises(error):
+                        FastVLMForConditionalGeneration.from_pretrained(directory, config=self.config)
+
+    def test_native_loader_rejects_unused_kwargs(self):
+        model = FastVLMForConditionalGeneration(self.config)
+        with tempfile.TemporaryDirectory() as directory:
+            model.save_pretrained(directory)
+            for options in ({}, {"config": self.config}):
+                with self.subTest(options=options), self.assertRaisesRegex(TypeError, "unexpected_option"):
+                    FastVLMForConditionalGeneration.from_pretrained(directory, unexpected_option=True, **options)
+
+    def test_real_hf_safetensors_conversion_and_kwargs(self):
+        reference = FastVLMForConditionalGeneration(self.config).eval()
+        hf_weights = {}
+        heads = self.config.num_attention_heads
+        kv_heads = self.config.num_key_value_heads
+        head_dim = self.config.hidden_size // heads
+        for name, tensor in reference.state_dict().items():
+            array = tensor.numpy()
+            if name.startswith("model.vision_tower.vision_model."):
+                source = name.replace("model.vision_tower.vision_model.", "model.vision_tower.vision_tower.model.")
+                source = source.replace("._mean", ".running_mean").replace("._variance", ".running_var")
+                hf_weights[source] = array
+            elif ".qkv_proj." in name:
+                # Independent inverse layout: [KV group, Q heads..., K, V].
+                groups = array.reshape([*array.shape[:-1], kv_heads, (heads // kv_heads + 2) * head_dim])
+                parts = np.split(groups, [heads // kv_heads * head_dim, (heads // kv_heads + 1) * head_dim], axis=-1)
+                for projection, part in zip(("q", "k", "v"), parts):
+                    part = part.reshape([*array.shape[:-1], -1])
+                    hf_weights[name.replace("qkv_proj", projection + "_proj")] = (
+                        part.T.copy() if name.endswith("weight") else part.copy()
+                    )
+            elif ".up_gate_proj." in name:
+                for projection, part in zip(("gate", "up"), np.split(array, 2, axis=-1)):
+                    hf_weights[name.replace("up_gate_proj", projection + "_proj")] = part.T.copy()
+            elif (name.startswith("model.mm_projector.") and name.endswith("weight")) or name.endswith(
+                (".self_attn.o_proj.weight", ".mlp.down_proj.weight")
+            ):
+                hf_weights[name] = array.T.copy()
+            else:
+                hf_weights[name] = array
+        with tempfile.TemporaryDirectory() as directory:
+            subdir = os.path.join(directory, "weights")
+            os.makedirs(subdir)
+            self.config.save_pretrained(subdir)
+            save_file(hf_weights, os.path.join(subdir, "model.safetensors"), metadata={"format": "pt"})
+            loaded = FastVLMForConditionalGeneration.from_pretrained(
+                directory, subfolder="weights", convert_from_hf=True, local_files_only=True
+            ).eval()
+            for options in ({}, {"config": self.config}):
+                with self.subTest(options=options), self.assertRaisesRegex(TypeError, "unexpected_option"):
+                    FastVLMForConditionalGeneration.from_pretrained(subdir, unexpected_option=True, **options)
+            with self.assertRaisesRegex(ValueError, "convert_from_hf"):
+                FastVLMForConditionalGeneration.from_pretrained(subdir, convert_from_hf=False)
+        for name, tensor in reference.state_dict().items():
+            np.testing.assert_array_equal(loaded.state_dict()[name].numpy(), tensor.numpy(), err_msg=name)
+        ids, labels, pixels = self.get_inputs()
+        with paddle.no_grad():
+            np.testing.assert_allclose(
+                loaded(input_ids=ids, pixel_values=pixels, return_dict=True).logits.numpy(),
+                reference(input_ids=ids, pixel_values=pixels, return_dict=True).logits.numpy(),
+                atol=1e-6,
+            )
 
     def test_default_save_pretrained_round_trip(self):
         model = FastVLMForConditionalGeneration(self.config)

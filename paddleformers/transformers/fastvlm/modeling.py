@@ -15,7 +15,6 @@
 
 """FastVLM model implementation."""
 
-import inspect
 import json
 import os
 from collections import defaultdict
@@ -50,7 +49,13 @@ IGNORE_INDEX = -100
 def _resolve_hf_checkpoint_dir(pretrained_model_name_or_path, **kwargs):
     """Resolve a local directory containing every Hugging Face safetensors shard."""
     if os.path.isdir(pretrained_model_name_or_path):
-        return pretrained_model_name_or_path
+        directory = os.path.join(pretrained_model_name_or_path, kwargs.get("subfolder") or "")
+        if any(
+            os.path.isfile(os.path.join(directory, name))
+            for name in ("model.safetensors", "model.safetensors.index.json")
+        ):
+            return directory
+        return None
 
     subfolder = kwargs.get("subfolder", "")
     resolved_file = resolve_file_path(
@@ -64,6 +69,8 @@ def _resolve_hf_checkpoint_dir(pretrained_model_name_or_path, **kwargs):
         local_files_only=kwargs.get("local_files_only", False),
         download_hub=kwargs.get("download_hub"),
     )
+    if resolved_file is None:
+        return None
     if resolved_file.endswith(".index.json"):
         get_checkpoint_shard_files(
             pretrained_model_name_or_path,
@@ -81,7 +88,7 @@ def _is_hf_fastvlm_checkpoint(model_dir):
     checkpoint_path = os.path.join(model_dir, "model.safetensors")
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as file:
-            keys = json.load(file).get("weight_map", {}).keys()
+            keys = json.load(file)["weight_map"].keys()
     elif os.path.exists(checkpoint_path):
         with safe_open(checkpoint_path, framework="np") as shard:
             keys = list(shard.keys())
@@ -296,20 +303,34 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
         if not isinstance(pretrained_model_name_or_path, (str, os.PathLike)):
             return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
 
-        is_native_checkpoint = os.path.isdir(pretrained_model_name_or_path) and os.path.exists(
-            os.path.join(pretrained_model_name_or_path, "model_state.pdparams")
+        native_path = os.path.join(
+            pretrained_model_name_or_path, kwargs.get("subfolder") or "", "model_state.pdparams"
         )
-        if is_native_checkpoint:
+        if os.path.isfile(native_path):
             dtype = kwargs.pop("dtype", None)
             config = kwargs.pop("config", None)
             if not isinstance(config, PretrainedConfig):
                 config_path = config if config is not None else pretrained_model_name_or_path
-                config, _ = cls.config_class.from_pretrained(config_path, return_unused_kwargs=True, **kwargs)
+                config, model_kwargs = cls.config_class.from_pretrained(
+                    config_path, return_unused_kwargs=True, **kwargs
+                )
+            else:
+                model_kwargs = kwargs
+            for key in (
+                "cache_dir",
+                "subfolder",
+                "revision",
+                "token",
+                "force_download",
+                "local_files_only",
+                "download_hub",
+            ):
+                model_kwargs.pop(key, None)
             if dtype is not None:
                 config.dtype = dtype
             with dtype_guard(dtype or paddle.get_default_dtype()):
-                model = cls(config, *args)
-            state_dict = paddle.load(os.path.join(pretrained_model_name_or_path, "model_state.pdparams"))
+                model = cls(config, *args, **model_kwargs)
+            state_dict = paddle.load(native_path)
             missing_keys, unexpected_keys = model.set_state_dict(state_dict)
             if missing_keys or unexpected_keys:
                 raise ValueError(
@@ -317,16 +338,14 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
                 )
             return model
 
-        try:
-            checkpoint_dir = _resolve_hf_checkpoint_dir(str(pretrained_model_name_or_path), **kwargs)
-        except (EnvironmentError, FileNotFoundError, ValueError):
+        checkpoint_dir = _resolve_hf_checkpoint_dir(str(pretrained_model_name_or_path), **kwargs)
+        if checkpoint_dir is None:
             return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
         if not _is_hf_fastvlm_checkpoint(checkpoint_dir):
             return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
 
-        accepted_init_kwargs = {
-            name for name in inspect.signature(cls.__init__).parameters if name not in {"self", "config"}
-        }
+        if not kwargs.pop("convert_from_hf", True):
+            raise ValueError("Original FastVLM safetensors require convert_from_hf=True")
         dtype = kwargs.pop("dtype", None)
         config = kwargs.pop("config", None)
         if not isinstance(config, PretrainedConfig):
@@ -334,7 +353,18 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
             config, model_kwargs = cls.config_class.from_pretrained(config_path, return_unused_kwargs=True, **kwargs)
         else:
             model_kwargs = kwargs
-        model_kwargs = {key: value for key, value in model_kwargs.items() if key in accepted_init_kwargs}
+        # Constructors only accept config. Do not silently discard unknown
+        # arguments; resolution options have already been used above.
+        for key in (
+            "cache_dir",
+            "subfolder",
+            "revision",
+            "token",
+            "force_download",
+            "local_files_only",
+            "download_hub",
+        ):
+            model_kwargs.pop(key, None)
         if dtype is not None:
             config.dtype = dtype
         with dtype_guard(dtype or paddle.get_default_dtype()):
