@@ -53,7 +53,7 @@ class DeepseekV3Config(PretrainedConfig):
             Number of routed experts, None means dense model.
         routed_scaling_factor (`float`, *optional*, defaults to 1.0):
             Scaling factor or routed experts.
-        topk_method (`str`, *optional*, defaults to `noaux_tc`):
+        topk_method (`str`, *optional*, defaults to `gready`):
             Topk method used in routed gate.
         n_group (`int`, *optional*, defaults to None):
             Number of groups for routed experts.
@@ -68,7 +68,7 @@ class DeepseekV3Config(PretrainedConfig):
                                                             \--k dense layers--/
         norm_topk_prob (`bool`, *optional*, defaults to False):
             Whether to normalize the weights of the routed experts.
-        scoring_func (`str`, *optional*, defaults to 'sigmoid'):
+        scoring_func (`str`, *optional*, defaults to 'softmax'):
             Method of computing expert weights.
         seq_aux = (`bool`, *optional*, defaults to True):
             Whether to compute the auxiliary loss for each individual sample.
@@ -153,14 +153,14 @@ class DeepseekV3Config(PretrainedConfig):
         qk_rope_head_dim=64,
         v_head_dim=128,
         qk_nope_head_dim=128,
-        topk_method="noaux_tc",
+        topk_method="gready",
         n_group=None,
         topk_group=None,
         num_experts_per_tok=None,
         moe_layer_freq=1,
         first_k_dense_replace=0,
         norm_topk_prob=False,
-        scoring_func="sigmoid",
+        scoring_func="softmax",
         seq_aux=True,
         hidden_act="silu",
         max_position_embeddings=2048,
@@ -205,11 +205,6 @@ class DeepseekV3Config(PretrainedConfig):
             self.head_dim = hidden_size // num_attention_heads
         else:
             self.head_dim = qk_rope_head_dim
-        # Older Paddle V3 configs serialized these values although the V3
-        # router always used sigmoid/noaux_tc. Preserve that checkpoint behavior.
-        # OCR2 has a distinct model_type and intentionally uses greedy routing.
-        if self.model_type == "deepseek_v3" and topk_method == "gready" and scoring_func == "softmax":
-            topk_method, scoring_func = "noaux_tc", "sigmoid"
         self.topk_method = topk_method
         self.n_group = n_group
         self.topk_group = topk_group

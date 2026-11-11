@@ -54,16 +54,16 @@ class DeepseekV3RoutingDefaultsTest(unittest.TestCase):
             )
             router = DeepseekV3TopkRouter(config)
             router.weight.set_value(paddle.to_tensor([[1.0, 2.0, 3.0, 4.0], [0.0, 0.0, 0.0, 0.0]]))
-            if config.topk_method == "noaux_tc":
+            if router.topk_method == "noaux_tc":
                 router.e_score_correction_bias.set_value(paddle.to_tensor([10.0, 0.0, 0.0, 0.0]))
             inputs = paddle.to_tensor([[1.0, 0.0]])
             indices, weights = router(inputs)
             scores = paddle.nn.functional.linear(inputs, router.weight)
             scores = (
-                scores.sigmoid() if config.scoring_func == "sigmoid" else paddle.nn.functional.softmax(scores, axis=-1)
+                scores.sigmoid() if router.scoring_func == "sigmoid" else paddle.nn.functional.softmax(scores, axis=-1)
             )
             np.testing.assert_allclose(weights.numpy(), paddle.take_along_axis(scores, indices, axis=1).numpy())
-            self.assertEqual(set(indices.numpy().flatten()), {0, 3} if config.topk_method == "noaux_tc" else {2, 3})
+            self.assertEqual(set(indices.numpy().flatten()), {0, 3} if router.topk_method == "noaux_tc" else {2, 3})
             with tempfile.TemporaryDirectory() as directory:
                 path = directory + "/router.pdparams"
                 paddle.save(router.state_dict(), path)
@@ -75,16 +75,21 @@ class DeepseekV3RoutingDefaultsTest(unittest.TestCase):
                 np.testing.assert_array_equal(actual_weights.numpy(), weights.numpy())
 
     def test_legacy_paddle_defaults_keep_v3_behavior(self):
+        from paddleformers.transformers.deepseek_v3.modeling import DeepseekV3TopkRouter
+
         config = DeepseekV3Config.from_dict({"topk_method": "gready", "scoring_func": "softmax"})
-        self.assertEqual((config.scoring_func, config.topk_method), ("sigmoid", "noaux_tc"))
+        config.n_routed_experts = 4
+        config.hidden_size = 8
+        router = DeepseekV3TopkRouter(config)
+        self.assertEqual((router.scoring_func, router.topk_method), ("sigmoid", "noaux_tc"))
+        self.assertEqual((config.scoring_func, config.topk_method), ("softmax", "gready"))
 
     def test_missing_hf_router_fields_keep_v3_defaults(self):
         config = DeepseekV3Config.from_dict({"hidden_size": 8, "n_routed_experts": 4})
-        self.assertEqual(config.scoring_func, "sigmoid")
-        self.assertEqual(config.topk_method, "noaux_tc")
         from paddleformers.transformers.deepseek_v3.modeling import DeepseekV3TopkRouter
 
         router = DeepseekV3TopkRouter(config)
+        self.assertEqual((router.scoring_func, router.topk_method), ("sigmoid", "noaux_tc"))
         self.assertIn("e_score_correction_bias", router.state_dict())
         for mapping in (
             DeepseekV3ForCausalLM._gen_aoa_config(config),

@@ -354,6 +354,15 @@ class AddAuxiliaryLoss(paddle.autograd.PyLayer):
         return grad_output, grad_loss
 
 
+def _topk_router_settings(config):
+    # V3's non-fused router has always used sigmoid/noaux_tc independently
+    # of the legacy configuration fields used by MoEGate. Only OCR2 opts
+    # into configurable routing; do not rewrite serialized V3 configs.
+    if config.model_type == "deepseek_ocr2":
+        return config.scoring_func, config.topk_method
+    return "sigmoid", "noaux_tc"
+
+
 class DeepseekV3TopkRouter(nn.Layer):
     def __init__(self, config):
         super().__init__()
@@ -361,8 +370,7 @@ class DeepseekV3TopkRouter(nn.Layer):
         self.top_k = config.num_experts_per_tok
         self.n_routed_experts = config.n_routed_experts
         self.routed_scaling_factor = config.routed_scaling_factor
-        self.scoring_func = config.scoring_func
-        self.topk_method = config.topk_method
+        self.scoring_func, self.topk_method = _topk_router_settings(config)
         self.n_group = config.n_group
         self.topk_group = config.topk_group
         self.norm_topk_prob = config.norm_topk_prob
@@ -428,7 +436,7 @@ class DeepseekV3TopkRouter(nn.Layer):
                 raise ValueError(f"Unsupported scoring_func: {self.scoring_func}")
         topk_indices = self.get_topk_indices(scores)
         topk_weights = scores.gather(1, topk_indices)
-        if self.top_k > 1 and self.norm_topk_prob:
+        if self.norm_topk_prob and (self.config.model_type != "deepseek_ocr2" or self.top_k > 1):
             denominator = topk_weights.sum(dim=-1, keepdim=True) + 1e-20
             topk_weights /= denominator
         topk_weights = topk_weights * self.routed_scaling_factor
@@ -1390,7 +1398,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
                 f"model.layers.$LAYER_ID.mlp.shared_experts.down_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.shared_experts.down_proj.weight",
             ]
         }
-        if config.topk_method == "noaux_tc":
+        if _topk_router_settings(config)[1] == "noaux_tc":
             aoa_config["aoa_statements"] += [
                 f"model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> {model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias, dtype='float32'",
             ]
@@ -1481,7 +1489,7 @@ class DeepseekV3PretrainedModel(PretrainedModel):
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
         ]
-        if config.topk_method == "noaux_tc":
+        if _topk_router_settings(config)[1] == "noaux_tc":
             aoa_statements += [
                 f"{model_prefix}layers.$LAYER_ID.mlp.gate.e_score_correction_bias -> model.layers.$LAYER_ID.mlp.gate.e_score_correction_bias",
             ]
