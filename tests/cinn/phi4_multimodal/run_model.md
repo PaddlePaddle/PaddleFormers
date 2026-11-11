@@ -2,7 +2,7 @@
 
 2026-11-06 在 develop f7fa77f 上重新执行官方目录入口：两端各 20 步和同权重独立推理通过；loss 最大差 2.38e-7，56 项首步梯度均保留且有限、最大差 2.38e-6，推理 logits 最大差 1.65e-5。该回归不代表重新完成长程收敛训练。
 
-用于框架测试的随机 tiny，FP32、关闭 TF32、单卡 batch 1。固定真实图片子集：20 张训练、4 张留出，学习类别 ID 数字 token，不是完整模型任务质量评测。仅图文，不测音频。两端均启用位置赋值修正 phi4_position_fix.py；CINN 分别编译视觉和文本组件，config.get 保留为 Python。修正消除链式索引赋值造成的图像位置写入差异，不修改源码工作树。
+用于框架测试的随机 tiny，FP32、关闭 TF32、单卡 batch 1。固定真实图片子集：20 张训练、4 张留出，学习类别 ID 数字 token，不是完整模型任务质量评测。仅图文，不测音频。两端直接运行正式 Phi4MultimodalVisionEmbeddings；位置 ID 采用 paddle.where 赋值，测试不再替换 forward。CINN 分别编译视觉和文本组件，config.get 保留为 Python。模型单测使用独立计算的位置 ID 覆盖完整图像和带 padding 的矩形图像，并比较输出和梯度。
 
 ## 环境与资产
 
@@ -21,10 +21,10 @@ export PYTHON_BIN=/path/to/python
 bash tests/cinn/phi4_multimodal/run_model.sh
 bash tests/cinn/phi4_multimodal/run_model_cinn.sh
 "$PYTHON_BIN" tests/cinn/phi4_multimodal/compare_results.py tests/cinn/phi4_multimodal/results
-MODE=dynamic STEPS=10000 RESULTS_DIR=results/full bash tests/cinn/phi4_multimodal/train.sh
-MODE=cinn STEPS=10000 RESULTS_DIR=results/full bash tests/cinn/phi4_multimodal/train.sh
-MODE=dynamic RESULTS_DIR=results/infer1 bash tests/cinn/phi4_multimodal/infer.sh
-MODE=cinn RESULTS_DIR=results/infer1 bash tests/cinn/phi4_multimodal/infer.sh
+MODE=dynamic STEPS=10000 RESULTS_DIR=tests/cinn/phi4_multimodal/results/full bash tests/cinn/phi4_multimodal/train.sh
+MODE=cinn STEPS=10000 RESULTS_DIR=tests/cinn/phi4_multimodal/results/full bash tests/cinn/phi4_multimodal/train.sh
+MODE=dynamic RESULTS_DIR=tests/cinn/phi4_multimodal/results/infer1 bash tests/cinn/phi4_multimodal/infer.sh
+MODE=cinn RESULTS_DIR=tests/cinn/phi4_multimodal/results/infer1 bash tests/cinn/phi4_multimodal/infer.sh
 ```
 
 默认每端 20 步真实 AdamW 更新加独立进程固定前向推理；学习率 2e-5。推理不是 generate，预热 10 次、计时 30 次，GPU 同步，排除预处理、H2D 和首次编译。GPU_ID 默认为 0，重复运行必须指定新的 RESULTS_DIR。CINN 日志缺少编译标志则入口失败。
@@ -35,7 +35,9 @@ MODE=cinn RESULTS_DIR=results/infer1 bash tests/cinn/phi4_multimodal/infer.sh
 
 历史长跑用于固定子集拟合；本次交付短测仅验证脚本移植及数值、梯度路径，不宣称重新完成长程训练，不代表原始完整模型质量或泛化能力。
 
-2026-10-07 本地交付回归通过：两端各20步，loss 最大绝对差2.38e-7；共同权重独立推理 logits 最大差1.65e-5；56项首步梯度均保留，最大绝对差2.38e-6。本次仅为短程入口验证。
+短程比较阈值：--loss-atol 1e-5、--grad-atol 1e-4、--logits-atol 1e-4，rtol 均为 0。超限或非有限值直接失败，阈值记录在输出中。合成负例单测验证 loss/梯度偏差 0.1 时必定失败，包含 python -O；不将负例当作模型精度数据。上述阈值用于短程回归，不能替代长程收敛判断。
+
+按交付约定保留 run_model.sh / run_model_cinn.sh，底层调用同一 run_model_common.sh；该目录是显式 GPU 手工入口，未声称接入默认 CI。续跑会保存当前分段首步的梯度，而不是遗漏此文件。
 
 
 外部资源暂不上传：CINN_RESOURCE_DIR 需包含 asset_manifest.json 列出的 assets/ 和 data/ 文件。图片使用须遵守 ImageNet 条款。资源和权重联系贡献者获取，公开下载入口待后续维护。历史结果不代表当前 checkout 已重新完成长跑。

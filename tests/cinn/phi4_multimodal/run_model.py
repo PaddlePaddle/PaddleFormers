@@ -42,7 +42,6 @@ p.add_argument("--output", type=Path, required=True)
 p.add_argument("--static-config-get", action="store_true")
 p.add_argument("--split-components", action="store_true")
 p.add_argument("--vision-only", action="store_true")
-p.add_argument("--fix-position-assignment", action="store_true")
 p.add_argument("--steps", type=int, default=20)
 p.add_argument("--dataset", type=Path)
 p.add_argument("--checkpoint", type=Path)
@@ -64,13 +63,6 @@ if a.checkpoint:
     else:
         raise FileNotFoundError(a.checkpoint)
 c.save_pretrained(str(a.output / "config"))
-if a.fix_position_assignment:
-    import types
-
-    from phi4_position_fix import embeddings_forward
-
-    emb = model.model.embed_tokens_extend.image_embed.img_processor.embeddings
-    emb.forward = types.MethodType(embeddings_forward, emb)
 if a.static_config_get:
     import types
 
@@ -139,7 +131,8 @@ if a.dataset:
         ids = b["input_ids"]
         mask = b["attention_mask"]
         pad = 32 - ids.shape[1]
-        assert pad >= 0
+        if pad < 0:
+            raise ValueError(f"Image sample produces {ids.shape[1]} tokens; the benchmark limit is 32")
         ids = paddle.concat([ids, paddle.full([1, pad], c.pad_token_id, dtype="int64")], axis=1)
         mask = paddle.concat([mask, paddle.zeros([1, pad], dtype=mask.dtype)], axis=1)
         samples.append(
@@ -167,7 +160,7 @@ meta = {
     "paddle_commit": paddle.version.commit,
     "precision": "FP32 TF32 off",
     "split_components": a.split_components,
-    "position_fix": a.fix_position_assignment,
+    "position_implementation": "production_where_assignment",
     "dataset_sha256": hashlib.sha256(a.dataset.read_bytes()).hexdigest() if a.dataset else None,
     "checkpoint_sha256": hashlib.sha256(a.checkpoint.read_bytes()).hexdigest() if a.checkpoint else None,
 }
@@ -246,7 +239,8 @@ if a.resume:
         "mode",
         "dataset_sha256",
         "checkpoint_sha256",
-        "position_fix",
+        "position_implementation",
+        "source_commit",
         "split_components",
         "paddle_commit",
     ]:
@@ -285,8 +279,6 @@ def save_training_state(step):
 
 if samples:
     evaluate(start_step)
-labels = args[0][:, 1:].clone()
-labels = paddle.where(labels >= 200000, paddle.full_like(labels, -100), labels)
 with (a.output / "loss.jsonl").open("w") as f:
     for i in range(start_step, a.steps):
         if samples:
@@ -294,11 +286,11 @@ with (a.output / "loss.jsonl").open("w") as f:
         paddle.device.synchronize()
         start = time.perf_counter()
         out = net(*args)
-        if i == 0:
+        if i == start_step:
             np.save(a.output / "initial.npy", out.detach().numpy())
         loss = sample_loss(out, args)
         loss.backward()
-        if i == 0:
+        if i == start_step:
             np.savez(
                 a.output / "gradients.npz",
                 **{n: v.grad.numpy() for n, v in model.named_parameters() if v.grad is not None},
@@ -311,7 +303,8 @@ with (a.output / "loss.jsonl").open("w") as f:
             "loss": float(loss),
             "ms": 1000 * (time.perf_counter() - start),
         }
-        assert np.isfinite(row["loss"])
+        if not np.isfinite(row["loss"]):
+            raise FloatingPointError(f"Non-finite training loss at step {i}: {row['loss']}")
         f.write(json.dumps(row) + "\n")
         f.flush()
         print(row, flush=True)

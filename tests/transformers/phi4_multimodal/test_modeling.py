@@ -37,6 +37,7 @@ from paddleformers.transformers.phi4_multimodal.modeling import (
     Phi4MultimodalDecoderLayer,
     Phi4MultimodalPreTrainedModel,
     Phi4MultimodalRotaryEmbedding,
+    Phi4MultimodalVisionEmbeddings,
     Phi4MultimodalVisionEncoder,
     Phi4MultimodalVisionModel,
     _lora_adapter_from_input_mode,
@@ -46,6 +47,46 @@ from paddleformers.transformers.phi4_multimodal.modeling import (
 
 
 class Phi4MultimodalModelingTest(unittest.TestCase):
+    def _check_vision_embedding_position_ids(self, use_cinn=False):
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        paddle.set_device("gpu:0" if use_cinn else "cpu")
+        config = Phi4MultimodalVisionConfig(hidden_size=8, image_size=6, patch_size=2)
+        reference = Phi4MultimodalVisionEmbeddings(config)
+        actual_model = Phi4MultimodalVisionEmbeddings(config)
+        actual_model.set_state_dict(reference.state_dict())
+        if use_cinn:
+            actual_model = paddle.jit.to_static(actual_model, full_graph=True, backend="CINN")
+        # Full image, two valid rows, and one valid column in a padded 3x3 patch grid.
+        mask = paddle.to_tensor(
+            [[[1, 1, 1], [1, 1, 1], [1, 1, 1]], [[1, 1, 1], [1, 1, 1], [0, 0, 0]], [[1, 0, 0], [1, 0, 0], [1, 0, 0]]],
+            dtype="bool",
+        )
+        # Independently calculated bucket IDs; padded patches use position zero.
+        position_ids = paddle.to_tensor(
+            [[0, 1, 2, 3, 4, 5, 6, 7, 8], [0, 1, 2, 3, 4, 5, 0, 0, 0], [0, 0, 0, 3, 0, 0, 6, 0, 0]], dtype="int64"
+        )
+        pixels = paddle.randn([3, 3, 6, 6])
+        pixels.stop_gradient = False
+        actual_pixels = pixels.detach().clone()
+        actual_pixels.stop_gradient = False
+        expected = reference.patch_embedding(pixels).flatten(2).transpose([0, 2, 1])
+        expected = expected + reference.position_embedding(position_ids)
+        actual = actual_model(actual_pixels, mask)
+        np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
+        expected.square().mean().backward()
+        actual.square().mean().backward()
+        np.testing.assert_allclose(actual_pixels.grad.numpy(), pixels.grad.numpy(), atol=1e-5, rtol=1e-5)
+        for expected_param, actual_param in zip(reference.parameters(), actual_model.parameters()):
+            self.assertIsNotNone(actual_param.grad)
+            np.testing.assert_allclose(actual_param.grad.numpy(), expected_param.grad.numpy(), atol=1e-5, rtol=1e-5)
+
+    def test_vision_embedding_position_ids(self):
+        self._check_vision_embedding_position_ids()
+
+    @unittest.skipUnless(paddle.device.cuda.device_count() > 0, "CINN test requires a CUDA device")
+    def test_vision_embedding_position_ids_cinn(self):
+        self._check_vision_embedding_position_ids(use_cinn=True)
+
     def test_subpackage_exports_standalone_modality_models(self):
         from paddleformers.transformers.phi4_multimodal import (
             Phi4MultimodalAudioModel as ExportedAudioModel,

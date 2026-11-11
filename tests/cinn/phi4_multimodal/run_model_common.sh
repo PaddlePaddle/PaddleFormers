@@ -31,7 +31,7 @@ run_task() {
     local task=$1
     local output="$output_root/$MODE-$task"
     [[ ! -e "$output" ]] || { echo "Refusing to overwrite $output" >&2; exit 3; }
-    local args=(--mode "$MODE" --kind image --static-config-get --fix-position-assignment --split-components --dataset "$CINN_RESOURCE_DIR/data/images24.npz" --output "$output")
+    local args=(--mode "$MODE" --kind image --static-config-get --split-components --dataset "$CINN_RESOURCE_DIR/data/images24.npz" --output "$output")
     if [[ "$task" = infer ]]; then
         args+=(--infer --checkpoint "$CHECKPOINT_DIR/inference.pdparams")
     else
