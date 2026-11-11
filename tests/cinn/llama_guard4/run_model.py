@@ -31,12 +31,12 @@ sys.path.insert(0, repo)
 import paddle
 
 from paddleformers.transformers import (
+    Llama4Config,
     Llama4ForCausalLM,
     Llama4ForConditionalGeneration,
     Llama4TextConfig,
 )
 from tests.cinn.checkpoint_utils import strict_set_state_dict
-from tests.transformers.llama4.test_multimodal import get_tiny_config
 
 p = argparse.ArgumentParser()
 p.add_argument("--kind", choices=["guard"], default="guard")
@@ -68,12 +68,15 @@ if a.kind == "text":
     c.use_cache = False
     model = Llama4ForCausalLM(c)
 else:
-    c = get_tiny_config()
+    c = Llama4Config.from_pretrained(str(Path(__file__).with_name("tiny_config.json")))
     c.text_config._attn_implementation = "eager"
     c.text_config.use_cache = False
     if a.real:
         c.text_config.vocab_size = 202048
         c.image_token_index = 200092
+    else:
+        c.text_config.vocab_size = 128
+        c.image_token_index = 100
     model = Llama4ForConditionalGeneration(c)
 if a.checkpoint:
     if a.checkpoint.exists():

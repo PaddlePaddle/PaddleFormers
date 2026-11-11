@@ -55,3 +55,8 @@ results/<mode>-train 下有逐步 loss.jsonl、validation.jsonl、grads.npz、fi
 2026-11-06 local regression on develop f7fa77f: 20 training steps and independent inference passed in both modes. Loss max difference 1.19e-7; 63 gradients retained after mapping the CINN vision wrapper prefix back to the original names, gradient max difference 5.25e-6; same-checkpoint logits max difference 5.36e-6. This is an entry regression, not a new convergence run.
 
 Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing assets/ and data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. Obtain the bundles from the contributor; public download links will be added later. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
+# 权重与配置校验
+
+本入口使用随脚本提交的 tiny_config.json，不再导入模型单测内部的配置函数。该配置固化自历史入口的实际运行配置；已用两份交付 checkpoint 验证 63 项 state_dict 条目逐项完整加载。外部 assets/config.json 是上游缩层配置，不应直接替代本入口的 tiny 配置。
+
+初始加载及续跑都检查 checkpoint 的 key、shape 与 set_state_dict 返回值；不匹配即报错，不允许跳过参数后继续使用随机初始化。续跑只支持本入口生成的状态，不修改 Paddle 的私有反序列化白名单。tests/cinn/test_checkpoint_utils.py 包含缺失 key、多余 key、错 shape 等负例。
