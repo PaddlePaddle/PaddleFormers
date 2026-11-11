@@ -14,12 +14,14 @@
 # limitations under the License.
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from io import BytesIO
 from types import SimpleNamespace
 from unittest import mock
 
+import numpy as np
 import paddle
 import requests
 from PIL import Image
@@ -57,6 +59,72 @@ class DeepseekOCR2ImageErrorsTest(unittest.TestCase):
         with mock.patch("PIL.Image.open", side_effect=KeyboardInterrupt):
             with self.assertRaises(KeyboardInterrupt):
                 load_image("image.png")
+
+
+class DeepseekOCR2PreprocessingTest(unittest.TestCase):
+    def test_training_and_inference_share_tiles(self):
+        from paddleformers.datasets.template.mm_plugin import DeepseekOCR2Plugin
+        from paddleformers.transformers.deepseek_ocr2.image_processing import (
+            dynamic_preprocess,
+        )
+        from paddleformers.transformers.deepseek_ocr2.modeling import (
+            dynamic_preprocess as inference_preprocess,
+        )
+
+        self.assertIs(inference_preprocess, dynamic_preprocess)
+        plugin = DeepseekOCR2Plugin("<image>", None, None)
+        for width, height in ((24, 8), (8, 24), (16, 16)):
+            for thumbnail in (False, True):
+                with self.subTest(size=(width, height), thumbnail=thumbnail):
+                    image = Image.fromarray(np.arange(width * height * 3, dtype="uint8").reshape(height, width, 3))
+                    reference, grid = inference_preprocess(image, image_size=8, use_thumbnail=thumbnail)
+                    actual, actual_grid = plugin.dynamic_preprocess(image, image_size=8, use_thumbnail=thumbnail)
+                    self.assertEqual(actual_grid, grid)
+                    self.assertEqual(len(actual), grid[0] * grid[1] + int(thumbnail))
+                    for expected_tile, actual_tile in zip(reference, actual):
+                        np.testing.assert_array_equal(np.asarray(actual_tile), np.asarray(expected_tile))
+
+    def test_non_crop_tokens_match_inference_and_image_resolution(self):
+        from paddleformers.datasets.template.mm_plugin import DeepseekOCR2Plugin
+
+        plugin = DeepseekOCR2Plugin("<image>", None, None)
+        plugin.crop_mode = False
+        tokenizer = SimpleNamespace(encode=lambda text, **kwargs: [2])
+        image = Image.new("RGB", (64, 64), (30, 60, 90))
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "image.png")
+            image.save(path)
+            for image_size in (768, 1024):
+                with self.subTest(image_size=image_size):
+                    plugin.image_size = image_size
+                    pixels, crops, grid = plugin._preprocess_image(image)
+                    messages = [{"role": "user", "content": "<image>Read the text."}]
+                    processed = plugin.process_messages(
+                        messages, [image], [], [], {"images_spatial_crop": [grid]}, None
+                    )
+                    expected_tokens = (image_size // 64) ** 2 + 1
+                    self.assertEqual(processed[0]["content"].count("<image>"), expected_tokens)
+                    self.assertEqual(list(pixels.shape), [3, image_size, image_size])
+                    self.assertEqual(crops, [])
+                    inference = DeepseekOCR2ForConditionalGeneration.prepare_inputs_for_infer(
+                        None,
+                        tokenizer,
+                        [{"role": "user", "content": "<image>Read the text.", "images": [path]}],
+                        base_size=plugin.base_size,
+                        image_size=image_size,
+                        crop_mode=False,
+                    )
+                    self.assertEqual(int(inference["images_seq_mask"].astype("int64").sum()), expected_tokens)
+                    np.testing.assert_allclose(inference["images_ori"][0].numpy(), pixels.numpy(), atol=1e-6)
+                    self.assertEqual(messages[0]["content"], "<image>Read the text.")
+
+    def test_disabled_expansion_keeps_one_placeholder(self):
+        from paddleformers.datasets.template.mm_plugin import DeepseekOCR2Plugin
+
+        plugin = DeepseekOCR2Plugin("<image>", None, None, expand_mm_tokens=False)
+        messages = [{"role": "user", "content": "<image>Read the text."}]
+        result = plugin.process_messages(messages, [Image.new("RGB", (16, 16))], [], [], {}, None)
+        self.assertEqual(result[0]["content"].count("<image>"), 1)
 
 
 class DeepseekOCR2ModelTester:
