@@ -78,6 +78,12 @@ import_structure = {
     ],
     "batch_sampler": ["DistributedBatchSampler"],
     "optimizer": ["AdamWMini", "AdamWCustom"],
+    "hf_bitexact_clip": [
+        "HFBitexactClipGradByGlobalNorm",
+        "hf_bitexact_clip_enabled",
+        "hf_norm_partition_size",
+        "verify_hf_norm_groups_registered",
+    ],
     "env": ["CONFIG_NAME", "GENERATION_CONFIG_NAME", "LEGACY_CONFIG_NAME"],
     "log": ["logger"],
     "masking_utils": [
@@ -126,6 +132,12 @@ if TYPE_CHECKING:
 
     from .batch_sampler import *
     from .env import CONFIG_NAME, GENERATION_CONFIG_NAME, LEGACY_CONFIG_NAME
+    from .hf_bitexact_clip import (
+        HFBitexactClipGradByGlobalNorm,
+        hf_bitexact_clip_enabled,
+        hf_norm_partition_size,
+        verify_hf_norm_groups_registered,
+    )
     from .import_utils import *
     from .infohub import infohub
     from .initializer import to

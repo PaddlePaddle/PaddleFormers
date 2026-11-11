@@ -357,6 +357,12 @@ def run_sft(
         # otherwise the vision TransformerConfig.__post_init__ assertion fails.
         model_config.vision_config.recompute_modules = getattr(model_config, "recompute_modules", None)
 
+    if getattr(model_config, "model_type", None) == "phi4_multimodal":
+        audio_config = model_config.audio_config
+        audio_config._attn_implementation = model_args._attn_implementation
+        for key in ("recompute_granularity", "recompute_method", "recompute_num_layers", "recompute_modules"):
+            setattr(audio_config, key, getattr(model_config, key, None))
+
     # Sync freeze_config to model_config so that Fleet model providers can read it
     freeze_config = getattr(training_args, "freeze_config", "")
     if freeze_config:
@@ -376,7 +382,14 @@ def run_sft(
     else:
         logger.info(f"Loading model weights from {model_args.model_name_or_path}")
         if "VL" in model_args.stage:
-            model_class = AutoModelForConditionalGeneration
+            if getattr(model_config, "model_type", None) == "molmo":
+                # Upstream Molmo exposes its multimodal model through ForCausalLM rather than
+                # ForConditionalGeneration. Pipeline parallelism is not implemented for its vision path.
+                if training_args.pipeline_model_parallel_size > 1:
+                    raise ValueError("Molmo VL-SFT does not support pipeline model parallelism.")
+                model_class = AutoModelForCausalLM
+            else:
+                model_class = AutoModelForConditionalGeneration
             if training_args.pipeline_model_parallel_size > 1:
                 if data_args.eval_with_do_generation and training_args.do_eval:
                     raise ValueError("Please set eval_with_do_generation to false in pipeline parallel mode.")
