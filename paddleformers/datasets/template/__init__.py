@@ -43,6 +43,7 @@ import_structure = {
         "Qwen3VLPlugin",
         "GLM4VPlugin",
         "Gemma3Plugin",
+        "Llama4Plugin",
         "register_mm_plugin",
         "get_mm_plugin",
     ],

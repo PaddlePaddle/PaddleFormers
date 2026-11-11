@@ -717,6 +717,15 @@ register_template(
 )
 
 register_template(
+    name="molmo",
+    format_user=StringFormatter(slots=["{{content}} Assistant:"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    chat_sep="",
+    suffix=["<|endoftext|>"],
+    mm_plugin=get_mm_plugin(name="molmo", image_token="<im_patch>"),
+)
+
+register_template(
     name="aya",
     format_user=StringFormatter(
         slots=[
@@ -799,6 +808,22 @@ register_template(
     mm_plugin=get_mm_plugin(name="ernie_vl", image_token="<|IMAGE_PLACEHOLDER|>", video_token="<|IMAGE_PLACEHOLDER|>"),
     template_class=ReasoningTemplate,
     thought_words=("<think>\n", "\n</think>\n\n"),
+)
+
+register_template(
+    name="minimax",
+    format_user=StringFormatter(
+        slots=[
+            "<beginning_of_sentence>user name=user\n{{content}}<end_of_sentence>\n"
+            "<beginning_of_sentence>ai name=assistant\n"
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(
+        slots=["<beginning_of_sentence>system ai_setting=assistant\n{{content}}<end_of_sentence>\n"]
+    ),
+    chat_sep="<end_of_sentence>\n",
+    suffix=["<end_of_sentence>"],
 )
 
 register_template(
@@ -1162,6 +1187,46 @@ register_template(
     chat_sep="<|eot_id|>",
 )
 
+register_template(
+    name="llama4_vl",
+    format_user=StringFormatter(
+        slots=[
+            ("<|header_start|>user<|header_end|>\n\n{{content}}<|eot|>" "<|header_start|>assistant<|header_end|>\n\n")
+        ]
+    ),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|header_start|>system<|header_end|>\n\n{{content}}<|eot|>"]),
+    format_function=FunctionFormatter(slots=["{{content}}"], tool_format="llama4"),
+    format_observation=StringFormatter(
+        slots=[
+            (
+                "<|header_start|>ipython<|header_end|>\n\n{{content}}<|eot|>"
+                "<|header_start|>assistant<|header_end|>\n\n"
+            )
+        ]
+    ),
+    format_tools=ToolFormatter(tool_format="llama4"),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
+    suffix=["<|eot|>"],
+    chat_sep="<|eot|>",
+    mm_plugin=get_mm_plugin(
+        name="llama4",
+        image_token="<|image|>",
+        masked_tokens=[
+            "<|image|>",
+            "<|image_start|>",
+            "<|image_end|>",
+            "<|patch|>",
+            "<|tile_x_separator|>",
+            "<|tile_y_separator|>",
+        ],
+    ),
+)
+
+
+# The text-only template must not require a multimodal processor.
+TEMPLATES["llama4"] = deepcopy(TEMPLATES["llama4_vl"])
+TEMPLATES["llama4"].mm_plugin = get_mm_plugin(name="base")
 
 # copied from gemma template
 register_template(
