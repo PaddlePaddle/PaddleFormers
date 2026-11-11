@@ -54,6 +54,7 @@ import paddle
 from transformers import AutoTokenizer
 
 from paddleformers.transformers import Olmo2Config, Olmo2ForCausalLM
+from tests.cinn.checkpoint_utils import strict_set_state_dict
 
 a.output.mkdir(parents=True, exist_ok=False)
 paddle.set_device("gpu:0")
@@ -73,7 +74,7 @@ c.use_cache = False
 model = Olmo2ForCausalLM(c)
 if a.initial_checkpoint:
     if a.initial_checkpoint.exists():
-        model.set_state_dict(paddle.load(str(a.initial_checkpoint)))
+        strict_set_state_dict(model, paddle.load(str(a.initial_checkpoint)))
     else:
         raise FileNotFoundError(a.initial_checkpoint)
 c.save_pretrained(str(a.output / "config"))
@@ -206,7 +207,7 @@ if a.resume:
             raise ValueError(f"Resume mismatch: {key}")
     if saved["tokens"] != tokens or saved["labels"] != labels:
         raise ValueError("Resume data mismatch")
-    model.set_state_dict(saved["model"])
+    strict_set_state_dict(model, saved["model"])
     optimizer.set_state_dict(saved["optimizer"])
     start_step = saved["next_step"]
     paddle.set_rng_state(saved["cpu_rng"])
