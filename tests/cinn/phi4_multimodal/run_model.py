@@ -34,6 +34,7 @@ from paddleformers.transformers import (
     AutoProcessor,
     Phi4MultimodalForCausalLM,
 )
+from tests.cinn.checkpoint_utils import strict_set_state_dict
 
 p = argparse.ArgumentParser()
 p.add_argument("--mode", choices=["dynamic", "cinn"], required=True)
@@ -59,7 +60,7 @@ c.use_cache = False
 model = Phi4MultimodalForCausalLM(c)
 if a.checkpoint:
     if a.checkpoint.exists():
-        model.set_state_dict(paddle.load(str(a.checkpoint)))
+        strict_set_state_dict(model, paddle.load(str(a.checkpoint)))
     else:
         raise FileNotFoundError(a.checkpoint)
 c.save_pretrained(str(a.output / "config"))
@@ -246,7 +247,7 @@ if a.resume:
     ]:
         if saved["meta"].get(key) != meta.get(key):
             raise ValueError(f"Resume mismatch: {key}")
-    model.set_state_dict(saved["model"])
+    strict_set_state_dict(model, saved["model"])
     opt.set_state_dict(saved["optimizer"])
     start_step = saved["next_step"]
     paddle.set_rng_state(saved["cpu_rng"])
