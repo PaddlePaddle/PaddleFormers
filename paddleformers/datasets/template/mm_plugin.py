@@ -478,38 +478,6 @@ class Phi4MultimodalPlugin(BasePlugin):
 
 @dataclass
 class AyaVisionPlugin(BasePlugin):
-    start_of_img_token: str = "<|START_OF_IMG|>"
-    end_of_img_token: str = "<|END_OF_IMG|>"
-    img_patch_token: str = "<|IMG_PATCH|>"
-    tile_token: str = "TILE"
-    tile_global_token: str = "TILE_GLOBAL"
-    img_size: int = 364
-    patch_size: int = 28
-
-    def __init__(self, image_token, video_token, audio_token, **kwargs):
-        super().__init__(image_token, video_token, audio_token, **kwargs)
-        self.start_of_img_token = kwargs.get("start_of_img_token", self.start_of_img_token)
-        self.end_of_img_token = kwargs.get("end_of_img_token", self.end_of_img_token)
-        self.img_patch_token = kwargs.get("img_patch_token", self.img_patch_token)
-        self.tile_token = kwargs.get("tile_token", self.tile_token)
-        self.tile_global_token = kwargs.get("tile_global_token", self.tile_global_token)
-        self.img_size = kwargs.get("img_size", self.img_size)
-        self.patch_size = kwargs.get("patch_size", self.patch_size)
-
-    def _tokens_per_tile(self):
-        return (self.img_size // self.patch_size) ** 2
-
-    def _prompt_split_image(self, num_patches):
-        num_patches = int(num_patches)
-        img_patches_per_tile = self._tokens_per_tile()
-        image_string = self.start_of_img_token
-        if num_patches > 1:
-            for idx in range(1, num_patches):
-                image_string += f"{self.tile_token}_{idx}" + self.img_patch_token * img_patches_per_tile
-        image_string += self.tile_global_token + self.img_patch_token * img_patches_per_tile
-        image_string += self.end_of_img_token
-        return image_string
-
     def _get_num_patches(self, images, mm_inputs):
         num_patches = mm_inputs.get("num_patches", None)
         if num_patches is not None:
@@ -545,6 +513,10 @@ class AyaVisionPlugin(BasePlugin):
         self._validate_input(processor, images, videos, audios)
         self._validate_messages(messages, images, videos, audios)
 
+        if not images:
+            self.masked_tokens = [self.image_token] if self.image_token is not None else []
+            return messages
+
         num_patches = self._get_num_patches(images, mm_inputs)
         processed_messages = deepcopy(messages)
         image_index = 0
@@ -555,18 +527,22 @@ class AyaVisionPlugin(BasePlugin):
                 if image_index >= len(num_patches):
                     raise ValueError("Number of image placeholders exceeds processed images.")
                 max_num_patches = max(max_num_patches, int(num_patches[image_index]))
-                content = content.replace(IMAGE_PLACEHOLDER, self._prompt_split_image(num_patches[image_index]), 1)
+                content = content.replace(
+                    IMAGE_PLACEHOLDER, processor._prompt_split_image(num_patches[image_index]), 1
+                )
                 image_index += 1
             message["content"] = content
 
         if image_index != len(images):
             raise ValueError("Number of image placeholders in messages does not match number of images.")
 
-        tile_tokens = [self.tile_global_token] + [f"{self.tile_token}_{idx}" for idx in range(1, max_num_patches)]
+        tile_tokens = [processor.tile_global_token] + [
+            f"{processor.tile_token}_{idx}" for idx in range(1, max_num_patches)
+        ]
         self.masked_tokens = [
-            self.img_patch_token,
-            self.start_of_img_token,
-            self.end_of_img_token,
+            processor.img_patch_token,
+            processor.start_of_img_token,
+            processor.end_of_img_token,
             *tile_tokens,
         ]
         return processed_messages

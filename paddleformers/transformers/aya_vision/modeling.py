@@ -1,6 +1,16 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import copy
 from dataclasses import dataclass
@@ -288,8 +298,6 @@ class AyaVisionModel(AyaVisionPreTrainedModel):
         pixel_values,
         vision_feature_layer=None,
         vision_feature_select_strategy=None,
-        output_hidden_states=None,
-        **kwargs,
     ):
         vision_feature_layer = (
             vision_feature_layer if vision_feature_layer is not None else self.config.vision_feature_layer
@@ -304,7 +312,6 @@ class AyaVisionModel(AyaVisionPreTrainedModel):
             output_hidden_states=True,
             return_dict=True,
             interpolate_pos_encoding=True,
-            **kwargs,
         )
         if isinstance(vision_feature_layer, int):
             selected_image_feature = image_outputs.hidden_states[vision_feature_layer]
@@ -455,10 +462,12 @@ class AyaVisionForConditionalGeneration(AyaVisionPreTrainedModel):
         return self.lm_head
 
     def get_image_features(
-        self, pixel_values, vision_feature_layer=None, vision_feature_select_strategy=None, **kwargs
+        self, pixel_values, vision_feature_layer=None, vision_feature_select_strategy=None
     ):
         return self.model.get_image_features(
-            pixel_values, vision_feature_layer, vision_feature_select_strategy, **kwargs
+            pixel_values=pixel_values,
+            vision_feature_layer=vision_feature_layer,
+            vision_feature_select_strategy=vision_feature_select_strategy,
         )
 
     def get_rope_index(self, input_ids, attention_mask=None, **kwargs):
@@ -502,6 +511,8 @@ class AyaVisionForConditionalGeneration(AyaVisionPreTrainedModel):
         hidden_states = outputs.last_hidden_state
         if isinstance(logits_to_keep, int):
             slice_indices = slice(-logits_to_keep, None) if logits_to_keep > 0 else slice(None, None)
+        elif logits_to_keep is None:
+            slice_indices = slice(None, None)
         else:
             slice_indices = logits_to_keep
         hidden_states = hidden_states[:, slice_indices, :]

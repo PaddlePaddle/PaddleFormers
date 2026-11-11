@@ -20,6 +20,11 @@ import unittest
 import numpy as np
 import paddle
 
+try:
+    from paddleformers.datasets.template.mm_plugin import AyaVisionPlugin
+except (ImportError, ModuleNotFoundError):
+    AyaVisionPlugin = None
+
 from paddleformers.transformers import (
     AyaVisionConfig,
     AyaVisionForConditionalGeneration,
@@ -278,7 +283,6 @@ class AyaVisionModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
             for key, value in inputs_dict.items()
             if key != "labels"
         }
-        inputs_dict["logits_to_keep"] = 1
         config.text_config.eos_token_id = None
         config.text_config.forced_eos_token_id = None
         return config, inputs_dict
@@ -418,6 +422,32 @@ class AyaVisionModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         pass
 
 
+class AyaVisionGenerationRegressionTest(unittest.TestCase):
+    def test_forward_without_logits_to_keep_preserves_sequence_shape(self):
+        paddle.set_device("cpu")
+        tester = AyaVisionModelTester(self, batch_size=1)
+        config, inputs_dict = tester.prepare_config_and_inputs_for_common()
+        model = AyaVisionForConditionalGeneration(config).eval()
+        with paddle.no_grad():
+            outputs = model(
+                input_ids=inputs_dict["input_ids"],
+                pixel_values=inputs_dict["pixel_values"],
+                attention_mask=inputs_dict["attention_mask"],
+                logits_to_keep=None,
+                return_dict=True,
+            )
+            generated = model.generate(
+                input_ids=inputs_dict["input_ids"],
+                pixel_values=inputs_dict["pixel_values"],
+                attention_mask=inputs_dict["attention_mask"],
+                max_new_tokens=1,
+                min_new_tokens=1,
+                trunc_input=False,
+            )
+        self.assertEqual(outputs.logits.shape[:2], [1, tester.seq_length])
+        self.assertEqual(generated[0].shape[1], tester.seq_length + 1)
+
+
 class AyaVisionProcessorTest(unittest.TestCase):
     class DummyImageProcessor:
         model_input_names = ["pixel_values"]
@@ -518,6 +548,80 @@ class AyaVisionProcessorTest(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             processor(text="no image token", images=[image])
+
+
+class AyaVisionPluginTest(unittest.TestCase):
+    class DummyProcessor:
+        start_of_img_token = "<|START_OF_IMG|>"
+        end_of_img_token = "<|END_OF_IMG|>"
+        img_patch_token = "<|IMG_PATCH|>"
+        tile_token = "TILE"
+        tile_global_token = "TILE_GLOBAL"
+
+        @staticmethod
+        def _prompt_split_image(num_patches):
+            return f"image-{int(num_patches)}"
+
+        image_processor = object()
+
+    def get_plugin(self):
+        if AyaVisionPlugin is None:
+            self.skipTest("AyaVisionPlugin dependencies are unavailable")
+        return AyaVisionPlugin(image_token="<image>", video_token=None, audio_token=None)
+
+    def test_get_num_patches_normalizes_supported_values(self):
+        plugin = self.get_plugin()
+        self.assertEqual(plugin._get_num_patches([1, 2], {"num_patches": paddle.to_tensor([1, 2])}), [1, 2])
+        self.assertEqual(plugin._get_num_patches([1, 2], {"num_patches": np.array([[1, 2]])}), [1, 2])
+        self.assertEqual(plugin._get_num_patches([1, 2], {"num_patches": (1, 2)}), [1, 2])
+        self.assertEqual(plugin._get_num_patches([1], {"num_patches": 2}), [2])
+
+    def test_get_num_patches_infers_tiles_and_validates_shape(self):
+        plugin = self.get_plugin()
+        self.assertEqual(
+            plugin._get_num_patches([1, 2], {"pixel_values": paddle.zeros([4, 3, 16, 16])}),
+            [2, 2],
+        )
+        with self.assertRaises(ValueError):
+            plugin._get_num_patches([1, 2], {"pixel_values": paddle.zeros([3, 3, 16, 16])})
+
+    def test_process_messages_uses_processor_prompt_and_masks_tokens(self):
+        plugin = self.get_plugin()
+        processor = self.DummyProcessor()
+        messages = [{"role": "user", "content": "see <image> and <image>"}]
+        processed = plugin.process_messages(
+            messages,
+            [object(), object()],
+            [],
+            [],
+            {"num_patches": [1, 3]},
+            processor,
+        )
+        self.assertEqual(processed[0]["content"], "see image-1 and image-3")
+        self.assertEqual(
+            plugin.masked_tokens,
+            [
+                processor.img_patch_token,
+                processor.start_of_img_token,
+                processor.end_of_img_token,
+                processor.tile_global_token,
+                "TILE_1",
+                "TILE_2",
+            ],
+        )
+
+    def test_process_messages_validates_placeholders(self):
+        plugin = self.get_plugin()
+        processor = self.DummyProcessor()
+        with self.assertRaises(ValueError):
+            plugin.process_messages(
+                [{"role": "user", "content": "no image"}],
+                [object()],
+                [],
+                [],
+                {"num_patches": [1]},
+                processor,
+            )
 
 
 if __name__ == "__main__":
