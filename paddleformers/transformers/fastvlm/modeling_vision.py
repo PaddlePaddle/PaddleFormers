@@ -79,13 +79,13 @@ class SEBlock(paddle.nn.Layer):
 
     def forward(self, inputs: paddle.Tensor) -> paddle.Tensor:
         """Apply forward pass."""
-        b, c, h, w = inputs.size()
+        b, c, h, w = inputs.shape
         x = paddle.nn.functional.avg_pool2d(x=inputs, kernel_size=[h, w], exclusive=False)
         x = self.reduce(x)
         x = paddle.nn.functional.relu(x)
         x = self.expand(x)
         x = paddle.sigmoid(x)
-        x = x.view(-1, c, 1, 1)
+        x = x.reshape([-1, c, 1, 1])
         return inputs * x
 
 

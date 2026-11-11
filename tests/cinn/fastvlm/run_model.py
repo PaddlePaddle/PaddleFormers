@@ -34,7 +34,6 @@ from paddleformers.transformers.fastvlm.modeling import FastVLMForConditionalGen
 p = argparse.ArgumentParser()
 p.add_argument("--mode", choices=["dynamic", "cinn"], required=True)
 p.add_argument("--output", type=Path, required=True)
-p.add_argument("--native-shape", action="store_true")
 p.add_argument("--split", action="store_true")
 p.add_argument("--steps", type=int, default=3000)
 p.add_argument("--infer", action="store_true")
@@ -60,21 +59,6 @@ c._attn_implementation = "eager"
 model = FastVLMForConditionalGeneration(c)
 if a.checkpoint:
     model.set_state_dict(paddle.load(str(a.checkpoint)))
-if a.native_shape:
-    import types
-
-    def native_se_forward(self, inputs):
-        b, channels, h, w = inputs.shape
-        x = paddle.nn.functional.avg_pool2d(inputs, kernel_size=[h, w], exclusive=False)
-        x = self.reduce(x)
-        x = self.expand(paddle.nn.functional.relu(x))
-        x = paddle.nn.functional.sigmoid(x)
-        x = x.reshape([-1, channels, 1, 1])
-        return inputs * x
-
-    for layer in model.sublayers():
-        if layer.__class__.__name__ == "SEBlock":
-            layer.forward = types.MethodType(native_se_forward, layer)
 c.save_pretrained(str(a.output / "config"))
 paddle.save(model.state_dict(), str(a.output / "initial.pdparams"))
 
@@ -137,7 +121,6 @@ ids, pixels, labels = samples[0]
             seed=20260930,
             task="image class-ID decimal digits; not natural captioning",
             split=a.split,
-            native_shape=a.native_shape,
             source_commit=__import__("subprocess")
             .check_output(["git", "-C", str(Path(__file__).resolve().parents[3]), "rev-parse", "HEAD"], text=True)
             .strip(),

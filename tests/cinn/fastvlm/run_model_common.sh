@@ -20,6 +20,7 @@ here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 export CINN_RESOURCE_DIR
 MODE=${MODE:-dynamic}
 TASK=${TASK:-all}
+[[ -z ${RESUME:-} ]] || { echo 'FastVLM CINN entry does not support RESUME; start a new run.' >&2; exit 2; }
 case "$MODE" in dynamic|cinn) ;; *) exit 2 ;; esac
 case "$TASK" in train|infer|all) ;; *) exit 2 ;; esac
 PYTHON_BIN=${PYTHON_BIN:-python}
@@ -31,12 +32,11 @@ run_task() {
     local task=$1
     local output="$output_root/$MODE-$task"
     [[ ! -e "$output" ]] || { echo "Refusing to overwrite $output" >&2; exit 3; }
-    local args=(--mode "$MODE" --native-shape --split --output "$output")
+    local args=(--mode "$MODE" --split --output "$output")
     if [[ "$task" = infer ]]; then
         args+=(--infer --checkpoint "$CHECKPOINT_DIR/inference.pdparams")
     else
         args+=(--checkpoint "$CHECKPOINT_DIR/initial.pdparams" --steps "${STEPS:-20}")
-        if [[ -n ${RESUME:-} ]]; then args+=(--resume "$RESUME"); fi
     fi
     "$PYTHON_BIN" "$here/run_model.py" "${args[@]}" 2>&1 | tee "$output.log"
     if [[ "$MODE" = cinn ]]; then

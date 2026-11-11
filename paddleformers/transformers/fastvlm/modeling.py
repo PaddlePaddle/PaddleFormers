@@ -431,6 +431,7 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
 
         new_embeddings = []
         new_labels = []
+        image_index = 0
         for batch_index in range(input_ids.shape[0]):
             sample_ids = input_ids[batch_index][attention_mask[batch_index]]
             sample_labels = labels[batch_index][attention_mask[batch_index]]
@@ -448,7 +449,10 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
             after_ids = sample_ids[image_position + 1 :]
             before_labels = sample_labels[:image_position]
             after_labels = sample_labels[image_position + 1 :]
-            sample_image_features = image_features[batch_index]
+            if image_index >= image_features.shape[0]:
+                raise ValueError("FastVLM received fewer images than image tokens.")
+            sample_image_features = image_features[image_index]
+            image_index += 1
 
             sample_embeddings = paddle.concat(
                 [
@@ -469,6 +473,8 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
             new_embeddings.append(sample_embeddings[: self.config.tokenizer_model_max_length])
             new_labels.append(sample_new_labels[: self.config.tokenizer_model_max_length])
 
+        if image_index != image_features.shape[0]:
+            raise ValueError("FastVLM received more images than image tokens.")
         max_length = max(item.shape[0] for item in new_embeddings)
         hidden_size = new_embeddings[0].shape[-1]
         padded_embeddings = []
@@ -491,9 +497,9 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
                 new_position_ids[batch_index, :sample_length] = paddle.arange(sample_length, dtype="int64")
 
         inputs_embeds = paddle.stack(padded_embeddings, axis=0)
-        if original_attention_mask is None:
+        if original_attention_mask is None and all(item.shape[0] == max_length for item in new_embeddings):
             new_attention_mask = None
-        else:
+        elif original_attention_mask is not None:
             new_attention_mask = new_attention_mask.astype(original_attention_mask.dtype)
         if original_position_ids is None:
             new_position_ids = None

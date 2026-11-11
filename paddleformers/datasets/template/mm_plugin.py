@@ -413,9 +413,11 @@ class FastVLMPlugin(BasePlugin):
         return messages
 
     @override
-    def process_tokens(self, tokens, processor):
-        labels = deepcopy(tokens)
-        return [-100 if token == self.image_token_id else token for token in labels]
+    def process_tokens(self, tokens, processor, labels=None):
+        labels = deepcopy(tokens) if labels is None else deepcopy(labels)
+        if len(labels) != len(tokens):
+            raise ValueError("FastVLM tokens and labels must have the same length.")
+        return [-100 if token == self.image_token_id else label for token, label in zip(tokens, labels)]
 
     @override
     def get_mm_inputs(

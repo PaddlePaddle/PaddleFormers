@@ -69,6 +69,62 @@ class FastVLMModelTest(unittest.TestCase):
         loss.backward()
         self.assertIsNotNone(model.model.mm_projector[0].weight.grad)
 
+    def test_mixed_batch_uses_image_order_not_batch_index(self):
+        model = FastVLMForConditionalGeneration(self.config).eval()
+        image_ids, image_labels, pixels = self.get_inputs()
+        text_ids = paddle.to_tensor([[1, 4, 2, 3]], dtype="int64")
+        with paddle.no_grad():
+            reference = model(input_ids=image_ids, pixel_values=pixels, return_dict=True).logits
+            for image_first in (False, True):
+                rows = [image_ids, text_ids] if image_first else [text_ids, image_ids]
+                ids = paddle.concat(rows, axis=0)
+                labels = paddle.concat([image_labels, text_ids] if image_first else [text_ids, image_labels], axis=0)
+                prepared = model._prepare_multimodal_inputs(ids, None, None, labels, pixels)
+                image_row = 0 if image_first else 1
+                self.assertIsNotNone(prepared[1])
+                self.assertEqual(int(prepared[1][1 - image_row].sum()), 4)
+                outputs = model(input_ids=ids, labels=labels, pixel_values=pixels, return_dict=True)
+                np.testing.assert_allclose(
+                    outputs.logits[image_row].numpy(), reference[0].numpy(), atol=1e-5, rtol=1e-5
+                )
+
+    def test_image_count_mismatch_is_rejected(self):
+        model = FastVLMForConditionalGeneration(self.config).eval()
+        ids, labels, pixels = self.get_inputs()
+        with self.assertRaisesRegex(ValueError, "more images"):
+            model._prepare_multimodal_inputs(ids, None, None, labels, paddle.concat([pixels, pixels]))
+        with self.assertRaisesRegex(ValueError, "fewer images"):
+            model._prepare_multimodal_inputs(paddle.concat([ids, ids]), None, None, None, pixels)
+
+    def test_plugin_preserves_existing_label_mask(self):
+        from paddleformers.datasets.template.mm_plugin import FastVLMPlugin
+
+        plugin = FastVLMPlugin(image_token="<image>", video_token=None, audio_token=None)
+        labels = [-100, 99, 2, 3]
+        actual = plugin.process_tokens([1, -200, 2, 3], None, labels=labels)
+        self.assertEqual(actual, [-100, -100, 2, 3])
+        self.assertEqual(labels, [-100, 99, 2, 3])
+
+    @unittest.skipUnless(paddle.device.cuda.device_count() > 0, "CINN regression requires a CUDA device")
+    def test_se_block_cinn_matches_dynamic(self):
+        from paddleformers.transformers.fastvlm.modeling_vision import SEBlock
+
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        paddle.set_device("gpu:0")
+        dynamic = SEBlock(16)
+        compiled = SEBlock(16)
+        compiled.set_state_dict(dynamic.state_dict())
+        compiled = paddle.jit.to_static(compiled, full_graph=True, backend="CINN")
+        inputs = paddle.randn([2, 16, 4, 4])
+        expected = dynamic(inputs)
+        actual = compiled(inputs)
+        np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
+        expected.square().mean().backward()
+        actual.square().mean().backward()
+        for expected_param, actual_param in zip(dynamic.parameters(), compiled.parameters()):
+            self.assertIsNotNone(actual_param.grad)
+            np.testing.assert_allclose(actual_param.grad.numpy(), expected_param.grad.numpy(), atol=1e-5, rtol=1e-5)
+
     def test_auto_model_from_config(self):
         model = AutoModelForConditionalGeneration.from_config(self.config)
         self.assertIsInstance(model, FastVLMForConditionalGeneration)

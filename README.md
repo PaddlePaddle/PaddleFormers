@@ -145,7 +145,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td rowspan="6" style="vertical-align: top;">VLM</td>
       <td>FastVLM</td>
       <td>apple/FastVLM-0.5B</td>
-      <td>jinja</td>
+      <td>fastvlm</td>
     </tr>
     <tr>
       <td>🏛️ERNIE-4.5-VL</td>
@@ -174,6 +174,8 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     </tr>
   </tbody>
 </table>
+
+FastVLM 图文 SFT 请设置 `template: fastvlm` 和 `template_backend: custom`，以启用图像预处理和标签掩码。当前每条样本最多支持一张图，不支持将多张图的样本 packing 到同一序列。
 
 * 更多关于模型训练能力的支持细节，请参考：[PaddleFormers 模型能力矩阵](./docs/zh/model_capability.md)
 * 带有🏛️标签的模型是 PaddleFormers 官方维护的模型

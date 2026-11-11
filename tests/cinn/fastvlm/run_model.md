@@ -1,5 +1,8 @@
 # fastvlm 图文 CINN 复现
 
+本入口不支持 `RESUME`，设置该变量会明确报错；请使用新的结果目录启动训练。
+SEBlock 的动转静适配位于正式模型代码中，测试不再替换其 forward。
+
 用于框架测试的随机 tiny、FP32、关闭 TF32、单卡 batch1；20张训练/4张留出真实图片，类别 ID 数字 token 任务，不是原模型 caption/OCR/安全质量评测。模型结构和预处理固定在 run_model.py，运行生成 config/；不更换成完整模型。视觉 SEBlock 使用原生 shape/reshape；视觉塔和文本 decoder 分图编译，图文组装动态。图像64×64。
 
 ## 环境与资产
