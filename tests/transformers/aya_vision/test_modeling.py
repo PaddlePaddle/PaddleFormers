@@ -424,7 +424,6 @@ class AyaVisionModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
 
 class AyaVisionGenerationRegressionTest(unittest.TestCase):
     def test_forward_without_logits_to_keep_preserves_sequence_shape(self):
-        paddle.set_device("cpu")
         tester = AyaVisionModelTester(self, batch_size=1)
         config, inputs_dict = tester.prepare_config_and_inputs_for_common()
         model = AyaVisionForConditionalGeneration(config).eval()
