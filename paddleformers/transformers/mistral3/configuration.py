@@ -36,7 +36,7 @@ class Mistral3Config(PretrainedConfig):
         vision_feature_layer=-1,
         multimodal_projector_bias=False,
         spatial_merge_size=2,
-        tie_word_embeddings=True,
+        tie_word_embeddings=False,
         **kwargs,
     ):
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)

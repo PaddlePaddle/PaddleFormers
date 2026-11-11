@@ -256,7 +256,7 @@ class Mistral3ModelTest(unittest.TestCase):
 
     def test_aoa_config(self):
         config = self.model_tester.get_config()
-        config.tie_word_embeddings = False
+        self.assertFalse(config.tie_word_embeddings)
         aoa_config = Mistral3ForConditionalGeneration._gen_aoa_config(config)
         statements = aoa_config["aoa_statements"]
 
@@ -275,6 +275,25 @@ class Mistral3ModelTest(unittest.TestCase):
             inv_statements,
         )
         self.assertFalse(any(statement.split(" -> ")[1].endswith("^T") for statement in inv_statements))
+
+    def test_loss_mask_is_respected(self):
+        model = Mistral3ForConditionalGeneration(self.model_tester.get_config()).eval()
+        input_ids = paddle.to_tensor([[5, 6, 7]], dtype="int64")
+        mask = paddle.to_tensor([[1.0, 0.0, 0.0]])
+        with paddle.no_grad():
+            outputs = model(input_ids=input_ids, labels=input_ids, loss_mask=mask)
+        expected = nn.CrossEntropyLoss()(outputs.logits[:, 0, :], input_ids[:, 0])
+        self.assertTrue(paddle.allclose(outputs.loss, expected))
+
+    def test_default_output_head_is_independent(self):
+        config = self.model_tester.get_config()
+        model = Mistral3ForConditionalGeneration(config)
+        model.eval()
+        input_ids = paddle.to_tensor([[5, 6, 7]], dtype="int64")
+        with paddle.no_grad():
+            model.lm_head.weight.set_value(paddle.zeros_like(model.lm_head.weight))
+            logits = model(input_ids=input_ids).logits
+        self.assertEqual(float(paddle.max(paddle.abs(logits))), 0.0)
 
     def test_auto_model_mapping(self):
         config = self.model_tester.get_config()

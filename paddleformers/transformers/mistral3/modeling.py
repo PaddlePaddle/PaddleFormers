@@ -23,6 +23,7 @@ from paddle import nn
 
 from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
@@ -254,6 +255,8 @@ class Mistral3PatchMerger(nn.Layer):
             for image_size in _normalize_image_sizes(image_sizes)
         ]
         tokens_per_image = [height * width for height, width in image_sizes]
+        if sum(tokens_per_image) != image_features.shape[0]:
+            raise ValueError("Image sizes do not match the number of image features.")
         hidden_size = image_features.shape[-1]
 
         merged_images = []
@@ -270,9 +273,6 @@ class Mistral3PatchMerger(nn.Layer):
             )
             grid = grid.squeeze(0).transpose([1, 0])
             merged_images.append(grid)
-
-        if offset != sum(tokens_per_image):
-            raise ValueError("Invalid image feature split while merging patches.")
 
         image_features = paddle.concat(merged_images, axis=0)
         return self.merging_layer(image_features)
@@ -572,6 +572,7 @@ class Mistral3ForConditionalGeneration(Mistral3PretrainedModel):
         self.config = config
         self.model = Mistral3Model(config)
         self.lm_head = GeneralLMHead(config.text_config)
+        self.criterion = CriterionLayer(config.text_config)
 
     def get_input_embeddings(self):
         return self.model.get_input_embeddings()
@@ -641,8 +642,7 @@ class Mistral3ForConditionalGeneration(Mistral3PretrainedModel):
 
         loss = None
         if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            loss = loss_fct(logits.reshape([-1, logits.shape[-1]]), labels.reshape([-1]))
+            loss, _ = self.criterion(logits, labels, loss_mask=kwargs.get("loss_mask"))
 
         if not return_dict:
             output = (logits, outputs.past_key_values, outputs.hidden_states, outputs.attentions)
