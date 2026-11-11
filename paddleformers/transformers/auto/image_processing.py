@@ -65,6 +65,7 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "glm_ocr": ("Glm46VImageProcessor"),
         "molmo": ("MolmoImageProcessor"),
         "paligemma": ("PaliGemmaImageProcessor"),
+        "idefics3": ("Idefics3ImageProcessor"),
     }
 )
 
