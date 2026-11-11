@@ -31,6 +31,7 @@ sys.path.insert(0, repo)
 import paddle
 
 from paddleformers.transformers import Llama4ForCausalLM, Llama4TextConfig
+from tests.cinn.checkpoint_utils import strict_set_state_dict
 
 p = argparse.ArgumentParser()
 p.add_argument("--kind", choices=["text"], default="text")
@@ -57,7 +58,7 @@ c.use_cache = False
 model = Llama4ForCausalLM(c)
 if a.checkpoint:
     if a.checkpoint.exists():
-        model.set_state_dict(paddle.load(str(a.checkpoint)))
+        strict_set_state_dict(model, paddle.load(str(a.checkpoint)))
     else:
         raise FileNotFoundError(a.checkpoint)
 c.save_pretrained(str(a.output / "config"))
@@ -250,24 +251,13 @@ import random
 
 start_step = 0
 if a.resume:
-    # Trusted local legacy training states contain PosixPath CLI values.
-    from paddle.framework import restricted_unpickler
-
-    previous_allowed = restricted_unpickler._ALLOWED_CLASSES.get("pathlib")
-    restricted_unpickler._ALLOWED_CLASSES["pathlib"] = {"PosixPath"}
-    try:
-        saved = paddle.load(str(a.resume))
-    finally:
-        if previous_allowed is None:
-            restricted_unpickler._ALLOWED_CLASSES.pop("pathlib", None)
-        else:
-            restricted_unpickler._ALLOWED_CLASSES["pathlib"] = previous_allowed
+    saved = paddle.load(str(a.resume))
     for key in ["kind", "mode", "adapt", "compile_vision", "real"]:
         if saved["arguments"].get(key) != getattr(a, key):
             raise ValueError(f"Resume mismatch: {key}")
     if saved["source_commit"] != source_commit or saved["initial_parameter_hash"] != digest.hexdigest():
         raise ValueError("Resume source/initial weights mismatch")
-    model.set_state_dict(saved["model"])
+    strict_set_state_dict(model, saved["model"])
     opt.set_state_dict(saved["optimizer"])
     start_step = saved["next_step"]
     if a.steps <= start_step:
@@ -341,7 +331,8 @@ with (a.output / "loss.jsonl").open("w") as f:
         opt.clear_grad()
         paddle.device.synchronize()
         row = {"step": i, "loss": float(loss), "ms": 1000 * (time.perf_counter() - t)}
-        assert np.isfinite(row["loss"])
+        if not np.isfinite(row["loss"]):
+            raise FloatingPointError(f"Non-finite training loss at step {i}: {row['loss']}")
         f.write(json.dumps(row) + "\n")
         f.flush()
         print(row, flush=True)
