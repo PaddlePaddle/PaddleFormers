@@ -106,9 +106,9 @@ class PixtralProcessorTest(unittest.TestCase):
     def test_expansion_rejects_invalid_patch_shapes(self):
         from paddleformers.transformers.pixtral.processor import expand_image_tokens
 
-        for size, patch in (((0, 32), 16), ((32, 32), 0), ((31, 32), 16)):
-            with self.subTest(size=size, patch=patch), self.assertRaises(ValueError):
-                expand_image_tokens(size, patch, "[IMG]", "[IMG_BREAK]", "[IMG_END]")
+        for size, patch_size in (((0, 32), 16), ((32, 32), 0), ((31, 32), 16)):
+            with self.subTest(size=size, patch_size=patch_size), self.assertRaises(ValueError):
+                expand_image_tokens(size, patch_size, "[IMG]", "[IMG_BREAK]", "[IMG_END]")
 
     def test_expands_image_tokens(self):
         processor = make_processor()
