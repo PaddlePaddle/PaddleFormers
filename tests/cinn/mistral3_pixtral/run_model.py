@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import paddle
 
 from paddleformers.transformers import Mistral3Config, Mistral3ForConditionalGeneration
+from tests.cinn.checkpoint_utils import strict_set_state_dict
 
 p = argparse.ArgumentParser()
 p.add_argument("--mode", choices=["dynamic", "cinn"], required=True)
@@ -82,11 +83,11 @@ c.text_config._attn_implementation = "eager"
 c.text_config.use_cache = False
 model = Mistral3ForConditionalGeneration(c)
 if a.checkpoint:
-    model.set_state_dict(paddle.load(str(a.checkpoint)))
+    strict_set_state_dict(model, paddle.load(str(a.checkpoint)))
 resume_state = paddle.load(str(a.resume)) if a.resume else None
 start_step = resume_state["step"] if resume_state else 0
 if resume_state:
-    model.set_state_dict(resume_state["model"])
+    strict_set_state_dict(model, resume_state["model"])
 c.save_pretrained(str(a.output / "config"))
 paddle.save(model.state_dict(), str(a.output / "initial.pdparams"))
 
