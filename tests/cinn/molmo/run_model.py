@@ -35,6 +35,7 @@ import paddle
 from tokenizers import Tokenizer
 
 from paddleformers.transformers import MolmoForCausalLM
+from tests.cinn.checkpoint_utils import strict_set_state_dict
 from tests.transformers.molmo.test_modeling import MolmoModelTester
 
 p = argparse.ArgumentParser()
@@ -66,7 +67,7 @@ model = MolmoForCausalLM(c)
 if a.infer and a.checkpoint is None:
     raise ValueError("Inference requires checkpoint")
 if a.checkpoint:
-    model.set_state_dict(paddle.load(str(a.checkpoint)))
+    strict_set_state_dict(model, paddle.load(str(a.checkpoint)))
 c.save_pretrained(str(a.output / "config"))
 
 
@@ -209,7 +210,7 @@ if a.resume:
     for key in ["split_rope"]:
         if saved["arguments"].get(key) != getattr(a, key):
             raise ValueError(f"Resume boundary mismatch: {key}")
-    model.set_state_dict(saved["model"])
+    strict_set_state_dict(model, saved["model"])
     opt.set_state_dict(saved["optimizer"])
     start_step = saved["next_step"]
     if a.steps <= start_step:
