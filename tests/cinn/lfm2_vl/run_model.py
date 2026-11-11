@@ -34,6 +34,7 @@ from paddleformers.transformers.lfm2_vl.configuration import (
     Siglip2VisionConfig,
 )
 from paddleformers.transformers.lfm2_vl.modeling import Lfm2VlForConditionalGeneration
+from tests.cinn.checkpoint_utils import strict_set_state_dict
 
 p = argparse.ArgumentParser()
 p.add_argument("--mode", choices=["dynamic", "cinn"], required=True)
@@ -77,11 +78,11 @@ c = Lfm2VlConfig(
 )
 model = Lfm2VlForConditionalGeneration(c)
 if a.checkpoint:
-    model.set_state_dict(paddle.load(str(a.checkpoint)))
+    strict_set_state_dict(model, paddle.load(str(a.checkpoint)))
 resume_state = paddle.load(str(a.resume)) if a.resume else None
 start_step = resume_state["step"] if resume_state else 0
 if resume_state:
-    model.set_state_dict(resume_state["model"])
+    strict_set_state_dict(model, resume_state["model"])
 c.save_pretrained(str(a.output / "config"))
 paddle.save(model.state_dict(), str(a.output / "initial.pdparams"))
 
