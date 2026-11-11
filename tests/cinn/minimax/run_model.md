@@ -31,6 +31,8 @@ MODE=cinn RESULTS_DIR=tests/cinn/minimax/results/infer1 bash tests/cinn/minimax/
 
 ## 验证
 
+Python 入口分为 `parse_args`、`main`、`run_training` 和 `run_inference`；导入模块不会解析命令行或启动 GPU。续训分段的首步同样保存 logits 与梯度探针。可运行 `python -m pytest tests/cinn/minimax/test_runner.py -q -o addopts=''` 检查入口契约及两步训练/断点恢复等价性。
+
 results/<mode>-train 包含 loss.jsonl、validation.jsonl、first_gradients.pdparams 等；<mode>-infer 保存 logits.npy 及 inference.json。两端独立推理必须使用同一个 inference.pdparams，不能比较各自训练产生的不同权重。入口检查 CINN 编译日志标志，不满足即失败。吞吐提升=(动态 ms/CINNms-1)×100%，不能与延迟下降混用。运行产物与权重不提交。
 
 历史30000步仅证明固定子集充分拟合；本次新入口回归是短程训推和梯度检查，不宣称重新完成长跑。
