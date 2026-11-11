@@ -63,6 +63,12 @@ Throughput improvement = (dynamic milliseconds / CINN milliseconds - 1) * 100%.
 
 Smoke success requires finite losses/gradients, no missing trainable gradients, identical
 starting weights/inputs and compiled execution. Twenty steps do not prove convergence.
+The short-entry comparison additionally enforces absolute error limits: loss `1e-5`,
+first-step gradients `1e-4`, and logits `1e-4` (all with zero relative tolerance).
+These leave margin over the recorded FP32 smoke results below. Overrides are explicit
+`--loss-atol`, `--grad-atol`, and `--logits-atol` arguments and are recorded in the output.
+These short-entry thresholds are not acceptance criteria for pointwise agreement of
+long training trajectories or for convergence.
 Historical source snapshot 44c39fe19f7bc0b3c45c59562038c0b2706d4624 completed
 30000 steps per mode with last-500 mean losses 0.003588/0.003526, demonstrating training-subset
 fitting only. Those historical timings are not measurements of this checkout.
