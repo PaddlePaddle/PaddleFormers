@@ -1741,22 +1741,27 @@ class PixtralPlugin(BasePlugin):
 
         patch_size = getattr(processor, "patch_size", 14) * getattr(processor, "spatial_merge_size", 2)
         image_sizes = mm_inputs.get("image_sizes", [])
+        if len(image_sizes) != len(images):
+            raise ValueError("image_sizes must contain exactly one size for each provided image")
         messages = deepcopy(messages)
         num_image_tokens = 0
 
+        from ...transformers.pixtral.processor import expand_image_tokens
+
         for message in messages:
-            content = message["content"]
-            while IMAGE_PLACEHOLDER in content:
-                height, width = image_sizes[num_image_tokens]
-                if isinstance(height, paddle.Tensor):
-                    height = int(height.item())
-                    width = int(width.item())
-                num_height_tokens = int(height) // patch_size
-                num_width_tokens = int(width) // patch_size
-                replace_tokens = [[self.image_token] * num_width_tokens + [self.image_break_token]] * num_height_tokens
-                replace_tokens = [token for row in replace_tokens for token in row]
-                replace_tokens[-1] = self.image_end_token
-                content = content.replace(IMAGE_PLACEHOLDER, "".join(replace_tokens), 1)
+            parts = message["content"].split(IMAGE_PLACEHOLDER)
+            content = parts[0]
+            for suffix in parts[1:]:
+                content += (
+                    expand_image_tokens(
+                        image_sizes[num_image_tokens],
+                        patch_size,
+                        self.image_token,
+                        self.image_break_token,
+                        self.image_end_token,
+                    )
+                    + suffix
+                )
                 num_image_tokens += 1
             message["content"] = content
 

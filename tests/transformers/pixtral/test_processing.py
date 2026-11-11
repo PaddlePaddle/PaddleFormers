@@ -58,6 +58,58 @@ def make_processor():
 
 
 class PixtralProcessorTest(unittest.TestCase):
+    def test_pixtral_is_the_single_processor_export(self):
+        from paddleformers.transformers import PixtralImageProcessor
+        from paddleformers.transformers import PixtralProcessor as PublicProcessor
+        from paddleformers.transformers.auto.image_processing import (
+            IMAGE_PROCESSOR_MAPPING,
+        )
+        from paddleformers.transformers.auto.processing import PROCESSOR_MAPPING
+        from paddleformers.transformers.mistral3 import Mistral3Config
+
+        self.assertIs(PublicProcessor, PixtralProcessor)
+        self.assertIs(PROCESSOR_MAPPING[Mistral3Config], PixtralProcessor)
+        self.assertIn(PixtralImageProcessor, IMAGE_PROCESSOR_MAPPING[Mistral3Config])
+
+    def test_plugin_and_processor_use_the_same_expansion(self):
+        from paddleformers.datasets.template.mm_plugin import PixtralPlugin
+        from paddleformers.transformers.pixtral.processor import expand_image_tokens
+
+        processor = make_processor()
+        plugin = PixtralPlugin("[IMG]", None, None)
+        image = np.zeros((32, 48, 3), dtype=np.uint8)
+        expected = "[IMG][IMG][IMG][IMG_BREAK][IMG][IMG][IMG][IMG_END]"
+        self.assertEqual(expand_image_tokens((32, 48), 16, "[IMG]", "[IMG_BREAK]", "[IMG_END]"), expected)
+        messages = [{"role": "user", "content": "Describe <image>"}]
+        expanded = plugin.process_messages(messages, [image], [], [], {"image_sizes": [(32, 48)]}, processor)
+        self.assertEqual(expanded[0]["content"], "Describe " + expected)
+        self.assertEqual(messages[0]["content"], "Describe <image>")
+        actual = processor(images=[image], text="Describe [IMG]", return_tensors=None)
+        self.assertEqual(actual["input_ids"], processor.tokenizer([expanded[0]["content"]])["input_ids"])
+        self.assertEqual(actual["input_ids"][0][-1], processor.image_end_token_id)
+
+    def test_plugin_rejects_missing_or_extra_sizes(self):
+        from paddleformers.datasets.template.mm_plugin import PixtralPlugin
+
+        plugin = PixtralPlugin("[IMG]", None, None)
+        for sizes in ([], [(32, 48), (32, 48)]):
+            with self.subTest(sizes=sizes), self.assertRaisesRegex(ValueError, "image_sizes"):
+                plugin.process_messages(
+                    [{"role": "user", "content": "<image>"}],
+                    [object()],
+                    [],
+                    [],
+                    {"image_sizes": sizes},
+                    make_processor(),
+                )
+
+    def test_expansion_rejects_invalid_patch_shapes(self):
+        from paddleformers.transformers.pixtral.processor import expand_image_tokens
+
+        for size, patch in (((0, 32), 16), ((32, 32), 0), ((31, 32), 16)):
+            with self.subTest(size=size, patch=patch), self.assertRaises(ValueError):
+                expand_image_tokens(size, patch, "[IMG]", "[IMG_BREAK]", "[IMG_END]")
+
     def test_expands_image_tokens(self):
         processor = make_processor()
 

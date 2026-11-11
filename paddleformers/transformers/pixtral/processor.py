@@ -13,6 +13,19 @@ from ..tokenizer_utils_base import PreTokenizedInput, TextInput
 from .image_processor import get_resize_output_image_size
 
 
+def expand_image_tokens(image_size, patch_size, image_token, image_break_token, image_end_token):
+    """Expand one resized image into row-major Pixtral tokens."""
+    height, width = (int(value) for value in image_size)
+    if patch_size <= 0 or height < patch_size or width < patch_size:
+        raise ValueError("image_size and patch_size must describe at least one image patch")
+    if height % patch_size or width % patch_size:
+        raise ValueError("image_size must be divisible by the effective patch_size")
+    rows, columns = height // patch_size, width // patch_size
+    tokens = ([image_token] * columns + [image_break_token]) * rows
+    tokens[-1] = image_end_token
+    return "".join(tokens)
+
+
 class PixtralProcessorKwargs(ProcessingKwargs, total=False):
     _defaults = {
         "text_kwargs": {
@@ -100,13 +113,12 @@ class PixtralProcessor(ProcessorMixin):
                     except StopIteration as exc:
                         raise ValueError("The number of image tokens exceeds the number of provided images.") from exc
 
-                    num_height_tokens = int(height) // patch_size
-                    num_width_tokens = int(width) // patch_size
-                    replace_tokens = (
-                        [self.image_token] * num_width_tokens + [self.image_break_token]
-                    ) * num_height_tokens
-                    replace_tokens[-1] = self.image_end_token
-                    expanded_sample += "".join(replace_tokens) + suffix
+                    expanded_sample += (
+                        expand_image_tokens(
+                            (height, width), patch_size, self.image_token, self.image_break_token, self.image_end_token
+                        )
+                        + suffix
+                    )
                 prompt_strings.append(expanded_sample)
 
             try:

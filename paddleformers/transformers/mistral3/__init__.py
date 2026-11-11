@@ -16,10 +16,10 @@ import sys
 from typing import TYPE_CHECKING
 
 from ...utils.lazy_import import _LazyModule
+from ..pixtral import PixtralImageProcessor, PixtralProcessor
 
 _import_structure = {
     "configuration": ["Mistral3Config"],
-    "image_processor": ["PixtralImageProcessor"],
     "modeling": [
         "Mistral3ForCausalLM",
         "Mistral3ForConditionalGeneration",
@@ -28,7 +28,6 @@ _import_structure = {
         "Mistral3PatchMerger",
         "Mistral3MultiModalProjector",
     ],
-    "processor": ["PixtralProcessor"],
 }
 
 if TYPE_CHECKING:
@@ -40,4 +39,8 @@ else:
         globals()["__file__"],
         _import_structure,
         module_spec=__spec__,
+        # Auto mappings look up processors through the config's model package.
+        # Keep aliases to the canonical Pixtral classes, not duplicate modules
+        # or top-level registrations.
+        extra_objects={"PixtralImageProcessor": PixtralImageProcessor, "PixtralProcessor": PixtralProcessor},
     )

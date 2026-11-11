@@ -61,6 +61,10 @@ def apply_mistral3_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
 
 class Mistral3TextAttention(LLamaAttention):
     def __init__(self, config, layer_idx: int):
+        # LLamaAttention.__init__ requires hidden_size == num_heads * head_dim.
+        # Mistral Small supports a separate projection width, so calling the
+        # parent here would reject valid checkpoints. Reuse its interface while
+        # constructing projections with the model's explicit head_dim.
         nn.Layer.__init__(self)
         self.config = config
         self.layer_idx = layer_idx
@@ -169,6 +173,8 @@ class Mistral3TextAttention(LLamaAttention):
 
 class Mistral3TextDecoderLayer(LlamaDecoderLayer):
     def __init__(self, config, layer_idx: int):
+        # The parent constructor instantiates LLamaAttention, which cannot
+        # represent Mistral3's independent attention projection width.
         nn.Layer.__init__(self)
         self.config = config
         self.hidden_size = config.hidden_size
@@ -604,11 +610,6 @@ class Mistral3ForConditionalGeneration(Mistral3PretrainedModel):
         use_cache: bool | None = None,
         logits_to_keep: int | paddle.Tensor = 0,
         image_sizes=None,
-        image_grid_thw=None,
-        pixel_values_videos=None,
-        video_grid_thw=None,
-        input_features=None,
-        feature_attention_mask=None,
         output_hidden_states: bool | None = None,
         return_dict: bool | None = True,
         **kwargs,
