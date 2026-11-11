@@ -30,6 +30,7 @@ import paddle
 
 from paddleformers.transformers.fastvlm.configuration import FastVLMConfig
 from paddleformers.transformers.fastvlm.modeling import FastVLMForConditionalGeneration
+from tests.cinn.checkpoint_utils import strict_set_state_dict
 
 p = argparse.ArgumentParser()
 p.add_argument("--mode", choices=["dynamic", "cinn"], required=True)
@@ -58,7 +59,7 @@ c = FastVLMConfig(
 c._attn_implementation = "eager"
 model = FastVLMForConditionalGeneration(c)
 if a.checkpoint:
-    model.set_state_dict(paddle.load(str(a.checkpoint)))
+    strict_set_state_dict(model, paddle.load(str(a.checkpoint)))
 c.save_pretrained(str(a.output / "config"))
 paddle.save(model.state_dict(), str(a.output / "initial.pdparams"))
 
