@@ -17,20 +17,19 @@ import os
 import tempfile
 import unittest
 
+import numpy as np
 import paddle
 
+from paddleformers.nn.pp_model import EmbeddingPipe, parse_args
 from paddleformers.transformers import (
     AutoConfig,
     AutoModel,
     AutoModelForCausalLM,
-    AutoModelForQuestionAnswering,
     AutoModelForSequenceClassification,
-    AutoModelForTokenClassification,
     MistralConfig,
     MistralForCausalLM,
-    MistralForQuestionAnswering,
+    MistralForCausalLMPipe,
     MistralForSequenceClassification,
-    MistralForTokenClassification,
     MistralModel,
 )
 
@@ -53,6 +52,31 @@ def tiny_mistral_config(**kwargs):
 
 
 class MistralModelingTest(unittest.TestCase):
+    def test_pipeline_rotary_embeddings_match_base_model(self):
+        for rope_scaling in (None, {"rope_type": "linear", "factor": 2.0}):
+            with self.subTest(rope_scaling=rope_scaling):
+                config = tiny_mistral_config(rope_scaling=rope_scaling)
+                model = MistralModel(config)
+                embedding_pipe = EmbeddingPipe(config, rotary_emb_cls=MistralForCausalLMPipe._rotary_emb_cls)
+                input_ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
+                position_ids = paddle.to_tensor([[0, 4, 63, 80]], dtype="int64")
+
+                embeddings, _, _, position_embeddings, _ = parse_args(embedding_pipe((input_ids, None, position_ids)))
+                expected_cos, expected_sin = model.rotary_emb(embeddings, position_ids)
+
+                np.testing.assert_allclose(
+                    position_embeddings[0].numpy(),
+                    expected_cos.numpy(),
+                    rtol=1e-6,
+                    atol=1e-6,
+                )
+                np.testing.assert_allclose(
+                    position_embeddings[1].numpy(),
+                    expected_sin.numpy(),
+                    rtol=1e-6,
+                    atol=1e-6,
+                )
+
     def test_causal_lm_forward(self):
         config = tiny_mistral_config()
         model = MistralForCausalLM(config)
@@ -95,17 +119,13 @@ class MistralModelingTest(unittest.TestCase):
         self.assertEqual(list(outputs[0].shape), [2, 8, config.hidden_size])
         self.assertIsNotNone(outputs[1])
 
-    def test_sequence_and_token_classification_forward(self):
+    def test_sequence_classification_forward(self):
         config = tiny_mistral_config(num_labels=3, pad_token_id=0)
         input_ids = paddle.randint(low=0, high=config.vocab_size - 1, shape=[2, 8], dtype="int64")
 
         seq_model = MistralForSequenceClassification(config)
         seq_outputs = seq_model(input_ids=input_ids, return_dict=True)
         self.assertEqual(list(seq_outputs.logits.shape), [2, config.num_labels])
-
-        token_model = MistralForTokenClassification(config)
-        token_outputs = token_model(input_ids=input_ids, return_dict=True)
-        self.assertEqual(list(token_outputs.logits.shape), [2, 8, config.num_labels])
 
     def test_from_pretrained_and_auto_model(self):
         config = tiny_mistral_config()
@@ -151,23 +171,13 @@ class MistralModelingTest(unittest.TestCase):
             loaded = AutoModel.from_pretrained(tmpdir)
             self.assertIsInstance(loaded, MistralModel)
 
-    def test_auto_model_task_dispatch(self):
+    def test_auto_model_sequence_classification_dispatch(self):
         config = tiny_mistral_config(num_labels=3, pad_token_id=0)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             MistralForSequenceClassification(config).save_pretrained(tmpdir)
             seq_loaded = AutoModelForSequenceClassification.from_pretrained(tmpdir)
             self.assertIsInstance(seq_loaded, MistralForSequenceClassification)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            MistralForTokenClassification(config).save_pretrained(tmpdir)
-            token_loaded = AutoModelForTokenClassification.from_pretrained(tmpdir)
-            self.assertIsInstance(token_loaded, MistralForTokenClassification)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            MistralForQuestionAnswering(config).save_pretrained(tmpdir)
-            qa_loaded = AutoModelForQuestionAnswering.from_pretrained(tmpdir)
-            self.assertIsInstance(qa_loaded, MistralForQuestionAnswering)
 
 
 if __name__ == "__main__":

@@ -55,7 +55,6 @@ def main():
         shutil.rmtree(dst_dir)
     dst_dir.mkdir(parents=True, exist_ok=True)
 
-    # Normalize core files by symlink.
     config_src = pick_existing(src_dir, ["config.json", "config (1).json"])
     gen_src = pick_existing(src_dir, ["generation_config.json", "generation_config (1).json"])
     tok_cfg_src = pick_existing(src_dir, ["tokenizer_config.json", "tokenizer_config (1).json"])
@@ -64,7 +63,6 @@ def main():
     sp_map_src = pick_existing(src_dir, ["special_tokens_map.json", "special_tokens_map (1).json"])
     index_src = pick_existing(src_dir, ["model.safetensors.index.json"])
 
-    # Read and rewrite config with fewer layers.
     with open(config_src, "r", encoding="utf-8") as f:
         config = json.load(f)
     origin_layers = int(config.get("num_hidden_layers", 32))
@@ -80,7 +78,6 @@ def main():
     symlink_or_copy(sp_map_src, dst_dir / "special_tokens_map.json")
     symlink_or_copy(index_src, dst_dir / "model.safetensors.index.json")
 
-    # Link shard files referenced by index.
     with open(index_src, "r", encoding="utf-8") as f:
         idx = json.load(f)
     weight_map = idx.get("weight_map", {})

@@ -19,12 +19,12 @@ from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
-from ...nn.activation import ACT2FN
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.embedding import Embedding as GeneralEmbedding
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
@@ -36,9 +36,7 @@ from ..masking_utils import (
 from ..model_outputs import (
     BaseModelOutputWithPast,
     CausalLMOutputWithPast,
-    QuestionAnsweringModelOutput,
     SequenceClassifierOutputWithPast,
-    TokenClassifierOutput,
 )
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
@@ -46,14 +44,12 @@ from .configuration import MistralConfig
 
 
 def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
-    """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
     return paddle.cat((-x2, x1), axis=-1)
 
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
-    """Applies rotary positional embedding to query and key tensors."""
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
 
@@ -61,40 +57,6 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     q_embed = (q.astype("float32") * cos) + (rotate_half(q).astype("float32") * sin)
     k_embed = (k.astype("float32") * cos) + (rotate_half(k).astype("float32") * sin)
     return q_embed.astype(original_dtype), k_embed.astype(original_dtype)
-
-
-class MistralMLP(nn.Layer):
-    def __init__(self, config: MistralConfig):
-        super().__init__()
-        self.hidden_size = config.hidden_size
-        self.intermediate_size = config.intermediate_size
-        self.gate_proj = GeneralLinear.create(
-            self.hidden_size,
-            self.intermediate_size,
-            has_bias=config.mlp_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.up_proj = GeneralLinear.create(
-            self.hidden_size,
-            self.intermediate_size,
-            has_bias=config.mlp_bias,
-            config=config,
-            tp_plan="colwise",
-        )
-        self.down_proj = GeneralLinear.create(
-            self.intermediate_size,
-            self.hidden_size,
-            has_bias=config.mlp_bias,
-            config=config,
-            tp_plan="rowwise",
-        )
-        self.act_fn = ACT2FN[config.hidden_act]
-
-    def forward(self, x: paddle.Tensor) -> paddle.Tensor:
-        gate = self.act_fn(self.gate_proj(x))
-        up = self.up_proj(x)
-        return self.down_proj(gate * up)
 
 
 class MistralAttention(nn.Layer):
@@ -216,7 +178,7 @@ class MistralDecoderLayer(nn.Layer):
         self.config = config
         self.hidden_size = config.hidden_size
         self.self_attn = MistralAttention(config=config, layer_idx=layer_idx)
-        self.mlp = MistralMLP(config)
+        self.mlp = MLP(config, fuse_up_gate=False)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -261,12 +223,7 @@ class MistralDecoderLayer(nn.Layer):
         hidden_states = self.post_attention_layernorm(hidden_states)
         hidden_states = self.mlp(hidden_states)
         hidden_states = residual + hidden_states
-        outputs = (hidden_states,)
-
-        if len(outputs) == 1 and isinstance(outputs, tuple):
-            outputs = outputs[0]
-
-        return outputs
+        return hidden_states
 
 
 class MistralRotaryEmbedding(nn.Layer):
@@ -737,126 +694,10 @@ class MistralForSequenceClassification(MistralPretrainedModel):
         )
 
 
-class MistralForTokenClassification(MistralPretrainedModel):
-    def __init__(self, config: MistralConfig):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-        self.model = MistralModel(config)
-        if getattr(config, "classifier_dropout", None) is not None:
-            classifier_dropout = config.classifier_dropout
-        elif getattr(config, "hidden_dropout", None) is not None:
-            classifier_dropout = config.hidden_dropout
-        else:
-            classifier_dropout = 0.1
-        self.dropout = nn.Dropout(classifier_dropout)
-        self.score = GeneralLinear.create(config.hidden_size, config.num_labels, has_bias=False, linear_type="default")
-
-    def forward(
-        self,
-        input_ids: paddle.Tensor | None = None,
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[paddle.Tensor] = None,
-        labels: Optional[paddle.Tensor] = None,
-        use_cache: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-    ) -> Union[Tuple, TokenClassifierOutput]:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        outputs = self.model(
-            input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            return_dict=return_dict,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-        )
-        sequence_output = self.dropout(outputs[0])
-        logits = self.score(sequence_output)
-
-        loss = None
-        if labels is not None:
-            loss_fct = nn.CrossEntropyLoss()
-            loss = loss_fct(logits.reshape([-1, self.num_labels]), labels.reshape([-1]))
-
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
-
-        return TokenClassifierOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
-
-
-class MistralForQuestionAnswering(MistralPretrainedModel):
-    def __init__(self, config: MistralConfig):
-        super().__init__(config)
-        self.model = MistralModel(config)
-        self.qa_outputs = GeneralLinear.create(config.hidden_size, 2, has_bias=True, linear_type="default")
-
-    def forward(
-        self,
-        input_ids: paddle.Tensor | None = None,
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[paddle.Tensor] = None,
-        start_positions: Optional[paddle.Tensor] = None,
-        end_positions: Optional[paddle.Tensor] = None,
-        use_cache: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-    ) -> Union[Tuple, QuestionAnsweringModelOutput]:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        outputs = self.model(
-            input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            return_dict=return_dict,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-        )
-
-        logits = self.qa_outputs(outputs[0])
-        start_logits, end_logits = paddle.unstack(logits, axis=-1)
-
-        total_loss = None
-        if start_positions is not None and end_positions is not None:
-            seq_len = start_logits.shape[-1]
-            start_positions = start_positions.clip(0, seq_len - 1)
-            end_positions = end_positions.clip(0, seq_len - 1)
-            loss_fct = nn.CrossEntropyLoss()
-            start_loss = loss_fct(start_logits, start_positions)
-            end_loss = loss_fct(end_logits, end_positions)
-            total_loss = (start_loss + end_loss) / 2
-
-        if not return_dict:
-            output = (start_logits, end_logits) + outputs[2:]
-            return ((total_loss,) + output) if total_loss is not None else output
-
-        return QuestionAnsweringModelOutput(
-            loss=total_loss,
-            start_logits=start_logits,
-            end_logits=end_logits,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-        )
-
-
 class MistralForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = MistralConfig
     _decoder_layer_cls = MistralDecoderLayer
-    _get_tensor_parallel_mappings = MistralModel._get_tensor_parallel_mappings
+    _rotary_emb_cls = MistralRotaryEmbedding
     _init_weights = MistralModel._init_weights
     _keep_in_fp32_modules = MistralModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
@@ -870,10 +711,7 @@ __all__ = [
     "MistralDecoderLayer",
     "MistralForCausalLM",
     "MistralForCausalLMPipe",
-    "MistralForQuestionAnswering",
     "MistralForSequenceClassification",
-    "MistralForTokenClassification",
-    "MistralMLP",
     "MistralModel",
     "MistralPretrainedModel",
     "MistralRotaryEmbedding",
