@@ -49,23 +49,6 @@ class Lfm2VlImageProcessor(ImageProcessingMixin):
         self.max_pixels_tolerance = max_pixels_tolerance
         self.image_mean = image_mean or [0.5, 0.5, 0.5]
         self.image_std = image_std or [0.5, 0.5, 0.5]
-        self.max_num_patches = max(
-            max_image_tokens * downsample_factor**2,
-            (tile_size // encoder_patch_size) ** 2 if do_image_splitting else 0,
-        )
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, **kwargs):
-        import json
-        import os
-
-        path = os.path.join(pretrained_model_name_or_path, "processor_config.json")
-        config = {}
-        if os.path.isfile(path):
-            with open(path, "r", encoding="utf-8") as file:
-                config = json.load(file).get("image_processor", {})
-        config.update(kwargs)
-        return cls(**config)
 
     def smart_resize(self, height, width):
         factor = self.encoder_patch_size * self.downsample_factor
@@ -147,9 +130,15 @@ class Lfm2VlImageProcessor(ImageProcessingMixin):
         patch_height, patch_width = height // patch, width // patch
         array = array.reshape([patch_height, patch, patch_width, patch, channels])
         array = array.transpose([0, 2, 1, 3, 4]).reshape([patch_height * patch_width, -1])
-        mask = np.zeros([self.max_num_patches], dtype="int64")
+        # Derive padding from the effective settings, including from_pretrained
+        # overrides applied by ImageProcessingMixin.from_dict after construction.
+        max_num_patches = max(
+            self.max_image_tokens * self.downsample_factor**2,
+            (self.tile_size // self.encoder_patch_size) ** 2 if self.do_image_splitting else 0,
+        )
+        mask = np.zeros([max_num_patches], dtype="int64")
         mask[: array.shape[0]] = 1
-        padded = np.zeros([self.max_num_patches, array.shape[1]], dtype="float32")
+        padded = np.zeros([max_num_patches, array.shape[1]], dtype="float32")
         padded[: array.shape[0]] = array
         return padded, mask, [patch_height, patch_width]
 

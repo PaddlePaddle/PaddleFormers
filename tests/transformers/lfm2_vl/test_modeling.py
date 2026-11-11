@@ -177,6 +177,114 @@ class Lfm2VlModelTest(unittest.TestCase):
                 spatial_shapes=inputs["spatial_shapes"],
             )
 
+    def test_image_processor_loads_standard_and_nested_configs(self):
+        settings = dict(
+            do_image_splitting=False,
+            min_image_tokens=4,
+            max_image_tokens=4,
+            encoder_patch_size=2,
+            downsample_factor=2,
+            tile_size=8,
+        )
+        for filename, data in (
+            ("preprocessor_config.json", settings),
+            ("processor_config.json", {"image_processor": settings}),
+        ):
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as directory:
+                path = os.path.join(directory, filename)
+                with open(path, "w", encoding="utf-8") as file:
+                    json.dump(data, file)
+                processor = Lfm2VlImageProcessor.from_pretrained(directory)
+                self.assertEqual(processor.encoder_patch_size, 2)
+                # Exercise the shared Hub resolution path without network access.
+                with mock.patch(
+                    "paddleformers.transformers.image_processing_utils.resolve_file_path", return_value=path
+                ) as resolve:
+                    remote = Lfm2VlImageProcessor.from_pretrained("test/lfm2-vl", local_files_only=True)
+                self.assertEqual(remote.tile_size, 8)
+                self.assertTrue(resolve.call_args.kwargs["local_files_only"])
+                # Overrides must also update derived padding sizes.
+                overridden = Lfm2VlImageProcessor.from_pretrained(directory, min_image_tokens=9, max_image_tokens=9)
+                output = overridden(Image.new("RGB", (12, 12)), return_tensors="pd")
+                self.assertEqual(list(output.pixel_values.shape), [1, 36, 12])
+                saved = os.path.join(directory, "saved")
+                overridden.save_pretrained(saved)
+                reloaded = Lfm2VlImageProcessor.from_pretrained(saved)
+                np.testing.assert_array_equal(
+                    reloaded(Image.new("RGB", (12, 12)), return_tensors="pd").pixel_values.numpy(),
+                    output.pixel_values.numpy(),
+                )
+
+    def test_image_processor_missing_and_invalid_config_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "No image processor"):
+                Lfm2VlImageProcessor.from_pretrained(directory)
+            with open(os.path.join(directory, "preprocessor_config.json"), "w", encoding="utf-8") as file:
+                file.write("{invalid")
+            with self.assertRaisesRegex(OSError, "not a valid JSON"):
+                Lfm2VlImageProcessor.from_pretrained(directory)
+
+    def test_checkpoint_resolution_errors_are_not_swallowed(self):
+        from paddleformers.transformers.model_utils import PretrainedModel
+
+        for error in (OSError("network failure"), ValueError("bad index"), FileNotFoundError("missing shard")):
+            with self.subTest(error=error), mock.patch(
+                "paddleformers.transformers.lfm2_vl.modeling._resolve_hf_checkpoint_dir", side_effect=error
+            ), mock.patch.object(PretrainedModel, "from_pretrained") as fallback:
+                with self.assertRaises(type(error)) as caught:
+                    Lfm2VlForConditionalGeneration.from_pretrained("test/lfm2-vl")
+                self.assertIs(caught.exception, error)
+                fallback.assert_not_called()
+
+    def test_invalid_hf_index_and_missing_shard_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.safetensors.index.json")
+            for contents, error in (
+                ("{broken", json.JSONDecodeError),
+                (json.dumps({"weight_map": {"weight": "missing.safetensors"}}), FileNotFoundError),
+            ):
+                with self.subTest(contents=contents):
+                    with open(path, "w", encoding="utf-8") as file:
+                        file.write(contents)
+                    with self.assertRaises(error):
+                        Lfm2VlForConditionalGeneration.from_pretrained(directory, config=get_config())
+
+    def test_native_loader_rejects_unused_kwargs(self):
+        model = Lfm2VlForConditionalGeneration(get_config())
+        with tempfile.TemporaryDirectory() as directory:
+            model.save_pretrained(directory)
+            for options in ({}, {"config": get_config()}):
+                with self.subTest(options=options), self.assertRaisesRegex(TypeError, "unexpected_option"):
+                    Lfm2VlForConditionalGeneration.from_pretrained(directory, unexpected_option=True, **options)
+
+    def test_real_hf_safetensors_conversion_and_kwargs(self):
+        reference = Lfm2VlForConditionalGeneration(get_config()).eval()
+        linear_names = {
+            name + ".weight" for name, layer in reference.named_sublayers() if isinstance(layer, paddle.nn.Linear)
+        }
+        hf_weights = {
+            name: (tensor.numpy().T.copy() if name in linear_names else tensor.numpy())
+            for name, tensor in reference.state_dict().items()
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            subdir = os.path.join(directory, "weights")
+            os.makedirs(subdir)
+            reference.config.save_pretrained(subdir)
+            save_file(hf_weights, os.path.join(subdir, "model.safetensors"), metadata={"format": "pt"})
+            loaded = Lfm2VlForConditionalGeneration.from_pretrained(
+                directory, subfolder="weights", convert_from_hf=True, local_files_only=True
+            ).eval()
+            for options in ({}, {"config": get_config()}):
+                with self.subTest(options=options), self.assertRaisesRegex(TypeError, "unexpected_option"):
+                    Lfm2VlForConditionalGeneration.from_pretrained(subdir, unexpected_option=True, **options)
+            with self.assertRaisesRegex(ValueError, "convert_from_hf"):
+                Lfm2VlForConditionalGeneration.from_pretrained(subdir, convert_from_hf=False)
+        for name, tensor in reference.state_dict().items():
+            np.testing.assert_array_equal(loaded.state_dict()[name].numpy(), tensor.numpy(), err_msg=name)
+        inputs = self.get_inputs()
+        with paddle.no_grad():
+            np.testing.assert_allclose(loaded(**inputs).logits.numpy(), reference(**inputs).logits.numpy(), atol=1e-6)
+
     def test_processor_rejects_image_token_without_image(self):
         processor = object.__new__(Lfm2VlProcessor)
         processor.image_token = "<image>"
