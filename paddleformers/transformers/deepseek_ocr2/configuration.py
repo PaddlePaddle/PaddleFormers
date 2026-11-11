@@ -96,9 +96,11 @@ class DeepseekOCR2Config(DeepseekV3Config):
         aux_loss_alpha=0.001,
         use_mla=True,
         vision_config=None,
+        scoring_func="softmax",
+        topk_method="greedy",
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__(scoring_func=scoring_func, topk_method=topk_method, **kwargs)
         self.aux_loss_alpha = aux_loss_alpha
         self.use_mla = use_mla
         # DeepseekOCR2 requires rms_norm_eps to be strictly float

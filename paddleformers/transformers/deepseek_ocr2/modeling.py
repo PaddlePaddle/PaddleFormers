@@ -972,12 +972,8 @@ def load_image(image_path):
         else:
             image = Image.open(image_path)
         return ImageOps.exif_transpose(image)
-    except Exception as error:
-        logger.warning(f"Failed to load image {image_path}: {error}")
-        try:
-            return Image.open(image_path)
-        except:
-            return None
+    except (OSError, requests.RequestException) as error:
+        raise OSError(f"Failed to load image {image_path}: {error}") from error
 
 
 def re_match(text):
@@ -1867,15 +1863,6 @@ class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
         )
         return model_inputs
 
-    def disable_paddle_init(self):
-        """
-        Disable the redundant paddle default initialization to accelerate model creation.
-        """
-        import paddle
-
-        setattr(paddle.nn.Linear, "reset_parameters", lambda self: None)
-        setattr(paddle.nn.LayerNorm, "reset_parameters", lambda self: None)
-
     def _build_conversation(self, prompt, image_file=""):
         """Build the conversation list from prompt and optional image_file."""
         if prompt and image_file:
@@ -2094,8 +2081,6 @@ class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
         save_results=False,
         eval_mode=False,
     ):
-        self.disable_paddle_init()
-
         os.makedirs(output_path, exist_ok=True)
         os.makedirs(f"{output_path}/images", exist_ok=True)
 
@@ -2197,7 +2182,12 @@ class DeepseekOCR2ForCausalLM(DeepseekV3ForCausalLM):
                 afile.write(outputs)
 
             if "line_type" in outputs:
-                import matplotlib.pyplot as plt
+                try:
+                    import matplotlib.pyplot as plt
+                except ImportError as error:
+                    raise ImportError(
+                        "Rendering OCR line results requires matplotlib; install it with `pip install matplotlib`."
+                    ) from error
 
                 try:
                     lines, line_type, endpoints = _parse_line_result(outputs)

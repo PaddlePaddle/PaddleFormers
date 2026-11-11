@@ -34,6 +34,7 @@ from paddleformers.transformers.deepseek_ocr2.modeling import (
     DeepseekOCR2Model,
     _parse_line_result,
     extract_coordinates_and_label,
+    load_image,
 )
 from paddleformers.transformers.deepseek_v3.modeling import DeepseekV3Model
 from tests.testing_utils import gpu_device_initializer, slow
@@ -44,6 +45,18 @@ from tests.transformers.test_modeling_common import (
     floats_tensor,
     ids_tensor,
 )
+
+
+class DeepseekOCR2ImageErrorsTest(unittest.TestCase):
+    def test_missing_image_reports_path(self):
+        with mock.patch("PIL.Image.open", side_effect=FileNotFoundError("missing")):
+            with self.assertRaisesRegex(OSError, "missing-image.png"):
+                load_image("missing-image.png")
+
+    def test_interrupt_is_not_swallowed(self):
+        with mock.patch("PIL.Image.open", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                load_image("image.png")
 
 
 class DeepseekOCR2ModelTester:

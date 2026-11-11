@@ -35,6 +35,77 @@ from tests.transformers.test_modeling_common import (
 )
 
 
+class DeepseekV3RoutingDefaultsTest(unittest.TestCase):
+    def test_router_scores_and_bias_round_trip(self):
+        from paddleformers.transformers.deepseek_ocr2.configuration import (
+            DeepseekOCR2Config,
+        )
+        from paddleformers.transformers.deepseek_v3.modeling import DeepseekV3TopkRouter
+
+        for config_class in (DeepseekV3Config, DeepseekOCR2Config):
+            config = config_class(
+                hidden_size=2,
+                n_routed_experts=4,
+                num_experts_per_tok=2,
+                n_group=1,
+                topk_group=1,
+                norm_topk_prob=False,
+                routed_scaling_factor=1.0,
+            )
+            router = DeepseekV3TopkRouter(config)
+            router.weight.set_value(paddle.to_tensor([[1.0, 2.0, 3.0, 4.0], [0.0, 0.0, 0.0, 0.0]]))
+            if config.topk_method == "noaux_tc":
+                router.e_score_correction_bias.set_value(paddle.to_tensor([10.0, 0.0, 0.0, 0.0]))
+            inputs = paddle.to_tensor([[1.0, 0.0]])
+            indices, weights = router(inputs)
+            scores = paddle.nn.functional.linear(inputs, router.weight)
+            scores = (
+                scores.sigmoid() if config.scoring_func == "sigmoid" else paddle.nn.functional.softmax(scores, axis=-1)
+            )
+            np.testing.assert_allclose(weights.numpy(), paddle.take_along_axis(scores, indices, axis=1).numpy())
+            self.assertEqual(set(indices.numpy().flatten()), {0, 3} if config.topk_method == "noaux_tc" else {2, 3})
+            with tempfile.TemporaryDirectory() as directory:
+                path = directory + "/router.pdparams"
+                paddle.save(router.state_dict(), path)
+                restored = DeepseekV3TopkRouter(config)
+                missing, unexpected = restored.set_state_dict(paddle.load(path))
+                self.assertEqual((missing, unexpected), ([], []))
+                actual_indices, actual_weights = restored(inputs)
+                np.testing.assert_array_equal(actual_indices.numpy(), indices.numpy())
+                np.testing.assert_array_equal(actual_weights.numpy(), weights.numpy())
+
+    def test_legacy_paddle_defaults_keep_v3_behavior(self):
+        config = DeepseekV3Config.from_dict({"topk_method": "gready", "scoring_func": "softmax"})
+        self.assertEqual((config.scoring_func, config.topk_method), ("sigmoid", "noaux_tc"))
+
+    def test_missing_hf_router_fields_keep_v3_defaults(self):
+        config = DeepseekV3Config.from_dict({"hidden_size": 8, "n_routed_experts": 4})
+        self.assertEqual(config.scoring_func, "sigmoid")
+        self.assertEqual(config.topk_method, "noaux_tc")
+        from paddleformers.transformers.deepseek_v3.modeling import DeepseekV3TopkRouter
+
+        router = DeepseekV3TopkRouter(config)
+        self.assertIn("e_score_correction_bias", router.state_dict())
+        for mapping in (
+            DeepseekV3ForCausalLM._gen_aoa_config(config),
+            DeepseekV3ForCausalLM._gen_inv_aoa_config(config),
+        ):
+            self.assertTrue(any("e_score_correction_bias" in item for item in mapping["aoa_statements"]))
+
+    def test_ocr2_defaults_remain_independent(self):
+        from paddleformers.transformers.deepseek_ocr2.configuration import (
+            DeepseekOCR2Config,
+        )
+        from paddleformers.transformers.deepseek_v3.modeling import DeepseekV3TopkRouter
+
+        config = DeepseekOCR2Config(hidden_size=8, n_routed_experts=4)
+        self.assertEqual(config.scoring_func, "softmax")
+        self.assertEqual(config.topk_method, "greedy")
+        self.assertNotIn("e_score_correction_bias", DeepseekV3TopkRouter(config).state_dict())
+        restored = DeepseekOCR2Config.from_dict(config.to_dict())
+        self.assertEqual((restored.scoring_func, restored.topk_method), ("softmax", "greedy"))
+
+
 class DeepseekV3ModelTester:
     def __init__(
         self,

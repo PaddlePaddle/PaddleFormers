@@ -598,11 +598,8 @@ class DeepseekOCR2Plugin(BasePlugin):
         images_spatial_crop = mm_inputs.get("images_spatial_crop", None)
 
         if self.expand_mm_tokens:
-            if self.crop_mode:
-                num_queries = math.ceil((self.image_size // self.patch_size) / self.downsample_ratio)
-                num_queries_base = math.ceil((self.base_size // self.patch_size) / self.downsample_ratio)
-            else:
-                num_queries = math.ceil((self.image_size // self.patch_size) / self.downsample_ratio)
+            num_queries = math.ceil((self.image_size // self.patch_size) / self.downsample_ratio)
+            num_queries_base = math.ceil((self.base_size // self.patch_size) / self.downsample_ratio)
 
         for message in messages:
             content = message["content"]
