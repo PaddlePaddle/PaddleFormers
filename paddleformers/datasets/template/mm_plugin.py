@@ -34,7 +34,7 @@ import librosa
 import numpy as np
 import paddle
 import requests
-from PIL import Image
+from PIL import Image, ImageOps
 from PIL.Image import Image as ImageObject
 from transformers.image_utils import is_valid_image
 from typing_extensions import override
@@ -390,6 +390,190 @@ class BasePlugin(MMPluginMixin):
 
         self._validate_input(processor, images, videos, audios)
         return self._get_mm_inputs(images, videos, audios, processor, **kwargs)
+
+
+@dataclass
+class DeepseekOCR2Plugin(BasePlugin):
+    def __init__(self, image_token, video_token, audio_token, **kwargs):
+        super().__init__(image_token, video_token, audio_token, **kwargs)
+        self.crop_mode = True
+        self.base_size = 1024
+        self.image_size = 768
+        self.crop_threshold = self.image_size
+        self.patch_size = 16
+        self.downsample_ratio = 4
+        self.image_mean = [0.5, 0.5, 0.5]
+        self.image_std = [0.5, 0.5, 0.5]
+        self.image_transform = transforms.Compose(
+            [transforms.ToTensor(), transforms.Normalize(mean=self.image_mean, std=self.image_std)]
+        )
+
+    @override
+    def _validate_input(
+        self,
+        processor,
+        images,
+        videos,
+        audios,
+    ) -> None:
+        r"""Validate if this model accepts the input modalities."""
+        if len(images) != 0 and self.image_token is None:
+            raise ValueError(
+                "This model does not support image input. Please check whether the correct `template` is used."
+            )
+
+        if len(videos) != 0 and self.video_token is None:
+            raise ValueError(
+                "This model does not support video input. Please check whether the correct `template` is used."
+            )
+
+        if len(audios) != 0 and self.audio_token is None:
+            raise ValueError(
+                "This model does not support audio input. Please check whether the correct `template` is used."
+            )
+
+    @staticmethod
+    def dynamic_preprocess(image, min_num=2, max_num=6, image_size=768, use_thumbnail=False):
+        from ...transformers.deepseek_ocr2.image_processing import dynamic_preprocess
+
+        return dynamic_preprocess(image, min_num, max_num, image_size, use_thumbnail)
+
+    @override
+    def _regularize_images(self, images, **kwargs):
+
+        images_list, images_crop_list, images_spatial_crop_list = [], [], []
+        for image in images:
+            image = self._img_download(image)
+            image, images_crop, images_spatial_crop = self._preprocess_image(image, **kwargs)
+            if image is not None:
+                images_list.append(image)
+            if len(images_crop) > 0:
+                images_crop_list.extend(images_crop)
+            else:
+                images_crop_list.append(paddle.zeros((3, self.base_size, self.base_size)))
+            if images_spatial_crop is not None:
+                images_spatial_crop_list.append(images_spatial_crop)
+
+        if len(images_list) == 0:
+            images_ori = paddle.zeros((1, 3, self.image_size, self.image_size))
+            images_crop = paddle.zeros((1, 3, self.base_size, self.base_size))
+            # images_spatial_crop = paddle.zeros((1, 2), dtype=paddle.long)
+            images_spatial_crop = np.array([[0, 0]])
+        else:
+            images_ori = paddle.stack(images_list, dim=0)
+            images_crop = paddle.stack(images_crop_list, dim=0)
+            # images_spatial_crop = paddle.tensor(images_spatial_crop_list, dtype=paddle.long)
+            images_spatial_crop = np.array(images_spatial_crop_list)
+
+        return {"images": images_ori, "images_crop": images_crop, "images_spatial_crop": images_spatial_crop}
+
+    @override
+    def _preprocess_image(self, image, **kwargs):
+
+        images_crop_list = []
+
+        if image.mode != "RGB":
+            image = image.convert("RGB")
+
+        if self.crop_mode:
+            if image.size[0] <= self.crop_threshold and image.size[1] <= self.crop_threshold:
+                crop_ratio = [1, 1]
+            else:
+                images_crop_raw, crop_ratio = self.dynamic_preprocess(image)
+
+            """process the global view"""
+            global_view = ImageOps.pad(
+                image, (self.base_size, self.base_size), color=tuple(int(x * 255) for x in self.image_mean)
+            )
+
+            image = self.image_transform(global_view)
+            width_crop_num, height_crop_num = crop_ratio
+            images_spatial_crop = [width_crop_num, height_crop_num]
+
+            if width_crop_num > 1 or height_crop_num > 1:
+                """process the local views"""
+                for i in range(len(images_crop_raw)):
+                    images_crop_list.append(self.image_transform(images_crop_raw[i]))
+        else:
+            """process the global view"""
+            if image.size[0] <= self.crop_threshold and image.size[1] <= self.crop_threshold:
+                image = image.resize((self.image_size, self.image_size))
+            global_view = ImageOps.pad(
+                image, (self.image_size, self.image_size), color=tuple(int(x * 255) for x in self.image_mean)
+            )
+            image = self.image_transform(global_view)
+
+            width_crop_num, height_crop_num = 1, 1
+            images_spatial_crop = [width_crop_num, height_crop_num]
+
+        return image, images_crop_list, images_spatial_crop
+
+    @override
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        mm_inputs = {}
+        if len(images) != 0:
+            image_results = self._regularize_images(
+                images,
+            )
+
+            mm_inputs.update(image_results)
+
+        return mm_inputs
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        num_image_tokens = 0
+        messages = deepcopy(messages)
+        images_spatial_crop = mm_inputs.get("images_spatial_crop", None)
+
+        if self.expand_mm_tokens:
+            num_queries = math.ceil((self.image_size // self.patch_size) / self.downsample_ratio)
+            num_queries_base = math.ceil((self.base_size // self.patch_size) / self.downsample_ratio)
+
+        for message in messages:
+            content = message["content"]
+            while num_image_tokens < len(images) and IMAGE_PLACEHOLDER in content:
+                image_seqlen = 1
+                if self.expand_mm_tokens:
+                    if self.crop_mode:
+                        image_seqlen = num_queries_base * num_queries_base
+                        image_seqlen += 1
+                        width_crop_num, height_crop_num = images_spatial_crop[num_image_tokens]
+                        if width_crop_num > 1 or height_crop_num > 1:
+                            image_seqlen += (num_queries * width_crop_num) * (num_queries * height_crop_num)
+                    else:
+                        image_seqlen = num_queries * num_queries
+                        image_seqlen += 1
+
+                content = content.replace(
+                    IMAGE_PLACEHOLDER,
+                    f"{self.image_token * image_seqlen}\n",
+                    1,
+                )
+                num_image_tokens += 1
+
+            message["content"] = content
+
+        self.masked_tokens = [self.image_token]
+
+        return messages
 
 
 @dataclass
@@ -1804,6 +1988,7 @@ class KimiK3Plugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "deepseek_ocr2": DeepseekOCR2Plugin,
     "phi4_multimodal": Phi4MultimodalPlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,

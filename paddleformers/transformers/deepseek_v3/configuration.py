@@ -199,7 +199,12 @@ class DeepseekV3Config(PretrainedConfig):
         self.qk_rope_head_dim = qk_rope_head_dim
         self.v_head_dim = v_head_dim
         self.qk_nope_head_dim = qk_nope_head_dim
-        self.head_dim = qk_rope_head_dim
+        # For MLA mode, head_dim = qk_rope_head_dim (used by rotary embedding)
+        # For GQA mode (kv_lora_rank is None), head_dim = hidden_size // num_attention_heads
+        if kv_lora_rank is None or kv_lora_rank == 0:
+            self.head_dim = hidden_size // num_attention_heads
+        else:
+            self.head_dim = qk_rope_head_dim
         self.topk_method = topk_method
         self.n_group = n_group
         self.topk_group = topk_group

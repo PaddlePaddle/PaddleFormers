@@ -152,7 +152,12 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     </tr>
     <!-- VLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="6" style="vertical-align: top;">VLM</td>
+      <td rowspan="8" style="vertical-align: top;">VLM</td>
+      <td>DeepSeek-OCR-2</td>
+      <td>deepseek-ai/DeepSeek-OCR-2</td>
+      <td>deepseek_ocr2</td>
+    </tr>
+    <tr>
       <td>Llama Guard 4</td>
       <td>meta-llama/Llama-Guard-4-12B</td>
       <td>llama4_vl</td>
