@@ -44,6 +44,7 @@ from paddleformers.transformers.qwen3_omni_moe.processor import (
     Qwen3OmniMoeProcessorKwargs,
 )
 
+from ...transformers.fastvlm.constants import IMAGE_TOKEN_INDEX
 from ...utils.log import logger
 from .augment_utils import (
     JpegCompression,
@@ -390,6 +391,52 @@ class BasePlugin(MMPluginMixin):
 
         self._validate_input(processor, images, videos, audios)
         return self._get_mm_inputs(images, videos, audios, processor, **kwargs)
+
+
+@dataclass
+class FastVLMPlugin(BasePlugin):
+    image_token_id: int = IMAGE_TOKEN_INDEX
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        if len(images) > 1:
+            raise ValueError("FastVLM currently supports exactly one image per sample.")
+        return messages
+
+    @override
+    def process_tokens(self, tokens, processor, labels=None):
+        labels = deepcopy(tokens) if labels is None else deepcopy(labels)
+        if len(labels) != len(tokens):
+            raise ValueError("FastVLM tokens and labels must have the same length.")
+        return [-100 if token == self.image_token_id else label for token, label in zip(tokens, labels)]
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        if videos or audios:
+            raise ValueError("FastVLM supports image input only.")
+        if not images:
+            return {}
+
+        processed_images = [self._img_download(image).convert("RGB") for image in images]
+        return dict(processor.image_processor(processed_images, return_tensors="pd"))
 
 
 @dataclass
@@ -1804,6 +1851,7 @@ class KimiK3Plugin(BasePlugin):
 
 PLUGINS = {
     "base": BasePlugin,
+    "fastvlm": FastVLMPlugin,
     "phi4_multimodal": Phi4MultimodalPlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,

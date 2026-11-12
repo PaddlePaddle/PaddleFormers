@@ -1,0 +1,402 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+
+import json
+import os
+import tempfile
+import unittest
+from unittest import mock
+
+import numpy as np
+import paddle
+from PIL import Image
+from safetensors.numpy import save_file
+from tokenizers import Tokenizer
+from tokenizers.models import WordLevel
+from transformers import PreTrainedTokenizerFast
+
+from paddleformers.transformers import AutoModelForConditionalGeneration, AutoProcessor
+from paddleformers.transformers.fastvlm.configuration import FastVLMConfig
+from paddleformers.transformers.fastvlm.image_processor import FastVLMImageProcessor
+from paddleformers.transformers.fastvlm.modeling import FastVLMForConditionalGeneration
+from paddleformers.transformers.fastvlm.processor import FastVLMProcessor
+
+
+class FastVLMModelTest(unittest.TestCase):
+    def test_shared_image_token_defaults(self):
+        from paddleformers.datasets.template.mm_plugin import FastVLMPlugin
+        from paddleformers.datasets.template.template import FastVLMTemplate
+        from paddleformers.transformers.fastvlm.constants import IMAGE_TOKEN_INDEX
+        from paddleformers.transformers.fastvlm.processor import (
+            IMAGE_TOKEN_INDEX as PROCESSOR_IMAGE_TOKEN_INDEX,
+        )
+
+        self.assertEqual(FastVLMConfig().image_token_index, IMAGE_TOKEN_INDEX)
+        self.assertEqual(FastVLMPlugin("<image>", None, None).image_token_id, IMAGE_TOKEN_INDEX)
+        self.assertEqual(FastVLMTemplate.__dataclass_fields__["image_token_id"].default, IMAGE_TOKEN_INDEX)
+        self.assertEqual(PROCESSOR_IMAGE_TOKEN_INDEX, IMAGE_TOKEN_INDEX)
+
+    def _check_qkv_against_fp32(self, dtype):
+        from paddleformers.transformers.fastvlm.modeling import FastVLMQKVLinear
+
+        layer = FastVLMQKVLinear(self.config).to(dtype=dtype)
+        layer.weight.set_value(
+            paddle.linspace(-0.0625, 0.0625, layer.weight.numel()).reshape(layer.weight.shape).astype(dtype)
+        )
+        layer.bias.set_value(paddle.linspace(-0.125, 0.125, layer.bias.numel()).astype(dtype))
+        inputs = (
+            paddle.linspace(-0.5, 0.5, 2 * 3 * self.config.hidden_size)
+            .reshape([2, 3, self.config.hidden_size])
+            .astype(dtype)
+        )
+        inputs.stop_gradient = False
+        reference_inputs = inputs.astype("float32").detach()
+        reference_inputs.stop_gradient = False
+        reference_weight = layer.weight.astype("float32").detach()
+        reference_weight.stop_gradient = False
+        reference_bias = layer.bias.astype("float32").detach()
+        reference_bias.stop_gradient = False
+        expected = paddle.nn.functional.linear(reference_inputs, reference_weight, reference_bias)
+        actual = layer(inputs)
+        tolerance = 2e-3 if dtype == "bfloat16" else 1e-6
+        np.testing.assert_allclose(actual.astype("float32").numpy(), expected.numpy(), atol=tolerance, rtol=tolerance)
+        actual.astype("float32").square().mean().backward()
+        expected.square().mean().backward()
+        for actual_gradient, expected_gradient in (
+            (inputs.grad, reference_inputs.grad),
+            (layer.weight.grad, reference_weight.grad),
+            (layer.bias.grad, reference_bias.grad),
+        ):
+            np.testing.assert_allclose(
+                actual_gradient.astype("float32").numpy(), expected_gradient.numpy(), atol=tolerance, rtol=tolerance
+            )
+
+    def test_qkv_fp32_output_and_gradients(self):
+        self._check_qkv_against_fp32("float32")
+
+    def test_qkv_bf16_output_and_gradients_against_fp32(self):
+        if (
+            not paddle.is_compiled_with_cuda()
+            or not paddle.device.cuda.device_count()
+            or not paddle.amp.is_bfloat16_supported()
+        ):
+            self.skipTest("Native BF16 CUDA requires a supported GPU (for example A100); do not emulate this test")
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        paddle.set_device("gpu:0")
+        self._check_qkv_against_fp32("bfloat16")
+
+    def test_fp32_convolution_helper(self):
+        from paddleformers.transformers.fastvlm.modeling_vision import _conv2d_fp32
+
+        for dtype in ("float32", "bfloat16"):
+            for use_bias in (False, True):
+                with self.subTest(dtype=dtype, bias=use_bias):
+                    inputs = paddle.randn([1, 4, 7, 7]).astype(dtype)
+                    weight = paddle.randn([4, 1, 3, 3]).astype(dtype)
+                    bias = paddle.randn([4]).astype(dtype) if use_bias else None
+                    inputs.stop_gradient = False
+                    weight.stop_gradient = False
+                    options = dict(stride=2, padding=2, dilation=2, groups=4)
+                    expected = paddle.nn.functional.conv2d(
+                        inputs.astype("float32"),
+                        weight.astype("float32"),
+                        None if bias is None else bias.astype("float32"),
+                        **options,
+                    ).astype(dtype)
+                    actual = _conv2d_fp32(inputs, weight, bias, **options)
+                    self.assertEqual(actual.dtype, inputs.dtype)
+                    np.testing.assert_array_equal(actual.astype("float32").numpy(), expected.astype("float32").numpy())
+                    expected_grads = paddle.grad(expected.astype("float32").sum(), [inputs, weight], retain_graph=True)
+                    actual_grads = paddle.grad(actual.astype("float32").sum(), [inputs, weight])
+                    for actual_grad, expected_grad in zip(actual_grads, expected_grads):
+                        np.testing.assert_array_equal(
+                            actual_grad.astype("float32").numpy(), expected_grad.astype("float32").numpy()
+                        )
+
+    def setUp(self):
+        self.config = FastVLMConfig(
+            vocab_size=128,
+            hidden_size=32,
+            intermediate_size=64,
+            num_hidden_layers=1,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            mm_vision_tower="mobileclip_l_64",
+            mm_hidden_size=128,
+            vision_config={"layers": [1, 1, 1, 1], "embed_dims": [8, 16, 32, 64]},
+            tie_word_embeddings=False,
+            use_cache=False,
+            architectures=["LlavaQwen2ForCausalLM"],
+        )
+
+    def get_inputs(self):
+        input_ids = paddle.to_tensor([[1, -200, 2, 3]], dtype="int64")
+        labels = paddle.to_tensor([[1, -100, 2, 3]], dtype="int64")
+        pixel_values = paddle.randn([1, 3, 64, 64])
+        return input_ids, labels, pixel_values
+
+    def test_multimodal_forward_and_loss(self):
+        model = FastVLMForConditionalGeneration(self.config)
+        input_ids, labels, pixel_values = self.get_inputs()
+        outputs = model(
+            input_ids=input_ids,
+            labels=labels,
+            pixel_values=pixel_values,
+            return_dict=True,
+        )
+        self.assertEqual(outputs.logits.shape, [1, 7, self.config.vocab_size])
+        self.assertIsNotNone(outputs.loss)
+
+    def test_backward(self):
+        model = FastVLMForConditionalGeneration(self.config)
+        input_ids, labels, pixel_values = self.get_inputs()
+        loss = model(
+            input_ids=input_ids,
+            labels=labels,
+            pixel_values=pixel_values,
+            return_dict=True,
+        ).loss
+        loss.backward()
+        self.assertIsNotNone(model.model.mm_projector[0].weight.grad)
+
+    def test_mixed_batch_uses_image_order_not_batch_index(self):
+        model = FastVLMForConditionalGeneration(self.config).eval()
+        image_ids, image_labels, pixels = self.get_inputs()
+        text_ids = paddle.to_tensor([[1, 4, 2, 3]], dtype="int64")
+        with paddle.no_grad():
+            reference = model(input_ids=image_ids, pixel_values=pixels, return_dict=True).logits
+            for image_first in (False, True):
+                rows = [image_ids, text_ids] if image_first else [text_ids, image_ids]
+                ids = paddle.concat(rows, axis=0)
+                labels = paddle.concat([image_labels, text_ids] if image_first else [text_ids, image_labels], axis=0)
+                prepared = model._prepare_multimodal_inputs(ids, None, None, labels, pixels)
+                image_row = 0 if image_first else 1
+                self.assertIsNotNone(prepared[1])
+                self.assertEqual(int(prepared[1][1 - image_row].sum()), 4)
+                outputs = model(input_ids=ids, labels=labels, pixel_values=pixels, return_dict=True)
+                np.testing.assert_allclose(
+                    outputs.logits[image_row].numpy(), reference[0].numpy(), atol=1e-5, rtol=1e-5
+                )
+
+    def test_image_count_mismatch_is_rejected(self):
+        model = FastVLMForConditionalGeneration(self.config).eval()
+        ids, labels, pixels = self.get_inputs()
+        with self.assertRaisesRegex(ValueError, "more images"):
+            model._prepare_multimodal_inputs(ids, None, None, labels, paddle.concat([pixels, pixels]))
+        with self.assertRaisesRegex(ValueError, "fewer images"):
+            model._prepare_multimodal_inputs(paddle.concat([ids, ids]), None, None, None, pixels)
+
+    def test_plugin_preserves_existing_label_mask(self):
+        from paddleformers.datasets.template.mm_plugin import FastVLMPlugin
+
+        plugin = FastVLMPlugin(image_token="<image>", video_token=None, audio_token=None)
+        labels = [-100, 99, 2, 3]
+        actual = plugin.process_tokens([1, -200, 2, 3], None, labels=labels)
+        self.assertEqual(actual, [-100, -100, 2, 3])
+        self.assertEqual(labels, [-100, 99, 2, 3])
+
+    @unittest.skipUnless(paddle.device.cuda.device_count() > 0, "CINN regression requires a CUDA device")
+    def test_se_block_cinn_matches_dynamic(self):
+        from paddleformers.transformers.fastvlm.modeling_vision import SEBlock
+
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        paddle.set_device("gpu:0")
+        dynamic = SEBlock(16)
+        compiled = SEBlock(16)
+        compiled.set_state_dict(dynamic.state_dict())
+        compiled = paddle.jit.to_static(compiled, full_graph=True, backend="CINN")
+        inputs = paddle.randn([2, 16, 4, 4])
+        expected = dynamic(inputs)
+        actual = compiled(inputs)
+        np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
+        expected.square().mean().backward()
+        actual.square().mean().backward()
+        for expected_param, actual_param in zip(dynamic.parameters(), compiled.parameters()):
+            self.assertIsNotNone(actual_param.grad)
+            np.testing.assert_allclose(actual_param.grad.numpy(), expected_param.grad.numpy(), atol=1e-5, rtol=1e-5)
+
+    def test_auto_model_from_config(self):
+        model = AutoModelForConditionalGeneration.from_config(self.config)
+        self.assertIsInstance(model, FastVLMForConditionalGeneration)
+
+    def test_image_processor(self):
+        outputs = FastVLMImageProcessor(image_size=64)(Image.new("RGB", (80, 60), (20, 30, 40)), return_tensors="pd")
+        self.assertEqual(list(outputs.pixel_values.shape), [1, 3, 64, 64])
+
+    def test_official_model_id_uses_fastvlm_conversion(self):
+        reference = FastVLMForConditionalGeneration(self.config)
+        converted_state = {name: tensor.clone() for name, tensor in reference.state_dict().items()}
+        with (
+            mock.patch(
+                "paddleformers.transformers.fastvlm.modeling._resolve_hf_checkpoint_dir",
+                return_value="/tmp/fastvlm-hf-checkpoint",
+            ),
+            mock.patch("paddleformers.transformers.fastvlm.modeling._is_hf_fastvlm_checkpoint", return_value=True),
+            mock.patch(
+                "paddleformers.transformers.fastvlm.modeling.FastVLMConfig.from_pretrained",
+                return_value=(self.config, {}),
+            ),
+            mock.patch(
+                "paddleformers.transformers.fastvlm.modeling._load_hf_fastvlm_state_dict",
+                return_value=converted_state,
+            ) as load_checkpoint,
+        ):
+            loaded = FastVLMForConditionalGeneration.from_pretrained("apple/FastVLM-0.5B")
+        load_checkpoint.assert_called_once_with("/tmp/fastvlm-hf-checkpoint", self.config)
+        for name, tensor in reference.state_dict().items():
+            np.testing.assert_array_equal(tensor.numpy(), loaded.state_dict()[name].numpy())
+
+    def test_processor_official_model_id_without_preprocessor_config(self):
+        tokenizer = PreTrainedTokenizerFast(
+            tokenizer_object=Tokenizer(WordLevel({"<unk>": 0, "<eos>": 1}, unk_token="<unk>")),
+            unk_token="<unk>",
+            eos_token="<eos>",
+        )
+        with (
+            mock.patch("paddleformers.transformers.auto.processing.resolve_file_path", return_value=None),
+            mock.patch(
+                "paddleformers.transformers.auto.processing.AutoConfig.from_pretrained", return_value=self.config
+            ),
+            mock.patch.object(FastVLMProcessor, "get_processor_dict", return_value=({}, {})),
+            mock.patch(
+                "paddleformers.transformers.fastvlm.processor.AutoTokenizer.from_pretrained",
+                return_value=tokenizer,
+            ),
+            mock.patch(
+                "paddleformers.transformers.fastvlm.processor.FastVLMImageProcessor.from_pretrained",
+                side_effect=TypeError("preprocessor_config.json resolved to None"),
+            ),
+            mock.patch(
+                "paddleformers.transformers.fastvlm.processor.FastVLMConfig.from_pretrained",
+                return_value=self.config,
+            ),
+        ):
+            processor = AutoProcessor.from_pretrained("apple/FastVLM-0.5B")
+        self.assertIsInstance(processor, FastVLMProcessor)
+        self.assertIs(processor.tokenizer, tokenizer)
+        self.assertEqual(processor.image_processor.crop_size, {"height": 64, "width": 64})
+
+    def test_checkpoint_resolution_errors_are_not_swallowed(self):
+        from paddleformers.transformers.model_utils import PretrainedModel
+
+        for error in (OSError("network failure"), ValueError("bad index"), FileNotFoundError("missing shard")):
+            with self.subTest(error=error), mock.patch(
+                "paddleformers.transformers.fastvlm.modeling._resolve_hf_checkpoint_dir", side_effect=error
+            ), mock.patch.object(PretrainedModel, "from_pretrained") as fallback:
+                with self.assertRaises(type(error)) as caught:
+                    FastVLMForConditionalGeneration.from_pretrained("test/fastvlm")
+                self.assertIs(caught.exception, error)
+                fallback.assert_not_called()
+
+    def test_invalid_hf_index_and_missing_shard_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "model.safetensors.index.json")
+            weight_map = {"model.vision_tower.vision_tower.model.weight": "missing.safetensors"}
+            for contents, error in (
+                ("{broken", json.JSONDecodeError),
+                ("{}", KeyError),
+                (json.dumps({"weight_map": weight_map}), FileNotFoundError),
+            ):
+                with self.subTest(contents=contents):
+                    with open(path, "w", encoding="utf-8") as file:
+                        file.write(contents)
+                    with self.assertRaises(error):
+                        FastVLMForConditionalGeneration.from_pretrained(directory, config=self.config)
+
+    def test_native_loader_rejects_unused_kwargs(self):
+        model = FastVLMForConditionalGeneration(self.config)
+        with tempfile.TemporaryDirectory() as directory:
+            model.save_pretrained(directory)
+            for options in ({}, {"config": self.config}):
+                with self.subTest(options=options), self.assertRaisesRegex(TypeError, "unexpected_option"):
+                    FastVLMForConditionalGeneration.from_pretrained(directory, unexpected_option=True, **options)
+
+    def test_real_hf_safetensors_conversion_and_kwargs(self):
+        reference = FastVLMForConditionalGeneration(self.config).eval()
+        hf_weights = {}
+        heads = self.config.num_attention_heads
+        kv_heads = self.config.num_key_value_heads
+        head_dim = self.config.hidden_size // heads
+        for name, tensor in reference.state_dict().items():
+            array = tensor.numpy()
+            if name.startswith("model.vision_tower.vision_model."):
+                source = name.replace("model.vision_tower.vision_model.", "model.vision_tower.vision_tower.model.")
+                source = source.replace("._mean", ".running_mean").replace("._variance", ".running_var")
+                hf_weights[source] = array
+            elif ".qkv_proj." in name:
+                # Independent inverse layout: [KV group, Q heads..., K, V].
+                groups = array.reshape([*array.shape[:-1], kv_heads, (heads // kv_heads + 2) * head_dim])
+                parts = np.split(groups, [heads // kv_heads * head_dim, (heads // kv_heads + 1) * head_dim], axis=-1)
+                for projection, part in zip(("q", "k", "v"), parts):
+                    part = part.reshape([*array.shape[:-1], -1])
+                    hf_weights[name.replace("qkv_proj", projection + "_proj")] = (
+                        part.T.copy() if name.endswith("weight") else part.copy()
+                    )
+            elif ".up_gate_proj." in name:
+                for projection, part in zip(("gate", "up"), np.split(array, 2, axis=-1)):
+                    hf_weights[name.replace("up_gate_proj", projection + "_proj")] = part.T.copy()
+            elif (name.startswith("model.mm_projector.") and name.endswith("weight")) or name.endswith(
+                (".self_attn.o_proj.weight", ".mlp.down_proj.weight")
+            ):
+                hf_weights[name] = array.T.copy()
+            else:
+                hf_weights[name] = array
+        with tempfile.TemporaryDirectory() as directory:
+            subdir = os.path.join(directory, "weights")
+            os.makedirs(subdir)
+            self.config.save_pretrained(subdir)
+            save_file(hf_weights, os.path.join(subdir, "model.safetensors"), metadata={"format": "pt"})
+            loaded = FastVLMForConditionalGeneration.from_pretrained(
+                directory, subfolder="weights", convert_from_hf=True, local_files_only=True
+            ).eval()
+            for options in ({}, {"config": self.config}):
+                with self.subTest(options=options), self.assertRaisesRegex(TypeError, "unexpected_option"):
+                    FastVLMForConditionalGeneration.from_pretrained(subdir, unexpected_option=True, **options)
+            with self.assertRaisesRegex(ValueError, "convert_from_hf"):
+                FastVLMForConditionalGeneration.from_pretrained(subdir, convert_from_hf=False)
+        for name, tensor in reference.state_dict().items():
+            np.testing.assert_array_equal(loaded.state_dict()[name].numpy(), tensor.numpy(), err_msg=name)
+        ids, labels, pixels = self.get_inputs()
+        with paddle.no_grad():
+            np.testing.assert_allclose(
+                loaded(input_ids=ids, pixel_values=pixels, return_dict=True).logits.numpy(),
+                reference(input_ids=ids, pixel_values=pixels, return_dict=True).logits.numpy(),
+                atol=1e-6,
+            )
+
+    def test_default_save_pretrained_round_trip(self):
+        model = FastVLMForConditionalGeneration(self.config)
+        with tempfile.TemporaryDirectory() as save_dir:
+            model.save_pretrained(save_dir)
+            self.assertTrue(os.path.exists(os.path.join(save_dir, "model_state.pdparams")))
+            loaded = FastVLMForConditionalGeneration.from_pretrained(save_dir)
+        for name, tensor in model.state_dict().items():
+            np.testing.assert_array_equal(tensor.numpy(), loaded.state_dict()[name].numpy())
+
+    def test_tensor_parallel_fused_parameter_splits(self):
+        config = FastVLMConfig(**self.config.to_dict())
+        config.tensor_model_parallel_size = 2
+        qkv = np.arange(self.config.hidden_size * 64, dtype="float32").reshape(self.config.hidden_size, 64)
+        ffn = np.arange(self.config.hidden_size * 128, dtype="float32").reshape(self.config.hidden_size, 128)
+        shards = []
+        ffn_shards = []
+        for rank in range(2):
+            config.tensor_parallel_rank = rank
+            actions = FastVLMForConditionalGeneration._get_tensor_parallel_mappings(config)
+            shards.append(actions["layers.0.self_attn.qkv_proj.weight"](qkv))
+            ffn_shards.append(actions["layers.0.mlp.up_gate_proj.weight"](ffn))
+        np.testing.assert_array_equal(np.concatenate(shards, axis=-1), qkv)
+        np.testing.assert_array_equal(
+            np.concatenate([item[:, :32] for item in ffn_shards] + [item[:, 32:] for item in ffn_shards], axis=-1),
+            ffn,
+        )
+        hidden_states = np.arange(3 * self.config.hidden_size, dtype="float32").reshape(3, self.config.hidden_size)
+        single_card_output = hidden_states @ qkv
+        tensor_parallel_output = np.concatenate([hidden_states @ shard for shard in shards], axis=-1)
+        np.testing.assert_array_equal(tensor_parallel_output, single_card_output)
+
+
+if __name__ == "__main__":
+    unittest.main()
