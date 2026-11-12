@@ -7,7 +7,7 @@
 本地历史环境：V100S 32GB、Python3.10.20、Paddle3.5.0.dev20260722，commit 08de6be508389d5277b02e78fbc8742f1ed78160，编译 CUDA12.6，numpy1.26.4、Pillow12.3.0。安装相应 Paddle GPU 包及 PaddleFormers requirements。无 AMP、无分布式。
 
 
-权重不上传、不下载，CHECKPOINT_DIR 中放 initial.pdparams 和 inference.pdparams，分别为历史随机初始权重和动态图10000步最终权重；两端训推各共用对应权重。asset_manifest.json 记录大小/SHA256，不匹配即失败。data/images24.npz 是固定真实 ImageNet 子集，来源列表见 images_manifest.json；仅用于此框架实验，使用须遵守原数据集使用条款。
+权重不随代码仓库提交，按下方链接下载后在 CHECKPOINT_DIR 中放 initial.pdparams 和 inference.pdparams，分别为历史随机初始权重和动态图10000步最终权重；两端训推各共用对应权重。asset_manifest.json 记录大小/SHA256，不匹配即失败。data/images24.npz 是固定真实 ImageNet 子集，来源列表见 images_manifest.json；仅用于此框架实验，使用须遵守原数据集使用条款。
 
 ## 运行
 
@@ -37,4 +37,14 @@ CINN 显式 to_static，日志缺少 Compiling subgraph with CINN backend 则入
 
 2026-11-06 local entry regression on model source 2b3802f: both modes completed 20 updates and independent inference. Loss max difference 2.38e-7; 44 gradients retained, gradient max difference 2.01e-7; same-checkpoint logits max difference 1.67e-6. This does not replace historical convergence evidence.
 
-Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing assets/ and data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. Obtain the bundles from the contributor; public download links will be added later. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
+Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing assets/ and data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. Download checkpoints using the links below; non-weight assets still need to be obtained from the contributor. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
+
+## CINN checkpoint downloads
+
+Model library: [PaddleClas/Mistral-small-3.1](https://aistudio.baidu.com/modelsdetail/53385/space).
+
+- [initial.pdparams](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Mistral-small-3.1/media/cinn%2Fmistral3_pixtral%2Fcheckpoint%2Finitial.pdparams): common training initialization for dynamic and CINN runs.
+- [inference.pdparams](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Mistral-small-3.1/media/cinn%2Fmistral3_pixtral%2Fcheckpoint%2Finference.pdparams): the same checkpoint must be used for both independent inference runs.
+- [checkpoint_manifest.json](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Mistral-small-3.1/media/cinn%2Fmistral3_pixtral%2Fcheckpoint_manifest.json): file sizes, SHA256 and test scope.
+
+Save the two weight files under `CHECKPOINT_DIR`. The existing `asset_manifest.json` pins their hashes; do not substitute other weights from the model library. These are framework-test checkpoints, not a new task-quality evaluation. Configuration/tokenizer/data assets are separate and are not supplied by these weight downloads.
