@@ -12,7 +12,7 @@ Reference environment: V100S 32GB, Python 3.10.20, Paddle 3.5.0.dev20260722
 tokenizers 0.22.2, numpy 1.26.4, plus this repository's requirements.
 FP32, TF32 disabled, batch 1, sequence length 64, eager attention, no AMP or distributed execution.
 
-Weights are hosted separately on AI Studio (links below). Obtain the remaining test assets from the contributor:
+Weights and matching test assets are hosted on AI Studio (download instructions below):
 
 - CHECKPOINT_DIR: initial.pdparams (shared random initial state), inference.pdparams
   (the dynamic model's historical 30000-step checkpoint).
@@ -20,7 +20,7 @@ Weights are hosted separately on AI Studio (links below). Obtain the remaining t
   special_tokens_map.json, vocab.json, merges.txt from the recorded OLMo2 asset bundle.
 
 All assets must match asset_manifest.json. The test fails on missing/mismatched assets;
-it does not silently regenerate weights. Public hosting of non-weight assets is still pending.
+it does not silently regenerate weights. The public resource archive supplies the non-weight files.
 
 Each manifest entry declares its root explicitly: `checkpoint` means `CHECKPOINT_DIR`,
 `assets` means `CINN_ASSET_DIR`, and `repo` means this `tests/cinn/olmo2` directory.
@@ -83,6 +83,27 @@ Local entry regression on develop f7fa77f02ec637441e1a4fad1f9066b228774fb6
 All 25 parameter gradients were retained and finite; first-step gradient max absolute
 difference was 7.39e-6, loss max difference 9.54e-7, same-checkpoint inference logits
 max difference 1.38e-5. This is short-entry validation, not a new convergence run.
+
+## Download configuration, tokenizer and data
+
+The matching [resource archive](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fresources.tar.gz) includes the existing configuration, tokenizer,
+24 GSM8K examples, source notices and licenses. It does not include checkpoint files.
+Extract into a **new empty directory**; do not replace assets in an existing experiment.
+
+```bash
+export CINN_RESOURCE_DIR=/path/to/new-olmo2-resources
+mkdir "$CINN_RESOURCE_DIR"
+curl -fL 'https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fresources.tar.gz' -o "$CINN_RESOURCE_DIR/resources.tar.gz"
+printf '1a51eeea0892f7ca10faf7317277b38c797bfa08a51fd81dc9ea4e5bd182d5d4  %s\n' "$CINN_RESOURCE_DIR/resources.tar.gz" | sha256sum -c -
+tar -xzf "$CINN_RESOURCE_DIR/resources.tar.gz" -C "$CINN_RESOURCE_DIR"
+export CINN_ASSET_DIR="$CINN_RESOURCE_DIR/assets"
+# Set CHECKPOINT_DIR to the two downloaded .pdparams files.
+python tests/cinn/olmo2/verify_assets.py "$CHECKPOINT_DIR"
+```
+
+The archive and its members were downloaded anonymously into a fresh local directory
+and checked with this entry's asset verifier. This verifies resource availability and
+identity, not a new GPU training/performance run.
 
 ## CINN checkpoint downloads
 
