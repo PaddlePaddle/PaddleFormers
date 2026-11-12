@@ -405,6 +405,22 @@ import_structure = {
     "qwen3_vl": [],
     "qwen3_5": [],
     "qwen3_vl_moe": [],
+    "pixtral.configuration": ["PixtralVisionConfig"],
+    "pixtral.image_processor": ["PixtralImageProcessor"],
+    "pixtral.modeling": [
+        "PixtralVisionModel",
+        "PixtralPretrainedModel",
+    ],
+    "pixtral.processor": ["PixtralProcessor"],
+    "pixtral": [],
+    "mistral3.configuration": ["Mistral3Config"],
+    "mistral3.modeling": [
+        "Mistral3Model",
+        "Mistral3ForCausalLM",
+        "Mistral3ForConditionalGeneration",
+        "Mistral3PretrainedModel",
+    ],
+    "mistral3": [],
     "molmo": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
@@ -612,6 +628,8 @@ if TYPE_CHECKING:
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .pixtral import *
+    from .mistral3 import *
     from .molmo import *
     from .olmo2 import *
     from .intern_lm3 import *

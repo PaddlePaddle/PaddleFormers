@@ -1697,6 +1697,79 @@ class GlmOcrPlugin(BasePlugin):
 
 
 @dataclass
+class PixtralPlugin(BasePlugin):
+    image_break_token: str = "[IMG_BREAK]"
+    image_end_token: str = "[IMG_END]"
+
+    def _get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        mm_inputs = {}
+        if len(images) != 0:
+            image_processor = getattr(processor, "image_processor", None)
+            images = self._regularize_images(
+                images,
+                image_max_pixels=getattr(processor, "image_max_pixels", 768 * 768),
+                image_min_pixels=getattr(processor, "image_min_pixels", 32 * 32),
+            )["images"]
+            imglens = kwargs.get("imglens", None)
+            if imglens is not None:
+                images = _make_batched_images(images, imglens)
+
+            patch_size = getattr(processor, "patch_size", 14) * getattr(processor, "spatial_merge_size", 2)
+            mm_inputs.update(image_processor(images, patch_size=patch_size, return_tensors="pd"))
+
+        return mm_inputs
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+
+        patch_size = getattr(processor, "patch_size", 14) * getattr(processor, "spatial_merge_size", 2)
+        image_sizes = mm_inputs.get("image_sizes", [])
+        if len(image_sizes) != len(images):
+            raise ValueError("image_sizes must contain exactly one size for each provided image")
+        messages = deepcopy(messages)
+        num_image_tokens = 0
+
+        from ...transformers.pixtral.processor import expand_image_tokens
+
+        for message in messages:
+            parts = message["content"].split(IMAGE_PLACEHOLDER)
+            content = parts[0]
+            for suffix in parts[1:]:
+                content += (
+                    expand_image_tokens(
+                        image_sizes[num_image_tokens],
+                        patch_size,
+                        self.image_token,
+                        self.image_break_token,
+                        self.image_end_token,
+                    )
+                    + suffix
+                )
+                num_image_tokens += 1
+            message["content"] = content
+
+        self.masked_tokens = [self.image_token, self.image_break_token, self.image_end_token]
+        return messages
+
+
+@dataclass
 class KimiK3Plugin(BasePlugin):
     """Kimi-K3 plugin."""
 
@@ -1814,6 +1887,7 @@ PLUGINS = {
     "llama4": Llama4Plugin,
     "qwen2_omni": Qwen2OmniPlugin,
     "glm_ocr": GlmOcrPlugin,
+    "pixtral": PixtralPlugin,
     "molmo": MolmoPlugin,
     "kimi_k3": KimiK3Plugin,
 }
