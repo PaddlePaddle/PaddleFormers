@@ -50,8 +50,6 @@ def sdpa_attention_forward(
             is_causal = False
 
         attention_mask = _gen_from_sparse_attn_mask_indices(attn_mask_startend_row_indices, query.dtype, is_causal)
-        if sink is None:
-            is_causal = False
 
     if sink is None:
         attn_output = nn.functional.scaled_dot_product_attention(

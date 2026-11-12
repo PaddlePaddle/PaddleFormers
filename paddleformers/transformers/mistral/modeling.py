@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Optional, Tuple, Union, cast
+from typing import Callable, Optional, cast
 
 import paddle
 from paddle import nn
@@ -28,16 +28,13 @@ from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import GeneralModelForCausalLMPipe
 from ...utils.log import logger
+from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
 from ..cache_utils import Cache, DynamicCache
 from ..masking_utils import (
     create_causal_mask_and_row_indices,
     create_sliding_window_causal_mask_and_row_indices,
 )
-from ..model_outputs import (
-    BaseModelOutputWithPast,
-    CausalLMOutputWithPast,
-    SequenceClassifierOutputWithPast,
-)
+from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import MistralConfig
@@ -154,6 +151,19 @@ class MistralAttention(nn.Layer):
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS["sdpa"]
         if self.config._attn_implementation != "sdpa":
             attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+
+        if self.config._attn_implementation == "sdpa":
+            if attn_mask_startend_row_indices is not None:
+                attention_mask = _gen_from_sparse_attn_mask_indices(
+                    attn_mask_startend_row_indices, query_states.dtype, is_causal=True
+                )
+                attn_mask_startend_row_indices = None
+            if attention_mask is not None:
+                # Fully masked padding queries can produce NaNs in CUDA SDPA.
+                unattended = paddle.all(
+                    attention_mask == paddle.finfo(attention_mask.dtype).min, axis=-1, keepdim=True
+                )
+                attention_mask = paddle.where(unattended, paddle.zeros_like(attention_mask), attention_mask)
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -273,7 +283,6 @@ class MistralRotaryEmbedding(nn.Layer):
 class MistralPretrainedModel(PretrainedModel):
     config_class = MistralConfig
     base_model_prefix = "model"
-    _has_lm_head = False
     transpose_weight_keys = [
         "q_proj",
         "k_proj",
@@ -309,7 +318,7 @@ class MistralPretrainedModel(PretrainedModel):
             ]
         )
 
-        if cls._has_lm_head:
+        if cls != cls.base_model_class:
             if config.tie_word_embeddings:
                 aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
             else:
@@ -342,7 +351,7 @@ class MistralPretrainedModel(PretrainedModel):
             ]
         )
 
-        if cls._has_lm_head and not config.tie_word_embeddings:
+        if cls != cls.base_model_class and not config.tie_word_embeddings:
             aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
@@ -538,7 +547,6 @@ class MistralModel(MistralPretrainedModel):
 
 
 class MistralForCausalLM(MistralPretrainedModel):
-    _has_lm_head = True
     _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
 
     def __init__(self, config: MistralConfig):
@@ -613,92 +621,6 @@ class MistralForCausalLM(MistralPretrainedModel):
         )
 
 
-class MistralForSequenceClassification(MistralPretrainedModel):
-    def __init__(self, config: MistralConfig):
-        super().__init__(config)
-        self.num_labels = config.num_labels
-        self.model = MistralModel(config)
-        self.score = GeneralLinear.create(config.hidden_size, self.num_labels, has_bias=False, linear_type="default")
-
-    def forward(
-        self,
-        input_ids: paddle.Tensor | None = None,
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[Cache] = None,
-        inputs_embeds: Optional[paddle.Tensor] = None,
-        labels: Optional[paddle.Tensor] = None,
-        use_cache: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
-    ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        transformer_outputs = self.model(
-            input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            return_dict=return_dict,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-        )
-        hidden_states = transformer_outputs[0]
-        logits = self.score(hidden_states)
-
-        if input_ids is not None:
-            batch_size = input_ids.shape[0]
-        else:
-            batch_size = inputs_embeds.shape[0]
-
-        if self.config.pad_token_id is None and batch_size != 1:
-            raise ValueError("Cannot handle batch sizes > 1 if no padding token is defined.")
-
-        if input_ids is not None and self.config.pad_token_id is not None:
-            sequence_lengths = paddle.eq(input_ids, self.config.pad_token_id).astype("int32").argmax(-1) - 1
-            sequence_lengths = sequence_lengths % input_ids.shape[-1]
-        else:
-            sequence_lengths = paddle.full([batch_size], logits.shape[1] - 1, dtype="int64")
-
-        pooled_logits = logits.gather_nd(paddle.stack([paddle.arange(logits.shape[0]), sequence_lengths], axis=-1))
-
-        loss = None
-        if labels is not None:
-            if self.config.problem_type is None:
-                if self.num_labels == 1:
-                    self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == paddle.int64 or labels.dtype == paddle.int32):
-                    self.config.problem_type = "single_label_classification"
-                else:
-                    self.config.problem_type = "multi_label_classification"
-
-            if self.config.problem_type == "regression":
-                loss_fct = nn.MSELoss()
-                if self.num_labels == 1:
-                    loss = loss_fct(pooled_logits.squeeze(), labels.squeeze())
-                else:
-                    loss = loss_fct(pooled_logits, labels)
-            elif self.config.problem_type == "single_label_classification":
-                loss_fct = nn.CrossEntropyLoss()
-                loss = loss_fct(pooled_logits.reshape([-1, self.num_labels]), labels.reshape([-1]))
-            elif self.config.problem_type == "multi_label_classification":
-                loss_fct = nn.BCEWithLogitsLoss()
-                loss = loss_fct(pooled_logits, labels)
-
-        if not return_dict:
-            output = (pooled_logits,) + transformer_outputs[1:]
-            return ((loss,) + output) if loss is not None else output
-
-        return SequenceClassifierOutputWithPast(
-            loss=loss,
-            logits=pooled_logits,
-            past_key_values=transformer_outputs.past_key_values,
-            hidden_states=transformer_outputs.hidden_states,
-            attentions=transformer_outputs.attentions,
-        )
-
-
 class MistralForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = MistralConfig
     _decoder_layer_cls = MistralDecoderLayer
@@ -715,7 +637,6 @@ __all__ = [
     "MistralDecoderLayer",
     "MistralForCausalLM",
     "MistralForCausalLMPipe",
-    "MistralForSequenceClassification",
     "MistralModel",
     "MistralPretrainedModel",
 ]

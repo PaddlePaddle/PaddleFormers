@@ -168,7 +168,6 @@ import_structure = {
         "MistralDecoderLayer",
         "MistralForCausalLM",
         "MistralForCausalLMPipe",
-        "MistralForSequenceClassification",
         "MistralModel",
         "MistralPretrainedModel",
     ],

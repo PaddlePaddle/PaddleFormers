@@ -27,11 +27,9 @@ from paddleformers.transformers import (
     AutoConfig,
     AutoModel,
     AutoModelForCausalLM,
-    AutoModelForSequenceClassification,
     MistralConfig,
     MistralForCausalLM,
     MistralForCausalLMPipe,
-    MistralForSequenceClassification,
     MistralModel,
 )
 from paddleformers.transformers.mistral import modeling as mistral_modeling
@@ -157,6 +155,8 @@ class MistralModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                             model(input_ids=input_ids[:, start:end], use_cache=False, return_dict=True).logits
                             for start, end in ((0, 3), (3, 8))
                         ]
+                    for logits in (packed, *separate):
+                        self.assertTrue(bool(paddle.isfinite(logits).all().item()))
                     np.testing.assert_allclose(
                         packed.numpy(), paddle.concat(separate, axis=1).numpy(), atol=1e-5, rtol=1e-5
                     )
@@ -208,6 +208,8 @@ class MistralModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                                         use_cache=True,
                                         return_dict=True,
                                     )
+                                for outputs in (full, prefix, cached):
+                                    self.assertTrue(bool(paddle.isfinite(outputs.logits).all().item()))
                                 np.testing.assert_allclose(
                                     cached.logits.numpy(), full.logits[:, prefix_length:].numpy(), atol=2e-6, rtol=2e-6
                                 )
@@ -218,7 +220,7 @@ class MistralModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
 
         for tied in (False, True):
             config = tiny_mistral_config(tie_word_embeddings=tied)
-            for model_class in (MistralModel, MistralForSequenceClassification, MistralForCausalLM, LanguageModel):
+            for model_class in (MistralModel, MistralForCausalLM, LanguageModel):
                 with self.subTest(tied=tied, model_class=model_class):
                     forward = model_class._gen_aoa_config(config)["aoa_statements"]
                     inverse = model_class._gen_inv_aoa_config(config)["aoa_statements"]
@@ -293,14 +295,6 @@ class MistralModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         self.assertEqual(list(outputs[0].shape), [2, 8, config.hidden_size])
         self.assertIsNotNone(outputs[1])
 
-    def test_sequence_classification_forward(self):
-        config = tiny_mistral_config(num_labels=3, pad_token_id=0)
-        input_ids = paddle.randint(low=0, high=config.vocab_size - 1, shape=[2, 8], dtype="int64")
-
-        seq_model = MistralForSequenceClassification(config)
-        seq_outputs = seq_model(input_ids=input_ids, return_dict=True)
-        self.assertEqual(list(seq_outputs.logits.shape), [2, config.num_labels])
-
     def test_from_pretrained_and_auto_model(self):
         config = tiny_mistral_config()
         model = MistralForCausalLM(config)
@@ -344,14 +338,6 @@ class MistralModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
             model.save_pretrained(tmpdir)
             loaded = AutoModel.from_pretrained(tmpdir)
             self.assertIsInstance(loaded, MistralModel)
-
-    def test_auto_model_sequence_classification_dispatch(self):
-        config = tiny_mistral_config(num_labels=3, pad_token_id=0)
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            MistralForSequenceClassification(config).save_pretrained(tmpdir)
-            seq_loaded = AutoModelForSequenceClassification.from_pretrained(tmpdir)
-            self.assertIsInstance(seq_loaded, MistralForSequenceClassification)
 
 
 if __name__ == "__main__":
