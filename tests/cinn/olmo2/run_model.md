@@ -22,6 +22,10 @@ Weights are hosted separately on AI Studio (links below). Obtain the remaining t
 All assets must match asset_manifest.json. The test fails on missing/mismatched assets;
 it does not silently regenerate weights. Public hosting of non-weight assets is still pending.
 
+Each manifest entry declares its root explicitly: `checkpoint` means `CHECKPOINT_DIR`,
+`assets` means `CINN_ASSET_DIR`, and `repo` means this `tests/cinn/olmo2` directory.
+The `file` path is relative to that root; directory selection does not depend on a filename prefix.
+
 ## Run from the repository root
 
 ```bash

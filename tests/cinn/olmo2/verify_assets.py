@@ -18,16 +18,32 @@ import os
 import sys
 from pathlib import Path
 
-root = Path(__file__).parent
-weights = Path(sys.argv[1])
-manifest = json.loads((root / "asset_manifest.json").read_text())
-for entry in manifest:
-    path = (weights if entry["kind"] == "weight" else root) / entry["file"]
-    if entry["file"].startswith("assets/"):
-        path = Path(os.environ["CINN_ASSET_DIR"]) / Path(entry["file"]).name
-    if not path.is_file():
-        raise FileNotFoundError(path)
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if digest != entry["sha256"] or path.stat().st_size != entry["bytes"]:
-        raise ValueError(f"Asset mismatch: {path}")
-print("All checkpoint/data/config SHA256 checks passed.")
+
+def verify_assets(manifest, roots):
+    for entry in manifest:
+        if entry["root"] not in roots:
+            raise ValueError(f"Unknown asset root: {entry['root']}")
+        relative = Path(entry["file"])
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError(f"Asset path must stay inside its declared root: {relative}")
+        path = roots[entry["root"]] / relative
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        digest = hashlib.sha256()
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != entry["sha256"] or path.stat().st_size != entry["bytes"]:
+            raise ValueError(f"Asset mismatch: {path}")
+
+
+def main():
+    root = Path(__file__).parent
+    roots = {"checkpoint": Path(sys.argv[1]), "assets": Path(os.environ["CINN_ASSET_DIR"]), "repo": root}
+    manifest = json.loads((root / "asset_manifest.json").read_text())
+    verify_assets(manifest, roots)
+    print("All checkpoint/data/config SHA256 checks passed.")
+
+
+if __name__ == "__main__":
+    main()
