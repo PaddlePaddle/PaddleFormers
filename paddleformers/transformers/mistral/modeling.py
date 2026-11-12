@@ -431,6 +431,7 @@ class MistralModel(MistralPretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        # Cached multi-token queries need a causal mask aligned to the end of the KV sequence.
         if cache_length > 0 and seq_length > 1 and full_mask is None and full_indices is None:
             full_mask = self._prepare_decoder_attention_mask(
                 attention_mask=None,

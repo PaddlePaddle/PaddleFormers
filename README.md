@@ -83,7 +83,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     <tr>
       <td>Mistral</td>
       <td>mistralai/Mistral-7B-Instruct-v0.3</td>
-      <td>tokenizer.chat_template</td>
+      <td>-</td>
     </tr>
     <tr>
       <td>phi-4</td>
@@ -130,6 +130,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   </tbody>
 </table>
 
+* Mistral 使用 `template_backend: jinja` 加载模型自带的 `chat_template`。
 * 更多关于模型训练能力的支持细节，请参考：[PaddleFormers 模型能力矩阵](./docs/zh/model_capability.md)
 * 带有🏛️标签的模型是 PaddleFormers 官方维护的模型
 

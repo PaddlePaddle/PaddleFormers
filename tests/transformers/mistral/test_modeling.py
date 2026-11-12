@@ -74,7 +74,7 @@ class MistralModelTester:
         return config, {"input_ids": input_ids}
 
 
-class MistralModelingTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+class MistralModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
     base_model_class = MistralModel
     all_model_classes = (MistralModel, MistralForCausalLM)
     all_generative_model_classes = {MistralForCausalLM: (MistralModel, "mistral")}
@@ -127,6 +127,39 @@ class MistralModelingTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
                     ):
                         expected = model(input_ids=input_ids, use_cache=False, return_dict=True).logits
                 np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-6, rtol=1e-6)
+
+    def test_packed_row_indices_match_separate_sequences(self):
+        settings = (
+            {"use_sliding_window": False},
+            {},
+            {"layer_types": ["sliding_attention", "full_attention"]},
+            {"layer_types": ["full_attention", "sliding_attention"]},
+        )
+        for backend in ("eager", "sdpa"):
+            for overrides in settings:
+                with self.subTest(backend=backend, overrides=overrides):
+                    paddle.seed(23)
+                    config = tiny_mistral_config(sliding_window=2, _attn_implementation=backend, **overrides)
+                    model = MistralForCausalLM(config)
+                    model.eval()
+                    input_ids = paddle.to_tensor([[1, 2, 3, 4, 5, 6, 7, 8]], dtype="int64")
+                    position_ids = paddle.to_tensor([[0, 1, 2, 0, 1, 2, 3, 4]], dtype="int64")
+                    row_indices = paddle.to_tensor([3, 3, 3, 8, 8, 8, 8, 8], dtype="int32").reshape([1, 1, 8, 1])
+                    with paddle.no_grad():
+                        packed = model(
+                            input_ids=input_ids,
+                            position_ids=position_ids,
+                            attn_mask_startend_row_indices=row_indices,
+                            use_cache=False,
+                            return_dict=True,
+                        ).logits
+                        separate = [
+                            model(input_ids=input_ids[:, start:end], use_cache=False, return_dict=True).logits
+                            for start, end in ((0, 3), (3, 8))
+                        ]
+                    np.testing.assert_allclose(
+                        packed.numpy(), paddle.concat(separate, axis=1).numpy(), atol=1e-5, rtol=1e-5
+                    )
 
     def test_cached_decoding_matches_full_forward(self):
         settings = (
