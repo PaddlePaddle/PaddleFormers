@@ -64,94 +64,6 @@ from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Olmo3Config
 
 
-def _build_attention_masks(
-    config,
-    inputs_embeds,
-    batch_size,
-    seq_length,
-    attention_mask,
-    attn_mask_startend_row_indices,
-    prepare_decoder_attention_mask,
-    has_sliding_layers,
-    past_key_values=None,
-):
-    """Prepare per-attention-type masks while preserving cache and caller-owned mask semantics."""
-    cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
-    if isinstance(attention_mask, dict):
-        causal_mask_mapping = {}
-        attn_mask_startend_row_indices_mapping = {}
-        for attention_type, mask_result in attention_mask.items():
-            if isinstance(mask_result, tuple):
-                (
-                    causal_mask_mapping[attention_type],
-                    attn_mask_startend_row_indices_mapping[attention_type],
-                ) = mask_result
-            else:
-                causal_mask_mapping[attention_type] = mask_result
-                attn_mask_startend_row_indices_mapping[attention_type] = attn_mask_startend_row_indices
-    else:
-        mask_kwargs = {
-            "config": config,
-            "inputs_embeds": inputs_embeds,
-            "batch_size": batch_size,
-            "seq_length": seq_length,
-            "cache_length": cache_length,
-            "attention_mask": attention_mask,
-            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
-            "prepare_decoder_attention_mask": prepare_decoder_attention_mask,
-        }
-        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
-        causal_mask_mapping = {"full_attention": full_mask}
-        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
-        if has_sliding_layers:
-            (
-                causal_mask_mapping["sliding_attention"],
-                attn_mask_startend_row_indices_mapping["sliding_attention"],
-            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
-        if attn_mask_startend_row_indices is None and cache_length and seq_length > 1:
-            # Cached multi-token chunks need a bottom-right aligned causal mask.
-            full_mask = prepare_decoder_attention_mask(
-                attention_mask=(
-                    paddle.ones([batch_size, cache_length + seq_length], dtype="bool")
-                    if attention_mask is None
-                    else attention_mask
-                ),
-                input_shape=(batch_size, seq_length),
-                past_key_values_length=cache_length,
-                dtype=inputs_embeds.dtype,
-            )
-            causal_mask_mapping["full_attention"] = full_mask
-            attn_mask_startend_row_indices_mapping["full_attention"] = None
-        if past_key_values is not None:
-            cache_position = paddle.arange(cache_length, cache_length + seq_length, dtype="int64")
-            for attention_type in set(config.layer_types):
-                layer_idx = config.layer_types.index(attention_type)
-                kv_length, kv_offset = past_key_values.get_mask_sizes(cache_position, layer_idx)
-                mask = causal_mask_mapping[attention_type]
-                row_indices = attn_mask_startend_row_indices_mapping[attention_type]
-                if kv_offset:
-                    if row_indices is not None:
-                        raise NotImplementedError(
-                            "Cached sliding-window decoding with sparse row indices is not supported. "
-                            "Pass a dense attention_mask instead."
-                        )
-                    if mask is not None:
-                        mask = mask[..., kv_offset : kv_offset + kv_length]
-                    causal_mask_mapping[attention_type] = mask
-    return causal_mask_mapping, attn_mask_startend_row_indices_mapping
-
-
-class _SplitProjection(paddle.autograd.PyLayer):
-    @staticmethod
-    def forward(ctx, hidden_states, group):
-        ctx.group = group
-        return paddle.split(hidden_states, group.nranks, axis=-1)[group.rank]
-
-    @staticmethod
-    def backward(ctx, gradient):
-        return mp_ops._c_concat(gradient, group=ctx.group)
-
-
 def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
     """Rotates half the hidden dims of the input."""
     x1 = x[..., : x.shape[-1] // 2]
@@ -287,35 +199,19 @@ class Olmo3Attention(nn.Layer):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
-        if past_key_values is not None:
-            if use_cache:
-                key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
-            elif self.layer_idx < len(past_key_values.layers):
-                layer_cache = past_key_values.layers[self.layer_idx]
-                if layer_cache.is_initialized:
-                    key_states = paddle.concat([layer_cache.keys, key_states], axis=-2)
-                    value_states = paddle.concat([layer_cache.values, value_states], axis=-2)
-
-        backend = self.config._attn_implementation
-        # Flashmask only consumes sparse row indices; preserve dense mask semantics.
-        if (output_attentions and backend != "eager") or (
-            backend == "flashmask" and (attention_mask is not None or (self.training and self.attention_dropout > 0))
-        ):
-            logger.warning_once(
-                "OLMo3 is falling back to eager attention to preserve requested masks, dropout or attention "
-                "weights. This can increase memory usage and runtime for long sequences."
-            )
-            backend = "eager"
-            if attention_mask is None and attn_mask_startend_row_indices is None:
-                query_positions = paddle.arange(key_states.shape[-2] - seq_len, key_states.shape[-2]).unsqueeze(-1)
-                key_positions = paddle.arange(key_states.shape[-2]).unsqueeze(0)
-                allowed = key_positions <= query_positions
-                if self.sliding_window is not None:
-                    allowed = allowed & (key_positions > query_positions - self.sliding_window)
-                attention_mask = paddle.where(allowed, 0.0, paddle.finfo(query_states.dtype).min).astype(
-                    query_states.dtype
-                )
-                attention_mask = attention_mask.unsqueeze(0).unsqueeze(0)
+        key_states, value_states = _update_attention_cache(
+            past_key_values, key_states, value_states, self.layer_idx, use_cache
+        )
+        backend, attention_mask = _select_attention_backend(
+            self.config,
+            query_states,
+            key_states,
+            attention_mask,
+            attn_mask_startend_row_indices,
+            self.training,
+            self.sliding_window,
+            output_attentions,
+        )
         attention_interface: Callable = ALL_ATTENTION_FUNCTIONS[backend]
 
         attn_output, attn_weights = attention_interface(
@@ -419,10 +315,7 @@ class Olmo3RotaryEmbedding(nn.Layer):
         else:
             self.rope_type = "default"
 
-        rope_init_fn = self.compute_default_rope_parameters
-        if self.rope_type != "default":
-            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
-        inv_freq, self.attention_scaling = rope_init_fn(self.config)
+        inv_freq, self.attention_scaling = _compute_rope_parameters(self.config, self.rope_type)
 
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = inv_freq
@@ -433,13 +326,7 @@ class Olmo3RotaryEmbedding(nn.Layer):
         seq_len: Optional[int] = None,
     ) -> tuple[paddle.Tensor, float]:
         """Computes the inverse frequencies for RoPE."""
-        base = config.rope_parameters["rope_theta"]
-        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
-
-        attention_factor = 1.0
-
-        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
-        return inv_freq, attention_factor
+        return _compute_rope_parameters(config, "default")
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
@@ -534,7 +421,6 @@ class Olmo3PretrainedModel(PretrainedModel):
         so both PT and PD checkpoints use ^T mapping for these weights.
         """
         model_prefix = "" if cls == cls.base_model_class else "model."
-        is_fleet = getattr(cls, "is_fleet", False)
 
         aoa_statements = [
             f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
@@ -579,15 +465,9 @@ class Olmo3PretrainedModel(PretrainedModel):
             if config.get("lm_head_bias", False):
                 aoa_statements.append("lm_head.bias -> lm_head.bias")
             if config.tie_word_embeddings:
-                if is_fleet:
-                    aoa_statements.append(f"model.embed_tokens.weight -> {model_prefix}lm_head.weight")
-                else:
-                    aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
+                aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
             else:
-                if is_fleet:
-                    aoa_statements.append(f"lm_head.weight -> {model_prefix}lm_head.weight")
-                else:
-                    aoa_statements.append("lm_head.weight -> lm_head.weight")
+                aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
 
@@ -595,7 +475,6 @@ class Olmo3PretrainedModel(PretrainedModel):
     def _gen_inv_aoa_config(cls, config: Olmo3Config):
         """Generate inverse AOA config for weight export."""
         model_prefix = "" if cls == cls.base_model_class else "model."
-        is_fleet = getattr(cls, "is_fleet", False)
 
         aoa_statements = [
             f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
@@ -639,10 +518,7 @@ class Olmo3PretrainedModel(PretrainedModel):
             aoa_statements.append("lm_head.bias -> lm_head.bias")
 
         if not config.tie_word_embeddings and cls != cls.base_model_class:
-            if is_fleet:
-                aoa_statements.append(f"lm_head.weight -> {model_prefix}lm_head.weight")
-            else:
-                aoa_statements.append("lm_head.weight -> lm_head.weight")
+            aoa_statements.append("lm_head.weight -> lm_head.weight")
 
         return {"aoa_statements": aoa_statements}
 
@@ -951,7 +827,7 @@ class Olmo3ForCausalLM(Olmo3PretrainedModel):
 class Olmo3FleetRotaryEmbedding(RotaryEmbedding):
     def __init__(self, source, rope_type=None):
         super().__init__(head_dim=source.head_dim, rotary_percent=1.0, rotary_base=source.rope_theta)
-        self.inv_freq = Olmo3RotaryEmbedding(source, rope_type=rope_type).inv_freq
+        self.inv_freq, _ = _compute_rope_parameters(source, rope_type)
 
     def forward(self, max_seq_len, offset=0, packed_seq=False, position_ids=None):
         if position_ids is None:
@@ -1017,16 +893,7 @@ class Olmo3FleetEmbedding(GPTEmbedding):
             has_sliding_layers="sliding_attention" in self.config.olmo3_config.layer_types,
             past_key_values=cache,
         )
-        packed_masks = []
-        for kind in ("full_attention", "sliding_attention"):
-            values = (
-                (masks.get(kind), indices.get(kind)) if kind in self.config.olmo3_config.layer_types else (None, None)
-            )
-            for value in values:
-                value = paddle.zeros([1], dtype="bool") if value is None else value.clone()
-                value.stop_gradient = True
-                packed_masks.append(value)
-        output["attention_mask"] = tuple(packed_masks)
+        output["attention_mask"] = _pack_attention_masks(masks, indices, self.config.olmo3_config.layer_types)
         output.pop("attn_mask_startend_row_indices", None)
         return output
 
@@ -1037,17 +904,13 @@ class Olmo3FleetSelfAttention(SelfAttention):
         config.use_bias = config.olmo3_config.attention_bias
         super().__init__(config=config, **kwargs)
         self.config = copy(config)
-        self.attention_scaling = 1.0 if self.is_swa else Olmo3RotaryEmbedding(config.olmo3_config).attention_scaling
+        self.attention_scaling = 1.0 if self.is_swa else config.olmo3_attention_scaling
         self.config.yarn_rotary_scaling_factor = 1.0
 
     def forward(self, hidden_states, attention_mask=None, attn_mask_startend_row_indices=None, **kwargs):
         if isinstance(attention_mask, (tuple, list)):
-            offset = 2 if self.is_swa else 0
-            attention_mask, attn_mask_startend_row_indices = attention_mask[offset : offset + 2]
-            attention_mask = None if attention_mask.ndim == 1 else attention_mask
-            attn_mask_startend_row_indices = (
-                None if attn_mask_startend_row_indices.ndim == 1 else attn_mask_startend_row_indices
-            )
+            kind = "sliding_attention" if self.is_swa else "full_attention"
+            attention_mask, attn_mask_startend_row_indices = _unpack_attention_masks(attention_mask, kind)
         return super().forward(
             hidden_states,
             attention_mask=attention_mask,
@@ -1089,18 +952,16 @@ class Olmo3FleetCoreAttention(paddle.nn.Layer):
     ):
         selected_mask, selected_indices = attention_mask, attn_mask_startend_row_indices
         key, value = key.transpose([0, 2, 1, 3]), value.transpose([0, 2, 1, 3])
-        cache = past_key_values
-        if cache is not None:
-            index = layer_idx
-            if use_cache:
-                key, value = cache.update(key, value, index)
-            elif index < len(cache.layers) and cache.layers[index].is_initialized:
-                key = paddle.concat([cache.layers[index].keys, key], axis=-2)
-                value = paddle.concat([cache.layers[index].values, value], axis=-2)
-        backend = self.config._attn_implementation
-        if backend == "flashmask" and (selected_mask is not None or (self.training and self.config.attention_dropout)):
-            logger.warning_once("OLMo3 pipeline attention is falling back to eager to preserve masks or dropout.")
-            backend = "eager"
+        key, value = _update_attention_cache(past_key_values, key, value, layer_idx, use_cache)
+        backend, selected_mask = _select_attention_backend(
+            self.config,
+            query.transpose([0, 2, 1, 3]),
+            key,
+            selected_mask,
+            selected_indices,
+            self.training,
+            self.config.sliding_window if self.attention_type == "sliding_attention" else None,
+        )
         return ALL_ATTENTION_FUNCTIONS[backend](
             self,
             query.transpose([0, 2, 1, 3]),
@@ -1153,6 +1014,8 @@ class Olmo3ModelProvider(GPTModelProvider):
             "expert_model_parallel_size",
         ):
             setattr(normalized, field, max(getattr(normalized, field, 1), 1))
+        if normalized.context_parallel_size > 1:
+            raise ValueError("OLMo3 Fleet does not support context_parallel_size > 1.")
         tp_size = normalized.tensor_model_parallel_size
         if source.num_attention_heads % tp_size or source.num_key_value_heads % tp_size:
             raise ValueError("Q and KV head counts must be divisible by tensor_model_parallel_size.")
@@ -1172,9 +1035,12 @@ class Olmo3ModelProvider(GPTModelProvider):
         provider = super().from_config(normalized)
         provider.output_layer_init_method = provider.init_method
         provider.olmo3_config = source
+        _, provider.olmo3_attention_scaling = _compute_rope_parameters(source)
         return provider
 
-    def provide(self, loss_fn=None, **kwargs):
+    def provide(self, pre_process=None, post_process=None, vp_stage=None, loss_fn=None):
+        if pre_process is not None or post_process is not None or vp_stage is not None:
+            raise ValueError("OLMo3 builds all pipeline stages together; explicit stage selection is unsupported.")
         layers = []
         for index in range(self.num_hidden_layers):
             spec = get_gpt_layer_local_spec(config=self, normalization="RMSNorm", layer_number=index)
@@ -1210,6 +1076,219 @@ class Olmo3ModelProvider(GPTModelProvider):
         wrapped = GPTModel.__new__(GPTModel)
         wrapped.__dict__.update(model.__dict__)
         return wrapped
+
+
+class Olmo3ForCausalLMPipe(GeneralModelForCausalLMPipe):
+    """OLMo3 pipeline model with per-layer masks and rotary embeddings."""
+
+    config_class = Olmo3Config
+    is_fleet = True
+
+    def __new__(cls, config):
+        provider = Olmo3ModelProvider.from_config(config)
+        loss_fn = None
+        if getattr(config, "dpo_config", None):
+            from ...nn.pp_model import CriterionLayerPipe
+
+            loss_fn = CriterionLayerPipe(config, use_infohub=True)
+        model = provider.provide(loss_fn=loss_fn)
+        model._gen_aoa_config = cls._gen_aoa_config
+        model._gen_inv_aoa_config = cls._gen_inv_aoa_config
+        model.config_to_save = deepcopy(config)
+        if not model.config_to_save.architectures:
+            model.config_to_save.architectures = ["Olmo3ForCausalLM"]
+        model.is_fleet = True
+        return model
+
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        return _get_fleet_aoa_config(config)
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config):
+        statements = [
+            "model.embedding.embed_tokens.weight -> model.embed_tokens.weight",
+            "model.norm.weight -> model.norm.weight",
+            "model.layers.$LAYER_ID.self_attn_bda.norm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
+            "model.layers.$LAYER_ID.mlp_bda.norm.weight -> model.layers.$LAYER_ID.post_feedforward_layernorm.weight",
+            "model.layers.$LAYER_ID.self_attn.q_norm.weight -> model.layers.$LAYER_ID.self_attn.q_norm.weight",
+            "model.layers.$LAYER_ID.self_attn.k_norm.weight -> model.layers.$LAYER_ID.self_attn.k_norm.weight",
+            "model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> model.layers.$LAYER_ID.self_attn.o_proj.weight",
+            "model.layers.$LAYER_ID.mlp.down_proj.weight^T -> model.layers.$LAYER_ID.mlp.down_proj.weight",
+            "model.layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, "
+            "model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight, "
+            f"fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
+            "model.layers.$LAYER_ID.mlp.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.gate_proj.weight, "
+            "model.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
+        ]
+        # Split fused parameters in their distributed layout before transposing each output.
+        for layer_id in range(config.num_hidden_layers):
+            for name in ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "mlp.gate_proj", "mlp.up_proj"):
+                key = f"model.layers.{layer_id}.{name}.weight"
+                statements.append(f"{key}^T -> {key}")
+        if config.attention_bias:
+            statements += [
+                "model.layers.$LAYER_ID.self_attn.o_proj.bias -> model.layers.$LAYER_ID.self_attn.o_proj.bias",
+                "model.layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, "
+                "model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, "
+                f"fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+            ]
+        if config.get("mlp_bias", False):
+            statements += [
+                "model.layers.$LAYER_ID.mlp.down_proj.bias -> model.layers.$LAYER_ID.mlp.down_proj.bias",
+                "model.layers.$LAYER_ID.mlp.up_gate_proj.bias -> model.layers.$LAYER_ID.mlp.gate_proj.bias, "
+                "model.layers.$LAYER_ID.mlp.up_proj.bias, fused_ffn, axis=0",
+            ]
+        statements.append(
+            "model.lm_head.weight -> _" if config.tie_word_embeddings else "model.lm_head.weight -> lm_head.weight"
+        )
+        return {"aoa_statements": statements}
+
+
+_MASK_SLOTS = ("full_attention", "sliding_attention")
+
+
+def _pack_attention_masks(masks, indices, layer_types):
+    """Pack (dense mask, row indices) per type; bool [1] denotes an absent tensor."""
+    return tuple(
+        paddle.zeros([1], dtype="bool") if value is None else value.detach().clone()
+        for kind in _MASK_SLOTS
+        for value in ((masks.get(kind), indices.get(kind)) if kind in layer_types else (None, None))
+    )
+
+
+def _unpack_attention_masks(packed, kind):
+    offset = 2 * _MASK_SLOTS.index(kind)
+    return tuple(None if value.ndim == 1 else value for value in packed[offset : offset + 2])
+
+
+def _update_attention_cache(cache, key, value, layer_idx, use_cache):
+    if cache is not None:
+        if use_cache:
+            return cache.update(key, value, layer_idx)
+        if layer_idx < len(cache.layers) and cache.layers[layer_idx].is_initialized:
+            key = paddle.concat([cache.layers[layer_idx].keys, key], axis=-2)
+            value = paddle.concat([cache.layers[layer_idx].values, value], axis=-2)
+    return key, value
+
+
+def _select_attention_backend(config, query, key, mask, indices, training, sliding_window, output_attentions=False):
+    backend = config._attn_implementation
+    if (output_attentions and backend != "eager") or (
+        backend == "flashmask" and (mask is not None or (training and config.attention_dropout > 0))
+    ):
+        logger.warning_once(
+            "OLMo3 is falling back to eager attention to preserve requested masks, dropout or attention "
+            "weights. This can increase memory usage and runtime for long sequences."
+        )
+        backend = "eager"
+        if mask is None and indices is None:
+            query_positions = paddle.arange(key.shape[-2] - query.shape[-2], key.shape[-2]).unsqueeze(-1)
+            key_positions = paddle.arange(key.shape[-2]).unsqueeze(0)
+            allowed = key_positions <= query_positions
+            if sliding_window is not None:
+                allowed = allowed & (key_positions > query_positions - sliding_window)
+            mask = paddle.where(allowed, 0.0, paddle.finfo(query.dtype).min).astype(query.dtype)
+            mask = mask.unsqueeze(0).unsqueeze(0)
+    return backend, mask
+
+
+def _compute_rope_parameters(config, rope_type=None):
+    rope_type = rope_type or config.rope_parameters.get("rope_type", config.rope_parameters.get("type", "default"))
+    if rope_type == "default":
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype(dtype=paddle.float32) / dim))
+        return inv_freq, 1.0
+    return ROPE_INIT_FUNCTIONS[rope_type](config)
+
+
+def _build_attention_masks(
+    config,
+    inputs_embeds,
+    batch_size,
+    seq_length,
+    attention_mask,
+    attn_mask_startend_row_indices,
+    prepare_decoder_attention_mask,
+    has_sliding_layers,
+    past_key_values=None,
+):
+    """Prepare per-attention-type masks while preserving cache and caller-owned mask semantics."""
+    cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
+    if isinstance(attention_mask, dict):
+        causal_mask_mapping = {}
+        attn_mask_startend_row_indices_mapping = {}
+        for attention_type, mask_result in attention_mask.items():
+            if isinstance(mask_result, tuple):
+                (
+                    causal_mask_mapping[attention_type],
+                    attn_mask_startend_row_indices_mapping[attention_type],
+                ) = mask_result
+            else:
+                causal_mask_mapping[attention_type] = mask_result
+                attn_mask_startend_row_indices_mapping[attention_type] = attn_mask_startend_row_indices
+    else:
+        mask_kwargs = {
+            "config": config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": batch_size,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": prepare_decoder_attention_mask,
+        }
+        full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        causal_mask_mapping = {"full_attention": full_mask}
+        attn_mask_startend_row_indices_mapping = {"full_attention": full_indices}
+        if has_sliding_layers:
+            (
+                causal_mask_mapping["sliding_attention"],
+                attn_mask_startend_row_indices_mapping["sliding_attention"],
+            ) = create_sliding_window_causal_mask_and_row_indices(**mask_kwargs)
+        if attn_mask_startend_row_indices is None and cache_length and seq_length > 1:
+            # Cached multi-token chunks need a bottom-right aligned causal mask.
+            full_mask = prepare_decoder_attention_mask(
+                attention_mask=(
+                    paddle.ones([batch_size, cache_length + seq_length], dtype="bool")
+                    if attention_mask is None
+                    else attention_mask
+                ),
+                input_shape=(batch_size, seq_length),
+                past_key_values_length=cache_length,
+                dtype=inputs_embeds.dtype,
+            )
+            causal_mask_mapping["full_attention"] = full_mask
+            attn_mask_startend_row_indices_mapping["full_attention"] = None
+        if past_key_values is not None:
+            cache_position = paddle.arange(cache_length, cache_length + seq_length, dtype="int64")
+            for attention_type in set(config.layer_types):
+                layer_idx = config.layer_types.index(attention_type)
+                kv_length, kv_offset = past_key_values.get_mask_sizes(cache_position, layer_idx)
+                mask = causal_mask_mapping[attention_type]
+                row_indices = attn_mask_startend_row_indices_mapping[attention_type]
+                if kv_offset:
+                    if row_indices is not None:
+                        raise NotImplementedError(
+                            "Cached sliding-window decoding with sparse row indices is not supported. "
+                            "Pass a dense attention_mask instead."
+                        )
+                    if mask is not None:
+                        mask = mask[..., kv_offset : kv_offset + kv_length]
+                    causal_mask_mapping[attention_type] = mask
+    return causal_mask_mapping, attn_mask_startend_row_indices_mapping
+
+
+class _SplitProjection(paddle.autograd.PyLayer):
+    @staticmethod
+    def forward(ctx, hidden_states, group):
+        ctx.group = group
+        return paddle.split(hidden_states, group.nranks, axis=-1)[group.rank]
+
+    @staticmethod
+    def backward(ctx, gradient):
+        return mp_ops._c_concat(gradient, group=ctx.group)
 
 
 def _get_fleet_aoa_config(config, include_dtype=True):
@@ -1257,39 +1336,6 @@ def _get_fleet_aoa_config(config, include_dtype=True):
                 targets.append(target)
         statements += [f"{target} -> {target}, dtype='{dtype}'" for target in targets]
     return {"aoa_statements": statements}
-
-
-class Olmo3ForCausalLMPipe(GeneralModelForCausalLMPipe):
-    """OLMo3 pipeline model with per-layer masks and rotary embeddings."""
-
-    config_class = Olmo3Config
-    is_fleet = True
-
-    def __new__(cls, config):
-        provider = Olmo3ModelProvider.from_config(config)
-        loss_fn = None
-        if getattr(config, "dpo_config", None):
-            from ...nn.pp_model import CriterionLayerPipe
-
-            loss_fn = CriterionLayerPipe(config, use_infohub=True)
-        model = provider.provide(loss_fn=loss_fn)
-        model._gen_aoa_config = cls._gen_aoa_config
-        model._gen_inv_aoa_config = cls._gen_inv_aoa_config
-        model.config_to_save = deepcopy(config)
-        if not model.config_to_save.architectures:
-            model.config_to_save.architectures = ["Olmo3ForCausalLM"]
-        model.is_fleet = True
-        return model
-
-    @classmethod
-    def _gen_aoa_config(cls, config):
-        return _get_fleet_aoa_config(config)
-
-    @classmethod
-    def _gen_inv_aoa_config(cls, config):
-        result = _get_fleet_aoa_config(config, include_dtype=False)
-        result["aoa_config_reverse"] = True
-        return result
 
 
 __all__ = [

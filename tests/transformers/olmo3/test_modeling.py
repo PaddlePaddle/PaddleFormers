@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 
 import numpy as np
@@ -26,10 +27,11 @@ from paddleformers.transformers import (
     AutoTokenizer,
     Olmo3Config,
     Olmo3ForCausalLM,
+    Olmo3ForCausalLMPipe,
     Olmo3Model,
 )
 from paddleformers.utils import device_guard
-from tests.testing_utils import require_package, slow
+from tests.testing_utils import require_gpu, require_package, slow
 from tests.transformers.test_modeling_common import (
     ModelTesterMixin,
     ids_tensor,
@@ -164,16 +166,129 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
         self.model_tester = Olmo3ModelTester(self)
         self.config_tester = None
 
+    @require_gpu(min_gpus=1)
+    @require_package("paddlefleet")
+    def test_pipeline_checkpoint_roundtrip(self):
+        from paddle.distributed import fleet
+        from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
+            dict_to_tuple_helper,
+            tuple_to_dict_helper,
+        )
+
+        if getattr(fleet.fleet, "_hcg", None) is None:
+            strategy = fleet.DistributedStrategy()
+            strategy.hybrid_configs = dict(dp_degree=1, mp_degree=1, pp_degree=1, sharding_degree=1)
+            fleet.init(is_collective=True, strategy=strategy)
+        with device_guard("gpu"):
+            for tied in (False, True):
+                with self.subTest(tie_word_embeddings=tied):
+                    config = Olmo3Config(
+                        vocab_size=32,
+                        hidden_size=16,
+                        intermediate_size=24,
+                        num_hidden_layers=2,
+                        num_attention_heads=4,
+                        num_key_value_heads=2,
+                        sliding_window=3,
+                        layer_types=["sliding_attention", "full_attention"],
+                        tie_word_embeddings=tied,
+                        fuse_rms_norm=False,
+                        use_cache=False,
+                        dtype="float32",
+                        max_sequence_length=4,
+                        _attn_implementation="eager",
+                    )
+                    model = Olmo3ForCausalLM(config)
+                    input_ids = paddle.to_tensor([[2, 3, 4, 5]], dtype="int64")
+                    labels = paddle.to_tensor([[3, 4, 5, 6]], dtype="int64")
+                    expected = model(input_ids, labels=labels, return_dict=True)
+                    with tempfile.TemporaryDirectory() as checkpoint:
+                        model.save_pretrained(checkpoint, safe_serialization=True)
+                        pipe = Olmo3ForCausalLMPipe.from_pretrained(checkpoint, config=config, dtype="float32")
+                        actual = pipe.run_function[0](dict(input_ids=input_ids))
+                        actual, structured = tuple_to_dict_helper(dict_to_tuple_helper(actual))
+                        self.assertTrue(structured)
+                        for stage in pipe.run_function[1:]:
+                            actual = stage(actual)
+                        np.testing.assert_allclose(actual.numpy(), expected.logits.numpy(), atol=1e-5, rtol=1e-5)
+                        loss = pipe._loss_fn[0](actual, labels).reshape([])
+                        np.testing.assert_allclose(loss.numpy(), expected.loss.numpy(), atol=1e-5, rtol=1e-5)
+                        loss.backward()
+                        self.assertTrue(all(p.grad is not None for p in pipe.parameters()))
+                        pipe.save_pretrained(checkpoint, safe_serialization=True)
+                        restored = Olmo3ForCausalLM.from_pretrained(checkpoint, config=config, dtype="float32")
+                        for name, value in model.state_dict().items():
+                            np.testing.assert_allclose(
+                                restored.state_dict()[name].numpy(), value.numpy(), atol=1e-5, rtol=1e-5
+                            )
+                        result = restored(input_ids, labels=labels, return_dict=True)
+                        np.testing.assert_allclose(
+                            result.logits.numpy(), expected.logits.numpy(), atol=1e-5, rtol=1e-5
+                        )
+
+    @require_gpu(min_gpus=2)
+    @require_package("paddlefleet")
+    def test_pipeline_parallel_training(self):
+        from paddle.distributed import fleet
+
+        if paddle.distributed.get_world_size() != 2:
+            self.skipTest("Launch this test with two distributed workers for PP=2.")
+        strategy = fleet.DistributedStrategy()
+        strategy.hybrid_configs = dict(dp_degree=1, mp_degree=1, pp_degree=2, sharding_degree=1)
+        strategy.pipeline_configs = dict(micro_batch_size=1, accumulate_steps=1)
+        fleet.init(is_collective=True, strategy=strategy)
+        with device_guard("gpu"):
+            for tied in (False, True):
+                config = Olmo3Config(
+                    vocab_size=32,
+                    hidden_size=16,
+                    intermediate_size=24,
+                    num_hidden_layers=2,
+                    num_attention_heads=4,
+                    num_key_value_heads=2,
+                    sliding_window=3,
+                    layer_types=["sliding_attention", "full_attention"],
+                    tie_word_embeddings=tied,
+                    fuse_rms_norm=False,
+                    use_cache=False,
+                    dtype="float32",
+                    max_sequence_length=4,
+                    _attn_implementation="eager",
+                )
+                paddle.seed(42)
+                model = Olmo3ForCausalLM(config)
+                input_ids = paddle.to_tensor([[2, 3, 4, 5]], dtype="int64")
+                labels = paddle.to_tensor([[3, 4, 5, 6]], dtype="int64")
+                expected = model(input_ids, labels=labels, return_dict=True).loss
+                with tempfile.TemporaryDirectory() as checkpoint:
+                    directories = []
+                    paddle.distributed.all_gather_object(directories, checkpoint)
+                    if paddle.distributed.get_rank() == 0:
+                        model.save_pretrained(directories[0], safe_serialization=True)
+                    paddle.distributed.barrier()
+                    config.pipeline_model_parallel_size = 2
+                    pipe = Olmo3ForCausalLMPipe.from_pretrained(directories[0], config=config, dtype="float32")
+                    engine = fleet.distributed_model(pipe)
+                    optimizer = fleet.distributed_optimizer(
+                        paddle.optimizer.SGD(learning_rate=0.01, parameters=pipe.parameters())
+                    )
+                    before = [parameter.clone() for parameter in pipe.parameters()]
+                    data = [dict(input_ids=input_ids), labels]
+                    actual = engine.eval_batch(data, compute_loss=True).reshape([])
+                    np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
+                    loss = engine.train_batch(data, optimizer).reshape([])
+                    np.testing.assert_allclose(loss.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
+                    self.assertTrue(all(paddle.isfinite(parameter).all().item() for parameter in pipe.parameters()))
+                    self.assertTrue(
+                        any(not paddle.equal_all(old, new).item() for old, new in zip(before, pipe.parameters()))
+                    )
+                    paddle.distributed.barrier()
+
     def test_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_model(*config_and_inputs)
 
-    def test_lm_head_model(self):
-        config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
-
-    def test_model_with_head_dim(self):
-        self.model_tester = Olmo3ModelTester(
+        tester = Olmo3ModelTester(
             self,
             vocab_size=128,
             hidden_size=32,
@@ -185,16 +300,19 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
         )
         for head_dim in (None, 4):
             with self.subTest(head_dim=head_dim):
-                config = self.model_tester.get_config()
+                config = tester.get_config()
                 config = Olmo3Config.from_dict({**config.to_dict(), "head_dim": head_dim})
                 config._attn_implementation = "eager"
-                self.model_tester.create_and_check_model(
+                tester.create_and_check_model(
                     config,
-                    ids_tensor([self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size),
+                    ids_tensor([tester.batch_size, tester.seq_length], config.vocab_size),
                     None,
                 )
 
-    def test_auto_model_for_causal_lm_from_config(self):
+    def test_lm_head_model(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
+
         for architectures in (None, [], ["Olmo3ForCausalLM"]):
             with self.subTest(architectures=architectures):
                 config = Olmo3Config(
@@ -205,9 +323,17 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                     num_attention_heads=4,
                     num_key_value_heads=2,
                     architectures=architectures,
+                    fuse_rms_norm=False,
+                    _attn_implementation="eager",
                 )
-                model = AutoModelForCausalLM.from_config(config)
+                model = AutoModelForCausalLM.from_config(config, dtype="float32")
                 self.assertIsInstance(model, Olmo3ForCausalLM)
+                model.eval()
+                input_ids = ids_tensor([2, 6], config.vocab_size)
+                with paddle.no_grad():
+                    result = model(input_ids, return_dict=True)
+                self.assertEqual(result.logits.shape, [2, 6, config.vocab_size])
+                self.assertTrue(paddle.isfinite(result.logits).all().item())
 
     def test_training_with_recompute(self):
         for recompute in (False, True):
