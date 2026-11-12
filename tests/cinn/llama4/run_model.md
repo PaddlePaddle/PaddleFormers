@@ -18,14 +18,14 @@ git clone https://github.com/PaddlePaddle/PaddleFormers.git /path/to/PaddleForme
 ```
 
 
-## 本地权重（本次不上传）
+## CINN 测试权重
 
 设置 `CHECKPOINT_DIR` 指向包含以下文件的目录：
 
 - `initial.pdparams`：原随机初始化，训练两端共同起点。
 - `inference.pdparams`：原300步动态图训练后的 checkpoint，两端推理共同使用；这也是543.33%复核的权重，不是30000步最终权重。
 
-配置和小型测试 tokenizer 位于 assets；所有文件大小与 SHA256位于 `asset_manifest.json`。脚本不在缺少权重时重新随机初始化，不自动下载、不上传权重。第三方仍需由维护者单独提供这两个文件。
+配置和小型测试 tokenizer 位于 assets；所有文件大小与 SHA256位于 `asset_manifest.json`。脚本不在缺少权重时重新随机初始化，也不自动下载；请先从下方链接取得两个文件。
 
 ## 入口
 
@@ -75,4 +75,14 @@ checkpoint/optimizer/RNG 每500步及结束保存；RESUME 只能加载可信来
 
 2026-11-06 local regression on develop f7fa77f: 20 training steps and independent inference passed in both modes. Loss max difference 9.54e-7; 27 gradients retained, gradient max difference 9.54e-7; same-checkpoint logits max difference 3.58e-6. This is an entry regression, not a new convergence run.
 
-Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing assets/ and data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. Obtain the bundles from the contributor; public download links will be added later. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
+Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing assets/ and data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. Download checkpoints using the links below; non-weight assets still need to be obtained from the contributor. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
+
+## CINN checkpoint downloads
+
+Model library: [PaddleClas/Llama4](https://aistudio.baidu.com/modelsdetail/53386/space).
+
+- [initial.pdparams](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Llama4/media/cinn%2Fllama4%2Fcheckpoint%2Finitial.pdparams): common training initialization for dynamic and CINN runs.
+- [inference.pdparams](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Llama4/media/cinn%2Fllama4%2Fcheckpoint%2Finference.pdparams): the same checkpoint must be used for both independent inference runs.
+- [checkpoint_manifest.json](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Llama4/media/cinn%2Fllama4%2Fcheckpoint_manifest.json): file sizes, SHA256 and test scope.
+
+Save the two weight files under `CHECKPOINT_DIR`. The existing `asset_manifest.json` pins their hashes; do not substitute other weights from the model library. These are framework-test checkpoints, not a new task-quality evaluation. Configuration/tokenizer/data assets are separate and are not supplied by these weight downloads.
