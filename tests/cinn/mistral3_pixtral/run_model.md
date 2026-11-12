@@ -37,7 +37,7 @@ CINN 显式 to_static，日志缺少 Compiling subgraph with CINN backend 则入
 
 2026-11-06 local entry regression on model source 2b3802f: both modes completed 20 updates and independent inference. Loss max difference 2.38e-7; 44 gradients retained, gradient max difference 2.01e-7; same-checkpoint logits max difference 1.67e-6. This does not replace historical convergence evidence.
 
-Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing assets/ and data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. Download checkpoints using the links below; non-weight assets still need to be obtained from the contributor. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
+Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. This entry defines the tiny model configuration in run_model.py; it does not load external config or tokenizer files. Download checkpoints using the links below; data still need to be obtained from the contributor. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
 
 ## CINN checkpoint downloads
 
@@ -47,4 +47,4 @@ Model library: [PaddleClas/Mistral-small-3.1](https://aistudio.baidu.com/modelsd
 - [inference.pdparams](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Mistral-small-3.1/media/cinn%2Fmistral3_pixtral%2Fcheckpoint%2Finference.pdparams): the same checkpoint must be used for both independent inference runs.
 - [checkpoint_manifest.json](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Mistral-small-3.1/media/cinn%2Fmistral3_pixtral%2Fcheckpoint_manifest.json): file sizes, SHA256 and test scope.
 
-Save the two weight files under `CHECKPOINT_DIR`. The existing `asset_manifest.json` pins their hashes; do not substitute other weights from the model library. These are framework-test checkpoints, not a new task-quality evaluation. Configuration/tokenizer/data assets are separate and are not supplied by these weight downloads.
+Save the two weight files under `CHECKPOINT_DIR`. The existing `asset_manifest.json` pins their hashes; do not substitute other weights from the model library. These are framework-test checkpoints, not a new task-quality evaluation. The image data are separate and are not supplied by these weight downloads.

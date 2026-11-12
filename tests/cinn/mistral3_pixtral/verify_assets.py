@@ -28,4 +28,4 @@ for entry in manifest:
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     if digest != entry["sha256"] or path.stat().st_size != entry["bytes"]:
         raise ValueError(f"Asset mismatch: {path}")
-print("All checkpoint/data/config SHA256 checks passed.")
+print("All checkpoint/data SHA256 checks passed; model config is defined in run_model.py.")

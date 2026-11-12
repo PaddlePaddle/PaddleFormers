@@ -15,8 +15,8 @@
 
 set -euo pipefail
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-: "${CINN_RESOURCE_DIR:?Provide matching assets/ and data/}"
-: "${CHECKPOINT_DIR:?Set CHECKPOINT_DIR (weights are not uploaded)}"
+: "${CINN_RESOURCE_DIR:?Provide data/ matching asset_manifest.json}"
+: "${CHECKPOINT_DIR:?Set CHECKPOINT_DIR to the downloaded CINN weights}"
 export CINN_RESOURCE_DIR
 MODE=${MODE:-dynamic}
 TASK=${TASK:-all}
