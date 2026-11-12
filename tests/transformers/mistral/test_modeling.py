@@ -16,10 +16,12 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import paddle
 
+from paddleformers.nn.attention.eager_attention import eager_attention_forward
 from paddleformers.nn.pp_model import EmbeddingPipe, parse_args
 from paddleformers.transformers import (
     AutoConfig,
@@ -32,6 +34,10 @@ from paddleformers.transformers import (
     MistralForSequenceClassification,
     MistralModel,
 )
+from paddleformers.transformers.mistral import modeling as mistral_modeling
+from tests.transformers.test_configuration_common import ConfigTester
+from tests.transformers.test_generation_utils import GenerationTesterMixin
+from tests.transformers.test_modeling_common import ModelTesterMixin
 
 
 def tiny_mistral_config(**kwargs):
@@ -43,7 +49,7 @@ def tiny_mistral_config(**kwargs):
         num_attention_heads=4,
         num_key_value_heads=2,
         max_position_embeddings=64,
-        sliding_window=16,
+        sliding_window=4,
         use_sliding_window=True,
         fuse_rms_norm=False,
     )
@@ -51,7 +57,142 @@ def tiny_mistral_config(**kwargs):
     return MistralConfig(**config_kwargs)
 
 
-class MistralModelingTest(unittest.TestCase):
+class MistralModelTester:
+    batch_size = 2
+    seq_length = 8
+    hidden_size = 16
+    num_hidden_layers = 2
+    num_attention_heads = 4
+    is_training = False
+
+    def get_config(self):
+        return tiny_mistral_config(pad_token_id=0, use_cache=False, return_dict=True)
+
+    def prepare_config_and_inputs_for_common(self):
+        config = self.get_config()
+        input_ids = paddle.randint(1, config.vocab_size, [self.batch_size, self.seq_length], dtype="int64")
+        return config, {"input_ids": input_ids}
+
+
+class MistralModelingTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+    base_model_class = MistralModel
+    all_model_classes = (MistralModel, MistralForCausalLM)
+    all_generative_model_classes = {MistralForCausalLM: (MistralModel, "mistral")}
+    has_attentions = False
+
+    def setUp(self):
+        super().setUp()
+        self.model_tester = MistralModelTester()
+        self.config_tester = ConfigTester(self, config_class=MistralConfig, hidden_size=16, num_attention_heads=4)
+
+    def _get_input_ids_and_config(self):
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        input_ids = inputs["input_ids"][:, :4].clone()
+        return config, input_ids, paddle.ones_like(input_ids), 3
+
+    def test_config(self):
+        self.config_tester.run_common_tests()
+
+    def test_sliding_attention_matches_manual_mask(self):
+        settings = (
+            {"use_sliding_window": False},
+            {},
+            {"layer_types": ["sliding_attention", "full_attention"]},
+            {"layer_types": ["full_attention", "sliding_attention"]},
+        )
+        for overrides in settings:
+            with self.subTest(overrides=overrides):
+                config = tiny_mistral_config(**overrides)
+                model = MistralForCausalLM(config)
+                model.eval()
+                input_ids = paddle.to_tensor([[1, 2, 3, 4, 5, 6, 7, 8]], dtype="int64")
+
+                def manual_attention(module, query, key, value, **kwargs):
+                    positions = paddle.arange(input_ids.shape[-1])
+                    distance = positions[:, None] - positions[None, :]
+                    allowed = distance >= 0
+                    if config.layer_types[module.layer_idx] == "sliding_attention":
+                        allowed = allowed & (distance < config.sliding_window)
+                    mask = paddle.where(allowed, 0.0, paddle.finfo(query.dtype).min)[None, None, :, :]
+                    return eager_attention_forward(
+                        module, query, key, value, attention_mask=mask, scaling=module.scaling
+                    )
+
+                with paddle.no_grad():
+                    actual = model(input_ids=input_ids, use_cache=False, return_dict=True).logits
+                    with patch.object(
+                        mistral_modeling,
+                        "ALL_ATTENTION_FUNCTIONS",
+                        {"eager": manual_attention, "sdpa": manual_attention},
+                    ):
+                        expected = model(input_ids=input_ids, use_cache=False, return_dict=True).logits
+                np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-6, rtol=1e-6)
+
+    def test_cached_decoding_matches_full_forward(self):
+        settings = (
+            {"use_sliding_window": False},
+            {},
+            {"layer_types": ["sliding_attention", "full_attention"]},
+            {"layer_types": ["full_attention", "sliding_attention"]},
+        )
+        for backend in ("eager", "sdpa"):
+            for overrides in settings:
+                for prefix_length in (3, 4, 8):
+                    for chunk_length in (1, 3):
+                        for padding in (False, True):
+                            with self.subTest(
+                                backend=backend,
+                                overrides=overrides,
+                                prefix_length=prefix_length,
+                                chunk_length=chunk_length,
+                                padding=padding,
+                            ):
+                                paddle.seed(23)
+                                config = tiny_mistral_config(_attn_implementation=backend, **overrides)
+                                model = MistralForCausalLM(config)
+                                model.eval()
+                                input_ids = paddle.arange(1, prefix_length + chunk_length + 1, dtype="int64")[None, :]
+                                attention_mask = paddle.ones_like(input_ids)
+                                if padding:
+                                    attention_mask[:, :2] = 0
+                                with paddle.no_grad():
+                                    full = model(
+                                        input_ids=input_ids,
+                                        attention_mask=attention_mask,
+                                        use_cache=False,
+                                        return_dict=True,
+                                    )
+                                    prefix = model(
+                                        input_ids=input_ids[:, :prefix_length],
+                                        attention_mask=attention_mask[:, :prefix_length],
+                                        use_cache=True,
+                                        return_dict=True,
+                                    )
+                                    cached = model(
+                                        input_ids=input_ids[:, prefix_length:],
+                                        attention_mask=attention_mask,
+                                        past_key_values=prefix.past_key_values,
+                                        use_cache=True,
+                                        return_dict=True,
+                                    )
+                                np.testing.assert_allclose(
+                                    cached.logits.numpy(), full.logits[:, prefix_length:].numpy(), atol=2e-6, rtol=2e-6
+                                )
+
+    def test_lm_head_conversion_does_not_depend_on_class_name(self):
+        class LanguageModel(MistralForCausalLM):
+            pass
+
+        for tied in (False, True):
+            config = tiny_mistral_config(tie_word_embeddings=tied)
+            for model_class in (MistralModel, MistralForSequenceClassification, MistralForCausalLM, LanguageModel):
+                with self.subTest(tied=tied, model_class=model_class):
+                    forward = model_class._gen_aoa_config(config)["aoa_statements"]
+                    inverse = model_class._gen_inv_aoa_config(config)["aoa_statements"]
+                    has_head = issubclass(model_class, MistralForCausalLM)
+                    self.assertEqual(any("lm_head.weight" in item for item in forward), has_head)
+                    self.assertEqual(any("lm_head.weight" in item for item in inverse), has_head and not tied)
+
     def test_pipeline_rotary_embeddings_match_base_model(self):
         for rope_scaling in (None, {"rope_type": "linear", "factor": 2.0}):
             with self.subTest(rope_scaling=rope_scaling):

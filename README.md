@@ -83,7 +83,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     <tr>
       <td>Mistral</td>
       <td>Mistral-7B</td>
-      <td>模型自带的 chat_template（template_backend: jinja）</td>
+      <td>tokenizer.chat_template</td>
     </tr>
     <tr>
       <td>phi-4</td>

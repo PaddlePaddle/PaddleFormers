@@ -273,6 +273,7 @@ class MistralRotaryEmbedding(nn.Layer):
 class MistralPretrainedModel(PretrainedModel):
     config_class = MistralConfig
     base_model_prefix = "model"
+    _has_lm_head = False
     transpose_weight_keys = [
         "q_proj",
         "k_proj",
@@ -308,14 +309,11 @@ class MistralPretrainedModel(PretrainedModel):
             ]
         )
 
-        if cls != cls.base_model_class:
+        if cls._has_lm_head:
             if config.tie_word_embeddings:
                 aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
             else:
                 aoa_statements.append("lm_head.weight -> lm_head.weight")
-
-        if "CausalLM" not in cls.__name__:
-            aoa_statements = [s for s in aoa_statements if "lm_head.weight" not in s]
 
         return {"aoa_statements": aoa_statements}
 
@@ -344,11 +342,8 @@ class MistralPretrainedModel(PretrainedModel):
             ]
         )
 
-        if cls != cls.base_model_class and not config.tie_word_embeddings:
+        if cls._has_lm_head and not config.tie_word_embeddings:
             aoa_statements.append("lm_head.weight -> lm_head.weight")
-
-        if "CausalLM" not in cls.__name__:
-            aoa_statements = [s for s in aoa_statements if "lm_head.weight" not in s]
 
         return {"aoa_statements": aoa_statements}
 
@@ -380,8 +375,8 @@ class MistralModel(MistralPretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = MistralRotaryEmbedding(config=config)
-        self.has_sliding_layers = getattr(self.config, "sliding_window", None) is not None and (
-            "sliding_attention" in getattr(self.config, "layer_types", [])
+        self.has_sliding_layers = self.config.sliding_window is not None and (
+            "sliding_attention" in self.config.layer_types
         )
 
     def forward(
@@ -436,6 +431,13 @@ class MistralModel(MistralPretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         full_mask, full_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        if cache_length > 0 and seq_length > 1 and full_mask is None and full_indices is None:
+            full_mask = self._prepare_decoder_attention_mask(
+                attention_mask=None,
+                input_shape=(batch_size, seq_length),
+                past_key_values_length=cache_length,
+                dtype=inputs_embeds.dtype,
+            )
 
         causal_mask_mapping = {"full_attention": full_mask}
         row_indices_mapping = {"full_attention": full_indices}
@@ -449,13 +451,17 @@ class MistralModel(MistralPretrainedModel):
         all_hidden_states = [] if output_hidden_states else None
 
         hidden_states = inputs_embeds
-        for decoder_layer in self.layers:
+        cache_position = paddle.arange(cache_length, cache_length + seq_length, dtype="int64")
+        for layer_idx, decoder_layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states.append(hidden_states)
 
-            attention_type = getattr(decoder_layer, "attention_type", "full_attention")
+            attention_type = decoder_layer.attention_type
             layer_mask = causal_mask_mapping[attention_type]
             layer_row_indices = row_indices_mapping[attention_type]
+            if past_key_values is not None and layer_mask is not None:
+                kv_length, kv_offset = past_key_values.get_mask_sizes(cache_position, layer_idx)
+                layer_mask = layer_mask[..., kv_offset : kv_offset + kv_length]
 
             has_gradient = not hidden_states.stop_gradient
             if (
@@ -531,6 +537,7 @@ class MistralModel(MistralPretrainedModel):
 
 
 class MistralForCausalLM(MistralPretrainedModel):
+    _has_lm_head = True
     _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
 
     def __init__(self, config: MistralConfig):
@@ -647,14 +654,11 @@ class MistralForSequenceClassification(MistralPretrainedModel):
         if self.config.pad_token_id is None and batch_size != 1:
             raise ValueError("Cannot handle batch sizes > 1 if no padding token is defined.")
 
-        if self.config.pad_token_id is None:
-            sequence_lengths = paddle.full([batch_size], logits.shape[1] - 1, dtype="int64")
+        if input_ids is not None and self.config.pad_token_id is not None:
+            sequence_lengths = paddle.eq(input_ids, self.config.pad_token_id).astype("int32").argmax(-1) - 1
+            sequence_lengths = sequence_lengths % input_ids.shape[-1]
         else:
-            if input_ids is not None:
-                sequence_lengths = paddle.eq(input_ids, self.config.pad_token_id).astype("int32").argmax(-1) - 1
-                sequence_lengths = sequence_lengths % input_ids.shape[-1]
-            else:
-                sequence_lengths = paddle.full([batch_size], logits.shape[1] - 1, dtype="int64")
+            sequence_lengths = paddle.full([batch_size], logits.shape[1] - 1, dtype="int64")
 
         pooled_logits = logits.gather_nd(paddle.stack([paddle.arange(logits.shape[0]), sequence_lengths], axis=-1))
 
@@ -707,14 +711,10 @@ class MistralForCausalLMPipe(GeneralModelForCausalLMPipe):
 
 
 __all__ = [
-    "MistralAttention",
     "MistralDecoderLayer",
     "MistralForCausalLM",
     "MistralForCausalLMPipe",
     "MistralForSequenceClassification",
     "MistralModel",
     "MistralPretrainedModel",
-    "MistralRotaryEmbedding",
-    "apply_rotary_pos_emb",
-    "rotate_half",
 ]
