@@ -30,6 +30,7 @@
 |模型|TP + SP|PP|EP|CP|DP|FSDP|
 |-|-|-|-|-|-|-|
 |Cohere|✓|✓|-|x|✓|✓|
+|StableLM|✓|✓|-|x|✓|✓|
 |DeepSeekv3|✓|✓|✓|x|✓|✓|
 |🏛️ERNIE-4.5|✓|✓|✓|x|✓|✓|
 |Gemma3|x|✓|-|x|✓|✓|
