@@ -82,7 +82,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     </tr>
     <tr>
       <td>Mistral</td>
-      <td>Mistral-7B</td>
+      <td>mistralai/Mistral-7B-Instruct-v0.3</td>
       <td>tokenizer.chat_template</td>
     </tr>
     <tr>
