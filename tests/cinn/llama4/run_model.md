@@ -75,7 +75,27 @@ checkpoint/optimizer/RNG 每500步及结束保存；RESUME 只能加载可信来
 
 2026-11-06 local regression on develop f7fa77f: 20 training steps and independent inference passed in both modes. Loss max difference 9.54e-7; 27 gradients retained, gradient max difference 9.54e-7; same-checkpoint logits max difference 3.58e-6. This is an entry regression, not a new convergence run.
 
-Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing assets/ and data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. Download checkpoints using the links below; non-weight assets still need to be obtained from the contributor. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
+Import PaddleFormers from this checkout. External resources are not included: set CINN_RESOURCE_DIR to the bundle containing assets/ and data/ listed in asset_manifest.json, and CHECKPOINT_DIR to the matching weights. Download checkpoints and the matching non-weight resource archive using the instructions below. Respect the source dataset license. Historical results above are not a new long-run acceptance of this checkout.
+
+## Download configuration, tokenizer and data
+
+The matching [resource archive](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Llama4/media/cinn%2Fllama4%2Fresources.tar.gz) includes the existing configuration, tokenizer,
+24 GSM8K examples, source notices and licenses. It does not include checkpoint files.
+Extract into a **new empty directory**; do not replace assets in an existing experiment.
+
+```bash
+export CINN_RESOURCE_DIR=/path/to/new-llama4-resources
+mkdir "$CINN_RESOURCE_DIR"
+curl -fL 'https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/Llama4/media/cinn%2Fllama4%2Fresources.tar.gz' -o "$CINN_RESOURCE_DIR/resources.tar.gz"
+printf '9da81b87bf9a239c69acd77948df66ecba41d5c60085cafa6fdf857082555014  %s\n' "$CINN_RESOURCE_DIR/resources.tar.gz" | sha256sum -c -
+tar -xzf "$CINN_RESOURCE_DIR/resources.tar.gz" -C "$CINN_RESOURCE_DIR"
+# Set CHECKPOINT_DIR to the two downloaded .pdparams files.
+python tests/cinn/llama4/verify_assets.py "$CHECKPOINT_DIR"
+```
+
+The archive and its members were downloaded anonymously into a fresh local directory
+and checked with this entry's asset verifier. This verifies resource availability and
+identity, not a new GPU training/performance run.
 
 ## CINN checkpoint downloads
 
