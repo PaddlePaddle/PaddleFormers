@@ -27,12 +27,6 @@ from pathlib import Path
 import numpy as np
 import paddle
 
-from paddleformers.transformers import (
-    Llama4Config,
-    Llama4ForCausalLM,
-    Llama4ForConditionalGeneration,
-    Llama4TextConfig,
-)
 from tests.cinn.checkpoint_utils import strict_set_state_dict
 
 
@@ -188,6 +182,15 @@ def run_training(options, model, net, args, samples, source_commit, initial_hash
 
 def main(kind, argv=None):
     options = parse_args(kind, argv)
+    # Loading model classes imports Fleet GPU operators. Keep CLI inspection
+    # and the CPU runner unit tests independent of CUDA device discovery.
+    from paddleformers.transformers import (
+        Llama4Config,
+        Llama4ForCausalLM,
+        Llama4ForConditionalGeneration,
+        Llama4TextConfig,
+    )
+
     repo = str(Path(__file__).resolve().parents[2])
     options.output.mkdir(parents=True, exist_ok=False)
     paddle.set_device("gpu:0")
