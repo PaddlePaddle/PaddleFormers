@@ -12,7 +12,7 @@ Reference environment: V100S 32GB, Python 3.10.20, Paddle 3.5.0.dev20260722
 tokenizers 0.22.2, numpy 1.26.4, plus this repository's requirements.
 FP32, TF32 disabled, batch 1, sequence length 64, eager attention, no AMP or distributed execution.
 
-Weights are not included. Obtain the test assets from the contributor:
+Weights are hosted separately on AI Studio (links below). Obtain the remaining test assets from the contributor:
 
 - CHECKPOINT_DIR: initial.pdparams (shared random initial state), inference.pdparams
   (the dynamic model's historical 30000-step checkpoint).
@@ -20,7 +20,7 @@ Weights are not included. Obtain the test assets from the contributor:
   special_tokens_map.json, vocab.json, merges.txt from the recorded OLMo2 asset bundle.
 
 All assets must match asset_manifest.json. The test fails on missing/mismatched assets;
-it does not silently regenerate weights. Public download hosting is pending.
+it does not silently regenerate weights. Public hosting of non-weight assets is still pending.
 
 ## Run from the repository root
 
@@ -79,3 +79,13 @@ Local entry regression on develop f7fa77f02ec637441e1a4fad1f9066b228774fb6
 All 25 parameter gradients were retained and finite; first-step gradient max absolute
 difference was 7.39e-6, loss max difference 9.54e-7, same-checkpoint inference logits
 max difference 1.38e-5. This is short-entry validation, not a new convergence run.
+
+## CINN checkpoint downloads
+
+Model library: [PaddleClas/olmo2](https://aistudio.baidu.com/modelsdetail/53383/space).
+
+- [initial.pdparams](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fcheckpoint%2Finitial.pdparams): common training initialization for dynamic and CINN runs.
+- [inference.pdparams](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fcheckpoint%2Finference.pdparams): the same checkpoint must be used for both independent inference runs.
+- [checkpoint_manifest.json](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fcheckpoint_manifest.json): file sizes, SHA256 and test scope.
+
+Save the two weight files under `CHECKPOINT_DIR`. The existing `asset_manifest.json` pins their hashes; do not substitute other weights from the model library. These are framework-test checkpoints, not a new task-quality evaluation. Configuration/tokenizer/data assets are separate and are not supplied by these weight downloads.
