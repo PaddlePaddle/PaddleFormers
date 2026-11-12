@@ -152,7 +152,12 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     </tr>
     <!-- VLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="6" style="vertical-align: top;">VLM</td>
+      <td rowspan="8" style="vertical-align: top;">VLM</td>
+      <td>LFM2-VL</td>
+      <td>LiquidAI/LFM2.5-VL-450M</td>
+      <td>lfm2_vl</td>
+    </tr>
+    <tr>
       <td>Llama Guard 4</td>
       <td>meta-llama/Llama-Guard-4-12B</td>
       <td>llama4_vl</td>
@@ -189,6 +194,8 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     </tr>
   </tbody>
 </table>
+
+LFM2-VL 图文 SFT 请设置 `template: lfm2_vl` 和 `template_backend: custom`，以启用对应的图像 token 展开、图像预处理及标签掩码。
 
 * 更多关于模型训练能力的支持细节，请参考：[PaddleFormers 模型能力矩阵](./docs/zh/model_capability.md)
 * 带有🏛️标签的模型是 PaddleFormers 官方维护的模型
