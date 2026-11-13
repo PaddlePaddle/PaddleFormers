@@ -430,6 +430,7 @@ import_structure = {
     "minicpm.configuration": ["MiniCPMConfig"],
     "minicpm.modeling": [
         "MiniCPMModel",
+        "MiniCPMPretrainedModel",
         "MiniCPMForCausalLM",
         "MiniCPMForCausalLMPipe",
         "MiniCPMForSequenceClassification",
