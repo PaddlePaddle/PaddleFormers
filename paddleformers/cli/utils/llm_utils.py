@@ -434,6 +434,27 @@ def get_lora_target_modules(model):
             ".*resampler_model.*temporal_linear.0.*",
             ".*resampler_model.*temporal_linear.2.*",
         ]
+    elif model.config.model_type == "aya_vision":
+        target_modules = [
+            # Language Model
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            # Vision Encoder
+            "model.vision_tower.*q_proj.*",
+            "model.vision_tower.*k_proj.*",
+            "model.vision_tower.*v_proj.*",
+            "model.vision_tower.*out_proj.*",
+            "model.vision_tower.*fc1.*",
+            "model.vision_tower.*fc2.*",
+            # Projector
+            "model.multi_modal_projector.*linear_1.*",
+            "model.multi_modal_projector.*linear_2.*",
+        ]
     elif model.config.model_type == "paddleocr_vl":
         target_modules = [
             # Language Model
@@ -519,6 +540,16 @@ def get_lora_target_modules(model):
             "model.visual.blocks.*mlp.gate_proj.*",
             "model.visual.blocks.*mlp.up_proj.*",
             "model.visual.blocks.*mlp.down_proj.*",
+        ]
+    elif model.config.model_type == "stablelm":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
         ]
     elif model.config.model_type == "internlm2":
         # Covers both InternLM2 2.0 and 2.5: both route through the unified
