@@ -301,14 +301,14 @@ class Olmo3DecoderLayer(nn.Layer):
 class Olmo3RotaryEmbedding(nn.Layer):
     """Rotary position embedding."""
 
-    def __init__(self, config: Olmo3Config, rope_type: Optional[str] = None):
+    def __init__(self, config: Olmo3Config, rope_type: Optional[str] = None, layer_type="full_attention"):
         super().__init__()
         self.max_seq_len_cached = config.max_position_embeddings
         self.original_max_seq_len = config.max_position_embeddings
-        self.config = config
+        self.config = _get_rope_config(config, layer_type)
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 
-        self.rope_type = _resolve_rope_type(config, rope_type)
+        self.rope_type = _resolve_rope_type(self.config, rope_type)
 
         inv_freq, self.attention_scaling = _compute_rope_parameters(self.config, self.rope_type)
 
@@ -546,12 +546,8 @@ class Olmo3Model(Olmo3PretrainedModel):
             input_is_parallel=config.sequence_parallel,
         )
 
-        # Two separate RoPE embeddings: sliding_attention uses default (no scaling), full_attention uses configured rope
         self.rotary_embs = nn.LayerDict(
-            {
-                "sliding_attention": Olmo3RotaryEmbedding(config=config, rope_type="default"),
-                "full_attention": Olmo3RotaryEmbedding(config=config),
-            }
+            {kind: Olmo3RotaryEmbedding(config=config, layer_type=kind) for kind in dict.fromkeys(config.layer_types)}
         )
 
     def forward(
@@ -618,8 +614,7 @@ class Olmo3Model(Olmo3PretrainedModel):
         hidden_states = inputs_embeds
 
         position_embeddings_mapping = {
-            "sliding_attention": self.rotary_embs["sliding_attention"](hidden_states, position_ids),
-            "full_attention": self.rotary_embs["full_attention"](hidden_states, position_ids),
+            kind: rotary_emb(hidden_states, position_ids) for kind, rotary_emb in self.rotary_embs.items()
         }
 
         all_hidden_states = [] if output_hidden_states else None
@@ -812,7 +807,8 @@ class Olmo3ForCausalLM(Olmo3PretrainedModel):
 
 
 class Olmo3FleetRotaryEmbedding(RotaryEmbedding):
-    def __init__(self, source, rope_type=None):
+    def __init__(self, source, rope_type=None, layer_type="full_attention"):
+        source = _get_rope_config(source, layer_type)
         super().__init__(head_dim=source.head_dim, rotary_percent=1.0, rotary_base=source.rope_theta)
         self.inv_freq, _ = _compute_rope_parameters(source, rope_type)
 
@@ -828,7 +824,7 @@ class Olmo3FleetEmbedding(GPTEmbedding):
         super().__init__(config=config, **kwargs)
         self.rotary_pos_emb = Olmo3FleetRotaryEmbedding(config.olmo3_config)
         if self.swa_rotary_pos_emb is not None:
-            self.swa_rotary_pos_emb = Olmo3FleetRotaryEmbedding(config.olmo3_config, rope_type="default")
+            self.swa_rotary_pos_emb = Olmo3FleetRotaryEmbedding(config.olmo3_config, layer_type="sliding_attention")
 
     def forward(self, dict_args, *args, **kwargs):
         dict_args = dict(dict_args)
@@ -891,7 +887,9 @@ class Olmo3FleetSelfAttention(SelfAttention):
         config.use_bias = config.olmo3_config.attention_bias
         super().__init__(config=config, **kwargs)
         self.config = copy(config)
-        self.attention_scaling = 1.0 if self.is_swa else config.olmo3_attention_scaling
+        self.attention_scaling = config.olmo3_attention_scaling[
+            "sliding_attention" if self.is_swa else "full_attention"
+        ]
         self.config.yarn_rotary_scaling_factor = 1.0
 
     def forward(self, hidden_states, attention_mask=None, attn_mask_startend_row_indices=None, **kwargs):
@@ -988,7 +986,7 @@ class Olmo3PostNormResidual(paddle.nn.Layer):
 @dataclass
 class Olmo3ModelProvider(GPTModelProvider):
     olmo3_config: Optional[Olmo3Config] = None
-    olmo3_attention_scaling: float = 1.0
+    olmo3_attention_scaling: Optional[dict[str, float]] = None
 
     transform_rules = {"dtype": "params_dtype"}
 
@@ -1025,7 +1023,9 @@ class Olmo3ModelProvider(GPTModelProvider):
         provider = super().from_config(normalized)
         provider.output_layer_init_method = provider.init_method
         provider.olmo3_config = source
-        _, provider.olmo3_attention_scaling = _compute_rope_parameters(source)
+        provider.olmo3_attention_scaling = {
+            kind: _compute_rope_parameters(_get_rope_config(source, kind))[1] for kind in set(source.layer_types)
+        }
         return provider
 
     def provide(self, pre_process=None, post_process=None, vp_stage=None, loss_fn=None):
@@ -1183,6 +1183,17 @@ def _select_attention_backend(config, query, key, mask, indices, training, slidi
             mask = paddle.where(allowed, 0.0, paddle.finfo(query.dtype).min).astype(query.dtype)
             mask = mask.unsqueeze(0).unsqueeze(0)
     return backend, mask
+
+
+def _get_rope_config(config, layer_type):
+    if "rope_type" in config.rope_parameters:
+        return config
+    selected = copy(config)
+    selected.rope_parameters = config.rope_parameters.get(
+        layer_type, {"rope_type": "default", "rope_theta": config.rope_theta}
+    )
+    selected.rope_theta = selected.rope_parameters["rope_theta"]
+    return selected
 
 
 def _resolve_rope_type(config, rope_type=None):

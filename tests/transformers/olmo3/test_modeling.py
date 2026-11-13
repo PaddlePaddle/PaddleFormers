@@ -194,6 +194,16 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                         num_key_value_heads=2,
                         sliding_window=3,
                         layer_types=["sliding_attention", "full_attention"],
+                        rope_parameters={
+                            "full_attention": {
+                                "rope_type": "yarn",
+                                "factor": 2.0,
+                                "attention_factor": 1.1,
+                                "original_max_position_embeddings": 1024,
+                                "rope_theta": 20000.0,
+                            },
+                            "sliding_attention": {"rope_type": "linear", "factor": 2.0, "rope_theta": 5000.0},
+                        },
                         tie_word_embeddings=tied,
                         fuse_rms_norm=False,
                         use_cache=False,
@@ -399,6 +409,50 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                 for parameter in model.parameters():
                     self.assertIsNotNone(parameter.grad)
                     self.assertTrue(paddle.isfinite(parameter.grad).all().item())
+
+    def test_rope_checkpoint_roundtrip(self):
+        for rope_kwargs in (
+            {},
+            {"rope_scaling": {"rope_type": "linear", "factor": 2.0}},
+            {
+                "rope_parameters": {
+                    "full_attention": {"rope_type": "linear", "factor": 4.0, "rope_theta": 20000.0},
+                    "sliding_attention": {"rope_type": "default", "rope_theta": 5000.0},
+                }
+            },
+        ):
+            with self.subTest(rope_kwargs=rope_kwargs):
+                config = Olmo3Config(
+                    vocab_size=32,
+                    hidden_size=16,
+                    intermediate_size=24,
+                    num_hidden_layers=2,
+                    num_attention_heads=4,
+                    num_key_value_heads=2,
+                    layer_types=["sliding_attention", "full_attention"],
+                    sliding_window=3,
+                    fuse_rms_norm=False,
+                    use_cache=False,
+                    _attn_implementation="eager",
+                    **rope_kwargs,
+                )
+                self.assertEqual(set(config.rope_parameters), set(config.layer_types))
+                model = Olmo3ForCausalLM(config)
+                model.eval()
+                input_ids = ids_tensor([2, 6], config.vocab_size)
+                with paddle.no_grad():
+                    expected = model(input_ids, return_dict=True).logits
+                with tempfile.TemporaryDirectory() as directory:
+                    model.save_pretrained(directory, safe_serialization=True)
+                    restored = Olmo3ForCausalLM.from_pretrained(
+                        directory, dtype="float32", fuse_rms_norm=False, _attn_implementation="eager"
+                    )
+                restored.eval()
+                self.assertEqual(restored.config.rope_parameters, config.rope_parameters)
+                with paddle.no_grad():
+                    actual = restored(input_ids, return_dict=True).logits
+                self.assertTrue(paddle.isfinite(actual).all().item())
+                np.testing.assert_allclose(actual.numpy(), expected.numpy(), rtol=1e-6, atol=1e-6)
 
     def test_generation_cache_chunks_and_read_only_cache(self):
         config = Olmo3Config(

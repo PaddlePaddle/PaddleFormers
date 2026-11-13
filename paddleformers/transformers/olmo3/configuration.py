@@ -60,7 +60,10 @@ class Olmo3Config(PretrainedConfig):
         rope_theta (`float`, *optional*, defaults to 10000.0):
             The base period of the RoPE embeddings.
         rope_scaling (`Dict`, *optional*):
-            Dictionary containing the scaling configuration for the RoPE embeddings.
+            Legacy scaling configuration for full attention RoPE embeddings.
+        rope_parameters (`Dict`, *optional*):
+            RoPE parameters keyed by attention layer type. Legacy flat dictionaries
+            configure full attention scaling and leave sliding attention unscaled.
         attention_bias (`bool`, *optional*, defaults to `False`):
             Whether to use a bias in the attention projection layers.
         attention_dropout (`float`, *optional*, defaults to 0.0):
@@ -125,10 +128,8 @@ class Olmo3Config(PretrainedConfig):
         self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
 
         self.rope_theta = rope_theta
-        self.rope_scaling = deepcopy(rope_scaling)
-        self.rope_parameters = deepcopy(kwargs.pop("rope_parameters", rope_scaling))
-        standardize_rope_params(self, rope_theta=self.rope_theta)
-        rope_config_validation(self)
+        rope_parameters = kwargs.pop("rope_parameters", None)
+        rope_parameters = deepcopy(rope_parameters if rope_parameters is not None else rope_scaling)
 
         super().__init__(
             pad_token_id=pad_token_id,
@@ -148,3 +149,23 @@ class Olmo3Config(PretrainedConfig):
         layer_type_validation(self.layer_types, self.num_hidden_layers)
         if "sliding_attention" in self.layer_types and (sliding_window is None or sliding_window <= 0):
             raise ValueError("sliding_window must be a positive integer when sliding attention is enabled.")
+
+        attention_types = ("full_attention", "sliding_attention")
+        is_nested = rope_parameters is not None and any(kind in rope_parameters for kind in attention_types)
+        self.rope_parameters = {}
+        for layer_type in dict.fromkeys(self.layer_types):
+            if is_nested:
+                parameters = deepcopy(rope_parameters.get(layer_type)) or {}
+            elif layer_type == "full_attention":
+                parameters = deepcopy(rope_parameters) or {}
+            else:
+                parameters = {"rope_theta": (rope_parameters or {}).get("rope_theta", rope_theta)}
+            parameters.setdefault("rope_type", parameters.get("type", "default"))
+            parameters.setdefault("rope_theta", rope_theta)
+            self.rope_parameters[layer_type] = parameters
+
+        standardize_rope_params(
+            self, rope_theta={kind: parameters["rope_theta"] for kind, parameters in self.rope_parameters.items()}
+        )
+        rope_config_validation(self)
+        self.rope_scaling = deepcopy(self.rope_parameters.get("full_attention")) if rope_scaling is not None else None
