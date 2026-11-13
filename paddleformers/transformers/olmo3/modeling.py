@@ -308,25 +308,12 @@ class Olmo3RotaryEmbedding(nn.Layer):
         self.config = config
         self.head_dim = getattr(config, "head_dim", config.hidden_size // config.num_attention_heads)
 
-        if rope_type is not None:
-            self.rope_type = rope_type
-        elif hasattr(config, "rope_parameters") and isinstance(config.rope_parameters, dict):
-            self.rope_type = config.rope_parameters.get("rope_type", config.rope_parameters.get("type", "default"))
-        else:
-            self.rope_type = "default"
+        self.rope_type = _resolve_rope_type(config, rope_type)
 
         inv_freq, self.attention_scaling = _compute_rope_parameters(self.config, self.rope_type)
 
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = inv_freq
-
-    @staticmethod
-    def compute_default_rope_parameters(
-        config: Optional[Olmo3Config] = None,
-        seq_len: Optional[int] = None,
-    ) -> tuple[paddle.Tensor, float]:
-        """Computes the inverse frequencies for RoPE."""
-        return _compute_rope_parameters(config, "default")
 
     @dynamic_rope_update
     def forward(self, x, position_ids):
@@ -1000,6 +987,9 @@ class Olmo3PostNormResidual(paddle.nn.Layer):
 
 @dataclass
 class Olmo3ModelProvider(GPTModelProvider):
+    olmo3_config: Optional[Olmo3Config] = None
+    olmo3_attention_scaling: float = 1.0
+
     transform_rules = {"dtype": "params_dtype"}
 
     @classmethod
@@ -1039,6 +1029,8 @@ class Olmo3ModelProvider(GPTModelProvider):
         return provider
 
     def provide(self, pre_process=None, post_process=None, vp_stage=None, loss_fn=None):
+        if self.olmo3_config is None:
+            raise ValueError("OLMo3 requires olmo3_config; construct the provider with from_config().")
         if pre_process is not None or post_process is not None or vp_stage is not None:
             raise ValueError("OLMo3 builds all pipeline stages together; explicit stage selection is unsupported.")
         layers = []
@@ -1193,8 +1185,14 @@ def _select_attention_backend(config, query, key, mask, indices, training, slidi
     return backend, mask
 
 
+def _resolve_rope_type(config, rope_type=None):
+    if rope_type is not None:
+        return rope_type
+    return config.rope_parameters.get("rope_type", config.rope_parameters.get("type", "default"))
+
+
 def _compute_rope_parameters(config, rope_type=None):
-    rope_type = rope_type or config.rope_parameters.get("rope_type", config.rope_parameters.get("type", "default"))
+    rope_type = _resolve_rope_type(config, rope_type)
     if rope_type == "default":
         base = config.rope_parameters["rope_theta"]
         dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads

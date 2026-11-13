@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 import paddle
@@ -169,6 +170,8 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
     @require_gpu(min_gpus=1)
     @require_package("paddlefleet")
     def test_pipeline_checkpoint_roundtrip(self):
+        # PADDLEFORMERS_TESTING=1 python -m pytest tests/transformers/olmo3/test_modeling.py \
+        #     -k test_pipeline_checkpoint_roundtrip
         from paddle.distributed import fleet
         from paddle.distributed.fleet.meta_parallel.pp_utils.utils import (
             dict_to_tuple_helper,
@@ -229,12 +232,25 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
     @require_gpu(min_gpus=2)
     @require_package("paddlefleet")
     def test_pipeline_parallel_training(self):
-        from paddle.distributed import fleet
+        # PADDLEFORMERS_TESTING=1 python -m paddle.distributed.launch --gpus 0,1 --log_dir tmp/olmo3_pp \
+        #     python -m pytest tests/transformers/olmo3/test_modeling.py -k test_pipeline_parallel_training
+        self._check_pipeline_parallel_training(tp_size=1, learning_rate=0.01)
 
-        if paddle.distributed.get_world_size() != 2:
-            self.skipTest("Launch this test with two distributed workers for PP=2.")
+    @require_gpu(min_gpus=4)
+    @require_package("paddlefleet")
+    def test_pipeline_tensor_parallel_checkpoint_roundtrip(self):
+        # PADDLEFORMERS_TESTING=1 python -m paddle.distributed.launch --gpus 0,1,2,3 --log_dir tmp/olmo3_pp_tp \
+        #     python -m pytest tests/transformers/olmo3/test_modeling.py -k test_pipeline_tensor_parallel_checkpoint_roundtrip
+        self._check_pipeline_parallel_training(tp_size=2, learning_rate=0.0)
+
+    def _check_pipeline_parallel_training(self, tp_size, learning_rate):
+        from paddle.distributed import fleet
+        from safetensors.numpy import load_file
+
+        if paddle.distributed.get_world_size() != 2 * tp_size:
+            self.skipTest(f"Launch with {2 * tp_size} distributed workers for PP=2, TP={tp_size}.")
         strategy = fleet.DistributedStrategy()
-        strategy.hybrid_configs = dict(dp_degree=1, mp_degree=1, pp_degree=2, sharding_degree=1)
+        strategy.hybrid_configs = dict(dp_degree=1, mp_degree=tp_size, pp_degree=2, sharding_degree=1)
         strategy.pipeline_configs = dict(micro_batch_size=1, accumulate_steps=1)
         fleet.init(is_collective=True, strategy=strategy)
         with device_guard("gpu"):
@@ -267,10 +283,11 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                         model.save_pretrained(directories[0], safe_serialization=True)
                     paddle.distributed.barrier()
                     config.pipeline_model_parallel_size = 2
+                    config.tensor_model_parallel_size = tp_size
                     pipe = Olmo3ForCausalLMPipe.from_pretrained(directories[0], config=config, dtype="float32")
                     engine = fleet.distributed_model(pipe)
                     optimizer = fleet.distributed_optimizer(
-                        paddle.optimizer.SGD(learning_rate=0.01, parameters=pipe.parameters())
+                        paddle.optimizer.SGD(learning_rate=learning_rate, parameters=pipe.parameters())
                     )
                     before = [parameter.clone() for parameter in pipe.parameters()]
                     data = [dict(input_ids=input_ids), labels]
@@ -279,9 +296,27 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                     loss = engine.train_batch(data, optimizer).reshape([])
                     np.testing.assert_allclose(loss.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
                     self.assertTrue(all(paddle.isfinite(parameter).all().item() for parameter in pipe.parameters()))
-                    self.assertTrue(
-                        any(not paddle.equal_all(old, new).item() for old, new in zip(before, pipe.parameters()))
-                    )
+                    if learning_rate:
+                        self.assertTrue(
+                            any(not paddle.equal_all(old, new).item() for old, new in zip(before, pipe.parameters()))
+                        )
+                    else:
+                        for old, new in zip(before, pipe.parameters()):
+                            np.testing.assert_array_equal(old.numpy(), new.numpy())
+                        exported = str(Path(directories[0]) / "exported")
+                        pipe.save_pretrained(exported, safe_serialization=True)
+                        paddle.distributed.barrier()
+                        if paddle.distributed.get_rank() == 0:
+                            original_weights = {}
+                            exported_weights = {}
+                            for path in Path(directories[0]).glob("*.safetensors"):
+                                original_weights.update(load_file(str(path)))
+                            for path in Path(exported).glob("*.safetensors"):
+                                exported_weights.update(load_file(str(path)))
+                            self.assertTrue(original_weights)
+                            self.assertEqual(original_weights.keys(), exported_weights.keys())
+                            for name, value in original_weights.items():
+                                np.testing.assert_array_equal(exported_weights[name], value, err_msg=name)
                     paddle.distributed.barrier()
 
     def test_model(self):
