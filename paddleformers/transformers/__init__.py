@@ -105,6 +105,13 @@ import_structure = {
     ],
     "diff_transformer.tokenizer": ["DiffTransformerTokenizer"],
     "diff_transformer": [],
+    "aya_vision.configuration": ["AyaVisionConfig"],
+    "aya_vision.modeling": ["AyaVisionPreTrainedModel", "AyaVisionModel", "AyaVisionForConditionalGeneration"],
+    "aya_vision.processor": ["AyaVisionProcessor"],
+    "cohere2.configuration": ["Cohere2Config"],
+    "cohere2.modeling": ["Cohere2PreTrainedModel", "Cohere2Model", "Cohere2ForCausalLM"],
+    "siglip_vision_model.configuration": ["SiglipVisionConfig"],
+    "siglip_vision_model.modeling": ["SiglipVisionPretrainedModel", "SiglipVisionModel"],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v32.configuration": ["DeepseekV32Config"],
     "deepseek_v32.modeling": [
@@ -505,6 +512,17 @@ import_structure = {
     ],
     "ministral3.tokenizer": ["Mistral3Tokenizer"],
     "ministral3": [],
+    "stablelm": [],
+    "stablelm.configuration": ["StableLmConfig"],
+    "stablelm.modeling": [
+        "StableLmModel",
+        "StableLmForCausalLM",
+        "StableLmForCausalLMPipe",
+        "StableLmPretrainedModel",
+        "StableLmRotaryEmbedding",
+        "StableLmDecoderLayer",
+        "StableLmAttention",
+    ],
     "olmo2.configuration": ["Olmo2Config"],
     "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
     "olmo2": [],
@@ -633,6 +651,7 @@ if TYPE_CHECKING:
     from .shieldgemma2 import *
     from .glm_ocr import *
     from .ministral3 import *
+    from .stablelm import *
     from .molmo import *
     from .olmo2 import *
     from .intern_lm3 import *

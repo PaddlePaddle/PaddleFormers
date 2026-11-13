@@ -2,6 +2,7 @@
 |模型|PT / CPT|SFT|SFT-LoRA|DPO|DPO-LoRA|
 |-|-|-|-|-|-|
 |Cohere|✓|✓|✓|✓|✓|
+|StableLM|✓|✓|✓|✓|✓|
 |DeepSeekv3|✓|✓|✓|✓|✓|
 |🏛️ERNIE-4.5|✓|✓|✓|✓|✓|
 |Gemma3|✓|✓|✓|✓|✓|
@@ -20,6 +21,7 @@
 |Llama Guard 4|x|✓|✓|x|x|
 |🏛️ERNIE-4.5-VL|x|✓|✓|x|x|
 |Phi-4-multimodal|x|✓|✓|x|x|
+|AyaVision|x|✓|✓|x|x|
 |🏛️PaddleOCR-VL|x|✓|✓|x|x|
 |Molmo|x|✓|✓|x|x|
 |Qwen2.5-VL|x|✓|✓|x|x|
@@ -29,6 +31,7 @@
 |模型|TP + SP|PP|EP|CP|DP|FSDP|
 |-|-|-|-|-|-|-|
 |Cohere|✓|✓|-|x|✓|✓|
+|StableLM|✓|✓|-|x|✓|✓|
 |DeepSeekv3|✓|✓|✓|x|✓|✓|
 |🏛️ERNIE-4.5|✓|✓|✓|x|✓|✓|
 |Gemma3|x|✓|-|x|✓|✓|
@@ -47,6 +50,7 @@
 |Llama Guard 4|x|x|-|x|x|x|
 |🏛️ERNIE-4.5-VL|✓|✓|✓|x|✓|✓|
 |Phi-4-multimodal|x|x|-|x|✓|✓|
+|AyaVision|x|x|-|x|✓|✓|
 |🏛️PaddleOCR-VL|x|x|-|x|✓|✓|
 |Molmo|x|x|x|x|✓|✓|
 |Qwen2.5-VL|✓|x|-|x|✓|✓|

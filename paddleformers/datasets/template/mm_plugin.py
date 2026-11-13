@@ -477,6 +477,78 @@ class Phi4MultimodalPlugin(BasePlugin):
 
 
 @dataclass
+class AyaVisionPlugin(BasePlugin):
+    def _get_num_patches(self, images, mm_inputs):
+        num_patches = mm_inputs.get("num_patches", None)
+        if num_patches is not None:
+            if isinstance(num_patches, paddle.Tensor):
+                return [int(x) for x in num_patches.flatten().numpy().tolist()]
+            if isinstance(num_patches, np.ndarray):
+                return [int(x) for x in num_patches.reshape([-1]).tolist()]
+            if isinstance(num_patches, (list, tuple)):
+                return [int(x) for x in num_patches]
+            return [int(num_patches)]
+
+        pixel_values = mm_inputs.get("pixel_values", None)
+        if pixel_values is None or len(images) == 0:
+            return [1 for _ in images]
+
+        total_tiles = int(pixel_values.shape[0])
+        if total_tiles % len(images) != 0:
+            raise ValueError(
+                f"AyaVision cannot infer image patch counts: pixel_values has {total_tiles} tiles for {len(images)} images."
+            )
+        return [total_tiles // len(images) for _ in images]
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+
+        if not images:
+            self.masked_tokens = [self.image_token] if self.image_token is not None else []
+            return messages
+
+        num_patches = self._get_num_patches(images, mm_inputs)
+        processed_messages = deepcopy(messages)
+        image_index = 0
+        max_num_patches = 1
+        for message in processed_messages:
+            content = message["content"]
+            while IMAGE_PLACEHOLDER in content:
+                if image_index >= len(num_patches):
+                    raise ValueError("Number of image placeholders exceeds processed images.")
+                max_num_patches = max(max_num_patches, int(num_patches[image_index]))
+                content = content.replace(
+                    IMAGE_PLACEHOLDER, processor._prompt_split_image(num_patches[image_index]), 1
+                )
+                image_index += 1
+            message["content"] = content
+
+        if image_index != len(images):
+            raise ValueError("Number of image placeholders in messages does not match number of images.")
+
+        tile_tokens = [processor.tile_global_token] + [
+            f"{processor.tile_token}_{idx}" for idx in range(1, max_num_patches)
+        ]
+        self.masked_tokens = [
+            processor.img_patch_token,
+            processor.start_of_img_token,
+            processor.end_of_img_token,
+            *tile_tokens,
+        ]
+        return processed_messages
+
+
+@dataclass
 class PaddleOCRVLPlugin(BasePlugin):
     image_bos_token: str = "<|IMAGE_START|>"
     image_eos_token: str = "<|IMAGE_END|>"
@@ -1807,6 +1879,7 @@ PLUGINS = {
     "phi4_multimodal": Phi4MultimodalPlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,
+    "aya_vision": AyaVisionPlugin,
     "paddleocr_vl": PaddleOCRVLPlugin,
     "qwen3_vl": Qwen3VLPlugin,
     "glm4v": GLM4VPlugin,
