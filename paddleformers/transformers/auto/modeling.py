@@ -102,6 +102,7 @@ MAPPING_NAMES = OrderedDict(
         ("Gemma4Moe", "gemma4_moe"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
+        ("Mistral3", "mistral3"),
         ("StableLm", "stablelm"),
         ("Molmo", "molmo"),
         ("Olmo2", "olmo2"),
@@ -250,6 +251,9 @@ class _BaseAutoModelClass:
             )
         init_class = cls._name_mapping[model_name + "_Import_Class"]
         class_name = cls._name_mapping[init_class]
+        from .configuration import SPECIAL_MODEL_TYPE_TO_MODULE_NAME
+
+        class_name = SPECIAL_MODEL_TYPE_TO_MODULE_NAME.get(class_name, class_name)
         import_class = importlib.import_module(f"paddleformers.transformers.{class_name}.modeling")
         try:
             model_class = getattr(import_class, init_class)
