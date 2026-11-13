@@ -489,8 +489,8 @@ import_structure = {
     "openelm.modeling": [
         "OpenELMModel",
         "OpenELMForCausalLM",
+        "OpenELMForCausalLMPipe",
     ],
-    "openelm.tokenizer": ["OpenELMTokenizer"],
     "openelm": [],
     "olmo2.configuration": ["Olmo2Config"],
     "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],

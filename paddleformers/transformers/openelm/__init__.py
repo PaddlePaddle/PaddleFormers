@@ -24,8 +24,8 @@ import_structure = {
     "modeling": [
         "OpenELMModel",
         "OpenELMForCausalLM",
+        "OpenELMForCausalLMPipe",
     ],
-    "tokenizer": ["OpenELMTokenizer"],
 }
 
 if TYPE_CHECKING:

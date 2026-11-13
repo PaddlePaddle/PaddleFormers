@@ -43,59 +43,19 @@ def compute_heads(model_dim: int, head_dim: int) -> int:
         raise ValueError(f"Model dimension should be divisible by head dimension. Got: {model_dim} and {head_dim}.")
 
 
-OpenELM_CONFIGS = {
-    "OpenELM-270M": dict(
-        num_transformer_layers=16,
-        model_dim=1280,
-        head_dim=64,
-        num_gqa_groups=4,
-        normalize_qk_projections=True,
-        share_input_output_layers=True,
-        ffn_multipliers=(0.5, 4.0),
-        qkv_multipliers=(0.5, 1.0),
-    ),
-    "OpenELM-450M": dict(
-        num_transformer_layers=20,
-        model_dim=1536,
-        head_dim=64,
-        num_gqa_groups=4,
-        normalize_qk_projections=True,
-        share_input_output_layers=True,
-        ffn_multipliers=(0.5, 4.0),
-        qkv_multipliers=(0.5, 1.0),
-    ),
-    "OpenELM-1_1B": dict(
-        num_transformer_layers=28,
-        model_dim=2048,
-        head_dim=64,
-        num_gqa_groups=4,
-        normalize_qk_projections=True,
-        share_input_output_layers=True,
-        ffn_multipliers=(0.5, 4.0),
-        qkv_multipliers=(0.5, 1.0),
-    ),
-    "OpenELM-3B": dict(
-        num_transformer_layers=36,
-        model_dim=3072,
-        head_dim=128,
-        num_gqa_groups=4,
-        normalize_qk_projections=True,
-        share_input_output_layers=True,
-        ffn_multipliers=(0.5, 4.0),
-        qkv_multipliers=(0.5, 1.0),
-    ),
-}
-
-
 class OpenELMConfig(PretrainedConfig):
-    """Configuration class for OpenELM model."""
+    """OpenELM configuration; standard attention-head aliases expose per-layer lists."""
 
     model_type = "openelm"
-
-    @property
-    def num_hidden_layers(self) -> int:
-        """Alias for num_transformer_layers, needed by DynamicCache."""
-        return self.num_transformer_layers
+    attribute_map = {
+        "hidden_size": "model_dim",
+        "num_hidden_layers": "num_transformer_layers",
+        "num_attention_heads": "num_query_heads",
+        "num_key_value_heads": "num_kv_heads",
+        "max_position_embeddings": "max_context_length",
+        "tie_word_embeddings": "share_input_output_layers",
+        "num_classes": "num_labels",
+    }
 
     def __init__(
         self,
@@ -113,22 +73,37 @@ class OpenELMConfig(PretrainedConfig):
         activation_fn_name: str = "swish",
         normalization_layer_name: str = "rms_norm",
         normalize_qk_projections: bool = False,
-        share_input_output_layers: bool = False,
+        share_input_output_layers: Optional[bool] = None,
         rope_freq_constant: int = 10000,
         rope_max_length: int = 4096,
         initializer_range: float = 0.02,
+        rms_norm_eps: float = 1e-6,
+        fuse_rms_norm: bool = False,
         use_cache: bool = True,
         bos_token_id: int = 1,
         eos_token_id: int = 2,
         **kwargs,
     ) -> None:
+        model_dim = kwargs.pop("hidden_size", model_dim)
+        num_transformer_layers = kwargs.pop("num_hidden_layers", num_transformer_layers)
+        max_context_length = kwargs.pop("max_position_embeddings", max_context_length)
+        standard_q_heads = kwargs.pop("num_attention_heads", None)
+        standard_kv_heads = kwargs.pop("num_key_value_heads", None)
+        tie_word_embeddings = kwargs.pop("tie_word_embeddings", False)
+        if share_input_output_layers is None:
+            share_input_output_layers = tie_word_embeddings
+        if head_dim <= 0 or head_dim % 2:
+            raise ValueError("head_dim must be positive and even for rotary embeddings.")
+        if num_transformer_layers <= 0 or num_gqa_groups <= 0 or ffn_dim_divisor <= 0:
+            raise ValueError("Layer count, GQA groups and FFN divisor must be positive.")
+        if normalization_layer_name != "rms_norm":
+            raise ValueError("OpenELM only supports rms_norm normalization.")
         self.vocab_size = vocab_size
         self.max_context_length = max_context_length
         self.num_transformer_layers = num_transformer_layers
         self.model_dim = model_dim
         self.head_dim = head_dim
         self.qkv_multipliers = qkv_multipliers
-        self.num_query_heads = num_query_heads
         self.num_gqa_groups = num_gqa_groups
         self.ffn_multipliers = ffn_multipliers
         self.ffn_with_glu = ffn_with_glu
@@ -139,13 +114,23 @@ class OpenELMConfig(PretrainedConfig):
         self.share_input_output_layers = share_input_output_layers
         self.rope_freq_constant = rope_freq_constant
         self.rope_max_length = rope_max_length
-        self.num_query_heads = (
-            compute_heads(model_dim=model_dim, head_dim=head_dim) if num_query_heads is None else num_query_heads
-        )
         self.initializer_range = initializer_range
+        self.rms_norm_eps = rms_norm_eps
 
         self.__post_init__()
+        for name, supplied, derived in (
+            ("num_attention_heads", standard_q_heads, self.num_query_heads),
+            ("num_key_value_heads", standard_kv_heads, self.num_kv_heads),
+        ):
+            if supplied is not None:
+                values = [supplied] * num_transformer_layers if isinstance(supplied, int) else list(supplied)
+                if values != derived:
+                    raise ValueError(f"{name} must match the per-layer heads derived from qkv_multipliers.")
+        kwargs.setdefault("apply_rope_fusion", False)
         super().__init__(
+            hidden_size=model_dim,
+            tie_word_embeddings=share_input_output_layers,
+            fuse_rms_norm=fuse_rms_norm,
             use_cache=use_cache,
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id,
@@ -153,10 +138,7 @@ class OpenELMConfig(PretrainedConfig):
         )
 
     def __post_init__(self) -> None:
-        if self.num_gqa_groups is not None:
-            head_multiple_of = self.num_gqa_groups
-        else:
-            head_multiple_of = 2
+        head_multiple_of = self.num_gqa_groups
 
         if isinstance(self.qkv_multipliers, Number):
             qkv_dim = make_divisible(
@@ -208,8 +190,8 @@ class OpenELMConfig(PretrainedConfig):
                 f"FFN multipliers should be a single number or a list containing exactly two numbers. Got: {self.ffn_multipliers}."
             )
 
-        for layer_idx in range(len(query_dims)):
-            assert num_query_heads[layer_idx] % num_kv_heads[layer_idx] == 0
+        if len(ffn_multipliers) != self.num_transformer_layers:
+            raise ValueError("ffn_multipliers must provide one value per transformer layer.")
 
         self.num_query_heads = num_query_heads
         self.num_kv_heads = num_kv_heads

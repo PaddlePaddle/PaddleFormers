@@ -12,92 +12,225 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional, Tuple, Union
+from copy import copy
+from typing import Optional, Tuple, Union
 
 import paddle
 import paddle.nn as nn
-import paddle.nn.functional as F
 from paddle import Tensor
+from paddle.distributed.fleet.meta_parallel import VocabParallelEmbedding
+from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.criterion.interface import CriterionLayer
+from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.linear import Linear as GeneralLinear
+from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.mlp import fused_swiglu
+from ...nn.norm import Norm as GeneralNorm
+from ...nn.norm import RMSNorm
+from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
+from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
 from ..cache_utils import Cache, DynamicCache
+from ..linear_utils import (
+    ColumnParallelLinear,
+    ColumnSequenceParallelLinear,
+    RowParallelLinear,
+    RowSequenceParallelLinear,
+)
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import OpenELMConfig, make_divisible
 
 
-class OpenELMRMSNorm(nn.Layer):
-    """RMS Normalization layer."""
-
-    def __init__(self, num_features: int, eps: float = 1e-6):
-        """
-        Initialize the OpenELMRMSNorm normalization layer.
-
-        Args:
-            num_features (int): The dimension of the input tensor.
-            eps (float, optional): A small value added to the denominator for numerical stability. Default is 1e-6.
-
-        Attributes:
-            eps (float): A small value added to the denominator for numerical stability.
-            weight (paddle.Parameter): Learnable scaling parameter.
-
-        """
-        super().__init__()
-        self.eps = eps
-        self.weight = paddle.create_parameter(
-            shape=[num_features],
-            dtype="float32",
-            default_initializer=paddle.nn.initializer.Constant(1.0),
-        )
-        self.num_features = num_features
-
-    def _norm(self, x: Tensor) -> Tensor:
-        return x * paddle.rsqrt(paddle.mean(paddle.pow(x, 2), axis=-1, keepdim=True) + self.eps)
-
-    def forward(self, x: Tensor) -> Tensor:
-        output = self._norm(x.astype(paddle.float32)).astype(x.dtype)
-        return output * self.weight
-
-    def extra_repr(self) -> str:
-        return super().extra_repr() + f"num_features={self.num_features}, eps={self.eps}"
-
-
-class OpenELMPreTrainedModel(PretrainedModel):
+class OpenELMPretrainedModel(PretrainedModel):
     """An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
     models.
     """
 
     config_class = OpenELMConfig
-    base_model_prefix = "transformer"
+    base_model_prefix = "model"
     _no_split_modules = ["OpenELMDecoderLayer"]
     _skip_keys_device_placement = "past_key_values"
-    transpose_weight_keys = ["qkv_proj", "out_proj", "proj_1", "proj_2"]
-
-    def __init__(self, *inputs, **kwargs) -> None:
-        super().__init__(*inputs, **kwargs)
+    transpose_weight_keys = [
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+    ]
 
     def _init_weights(self, module: nn.Layer) -> None:
         """Initialize the weights."""
-        if isinstance(module, nn.Linear):
+        if isinstance(
+            module,
+            (
+                nn.Linear,
+                ColumnParallelLinear,
+                RowParallelLinear,
+                ColumnSequenceParallelLinear,
+                RowSequenceParallelLinear,
+            ),
+        ):
             module.weight.set_value(
                 paddle.normal(
                     mean=0.0,
-                    std=self.config.initializer_range,
+                    std=getattr(module, "_openelm_init_std", module.weight.shape[0] ** -0.5),
                     shape=module.weight.shape,
                 ).cast(module.weight.dtype)
             )
             if module.bias is not None:
                 module.bias.set_value(paddle.zeros(module.bias.shape, dtype=module.bias.dtype))
-        elif isinstance(module, nn.Embedding):
+        elif isinstance(module, (nn.Embedding, VocabParallelEmbedding)):
             module.weight.set_value(
                 paddle.normal(
                     mean=0.0,
-                    std=self.config.initializer_range,
+                    std=module.weight.shape[1] ** -0.5,
                     shape=module.weight.shape,
                 ).cast(module.weight.dtype)
             )
-        elif isinstance(module, OpenELMRMSNorm):
+        elif isinstance(module, RMSNorm):
             module.weight.set_value(paddle.ones(module.weight.shape, dtype=module.weight.dtype))
+        elif isinstance(module, GeneralLMHead) and not self.config.share_input_output_layers:
+            module.weight.set_value(
+                paddle.normal(mean=0.0, std=self.config.initializer_range, shape=module.weight.shape).cast(
+                    module.weight.dtype
+                )
+            )
+
+    @staticmethod
+    def _validate_config(config):
+        config.tensor_model_parallel_size = max(config.tensor_model_parallel_size, 1)
+        tp_size = config.tensor_model_parallel_size
+        if config.sequence_parallel and tp_size == 1:
+            raise ValueError("Sequence parallelism requires tensor_model_parallel_size > 1.")
+        for layer_idx, (q_heads, kv_heads) in enumerate(zip(config.num_query_heads, config.num_kv_heads)):
+            width = int(make_divisible(config.ffn_multipliers[layer_idx] * config.model_dim, config.ffn_dim_divisor))
+            if q_heads % tp_size or kv_heads % tp_size or width % tp_size:
+                raise ValueError(
+                    f"Layer {layer_idx} query/KV heads and MLP width must be divisible by TP size {tp_size}."
+                )
+        if config._attn_implementation not in ALL_ATTENTION_FUNCTIONS:
+            raise ValueError(f"Unknown attention backend: {config._attn_implementation}.")
+        if config.apply_rope_fusion:
+            raise ValueError("OpenELM currently requires apply_rope_fusion=False.")
+        if config.fuse_swiglu and (not config.ffn_with_glu or config.activation_fn_name != "swish"):
+            raise ValueError("fuse_swiglu requires a GLU FFN with swish activation.")
+
+    @staticmethod
+    def _prepare_attention_mask(
+        config,
+        inputs_embeds,
+        batch_size,
+        seq_length,
+        cache_length,
+        attention_mask=None,
+        attn_mask_startend_row_indices=None,
+    ):
+        if cache_length and attn_mask_startend_row_indices is not None:
+            indices = attn_mask_startend_row_indices
+            if indices.ndim == 3:
+                indices = indices.unsqueeze(-1)
+            dense = _gen_from_sparse_attn_mask_indices(indices, inputs_embeds.dtype, is_causal=indices.shape[-1] != 4)
+            return dense[:, :, cache_length : cache_length + seq_length, :], None
+        # Preserve complete masks and bottom-right causal alignment for chunked decode.
+        mask_config = config
+        if (attention_mask is not None and attention_mask.ndim >= 3) or (cache_length and seq_length > 1):
+            mask_config = copy(config)
+            mask_config._attn_implementation = "eager"
+
+        def prepare_mask(attention_mask, **kwargs):
+            if attention_mask is not None and attention_mask.ndim >= 3 and paddle.is_floating_point(attention_mask):
+                return attention_mask.unsqueeze(1) if attention_mask.ndim == 3 else attention_mask
+            return PretrainedModel._prepare_decoder_attention_mask(attention_mask=attention_mask, **kwargs)
+
+        return create_causal_mask_and_row_indices(
+            config=mask_config,
+            inputs_embeds=inputs_embeds,
+            batch_size=batch_size,
+            seq_length=seq_length,
+            cache_length=cache_length,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            prepare_decoder_attention_mask=prepare_mask,
+        )
+
+    @classmethod
+    def _gen_aoa_config(cls, config: OpenELMConfig):
+        """Map external names and contiguous fused projections to the model layout."""
+        return cls._build_aoa_config(config, inverse=False)
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: OpenELMConfig):
+        """Restore external names and contiguous fused projection layout."""
+        return cls._build_aoa_config(config, inverse=True)
+
+    @classmethod
+    def _build_aoa_config(cls, config: OpenELMConfig, inverse: bool):
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+        statements = []
+
+        def map_weight(source, target, transpose=False):
+            if inverse:
+                source, target = target, source
+            statements.append(f"{source}{'^T' if transpose else ''} -> {target}")
+
+        map_weight("transformer.token_embeddings.weight", f"{model_prefix}embed_tokens.weight")
+        map_weight("transformer.norm.weight", f"{model_prefix}norm.weight")
+        for layer_idx in range(config.num_transformer_layers):
+            source = f"transformer.layers.{layer_idx}"
+            target = f"{model_prefix}layers.{layer_idx}"
+            map_weight(f"{source}.attn_norm.weight", f"{target}.input_layernorm.weight")
+            map_weight(f"{source}.ffn_norm.weight", f"{target}.post_attention_layernorm.weight")
+            map_weight(f"{source}.attn.out_proj.weight", f"{target}.self_attn.o_proj.weight", transpose=True)
+            if config.normalize_qk_projections:
+                for norm in ("q_norm", "k_norm"):
+                    map_weight(f"{source}.attn.{norm}.weight", f"{target}.self_attn.{norm}.weight")
+
+            # Split into KV-width chunks: Q and KV widths differ under GQA.
+            groups = config.num_query_heads[layer_idx] // config.num_kv_heads[layer_idx]
+            q_chunks = [f"openelm_qkv_tmp.{layer_idx}.q_{i}" for i in range(groups)]
+            k_weight = f"{target}.self_attn.k_proj.weight"
+            v_weight = f"{target}.self_attn.v_proj.weight"
+            q_weight = f"{target}.self_attn.q_proj.weight"
+            chunks = ", ".join(q_chunks + [k_weight, v_weight])
+            fused = f"{source}.attn.qkv_proj.weight"
+            if inverse:
+                statements.append(
+                    f"{q_weight} -> {', '.join(q_chunks)}, axis=1" if groups > 1 else f"{q_weight} -> {q_chunks[0]}"
+                )
+                statements.append(f"{chunks} -> openelm_qkv_tmp.{layer_idx}.weight, axis=1")
+                statements.append(f"openelm_qkv_tmp.{layer_idx}.weight^T -> {fused}")
+            else:
+                statements.append(f"{fused}^T -> {chunks}, axis=1")
+                statements.append(
+                    f"{', '.join(q_chunks)} -> {q_weight}, axis=1" if groups > 1 else f"{q_chunks[0]} -> {q_weight}"
+                )
+
+            map_weight(f"{source}.ffn.proj_2.weight", f"{target}.mlp.down_proj.weight", transpose=True)
+            if config.ffn_with_glu:
+                gate = f"{target}.mlp.gate_proj.weight"
+                up = f"{target}.mlp.up_proj.weight"
+                if inverse:
+                    statements.append(f"{gate}^T, {up}^T -> {source}.ffn.proj_1.weight, axis=0")
+                else:
+                    statements.append(f"{source}.ffn.proj_1.weight^T -> {gate}, {up}, axis=1")
+            else:
+                map_weight(f"{source}.ffn.proj_1.weight", f"{target}.mlp.up_proj.weight", transpose=True)
+
+        if cls != cls.base_model_class:
+            if config.share_input_output_layers:
+                if not inverse:
+                    statements.append("transformer.token_embeddings.weight -> lm_head.weight")
+                else:
+                    statements.append("lm_head.weight -> _")
+            else:
+                map_weight("lm_head.weight", "lm_head.weight")
+        return {"aoa_statements": statements}
 
 
 def _rotate_half(x: Tensor) -> Tensor:
@@ -110,159 +243,89 @@ def _apply_rotary_pos_emb(x: Tensor, pos_sin: Tensor, pos_cos: Tensor) -> Tensor
 
 
 class OpenELMRotaryEmbedding(nn.Layer):
-    """The rotary position embeddings (aka RoPE) from `RoFormer <https://arxiv.org/abs/2104.09864>`_.
+    """OpenELM rotary frequencies using explicit per-sample positions."""
 
-    RoPE encodes the position information of tokens using a rotation matrix, and is able to capture
-    explicit relative positional dependencies.
-
-    Args:
-        model_dim: The dimensionality of the model's hidden state.
-        max_seq_length: Maximum sequence length.
-        freq_constant: A constant used for computing frequencies.
-    """
-
-    def __init__(self, model_dim: int, max_seq_length: int, freq_constant: int = 10000) -> None:
-        inv_freq = 1.0 / (freq_constant ** (paddle.arange(0, model_dim, 2, dtype="float32") / model_dim))
+    def __init__(self, config: OpenELMConfig):
         super().__init__()
-
-        self.model_dim = model_dim
-        self.freq_constant = freq_constant
-        self.max_seq_length = max_seq_length
-
+        self.config = config
+        inv_freq = 1.0 / (
+            config.rope_freq_constant ** (paddle.arange(0, config.head_dim, 2, dtype="float32") / config.head_dim)
+        )
         self.register_buffer("inv_freq", inv_freq, persistable=False)
-        self._cached_cos = None
-        self._cached_sin = None
-        self._cached_seq_length = max_seq_length
-        self._compute_sin_cos_embeddings(max_seq_length)
 
-    def extra_repr(self) -> str:
-        return (
-            f"\tmodel_dim={self.model_dim}, max_seq_length={self.max_seq_length}, freq_constant={self.freq_constant}"
-        )
-
-    def _compute_sin_cos_embeddings(
-        self,
-        key_len: int,
-        key_place=None,
-        key_dtype: paddle.dtype = paddle.float32,
-    ) -> None:
-        """Compute sine and cos embeddings.
-
-        Recalculate if any of:
-            1. key_len > cached seq length
-            2. caches are empty
-            3. device/dtype mismatch
-        """
-        need_recompute = key_len > self._cached_seq_length or self._cached_cos is None or self._cached_sin is None
-        if not need_recompute and key_place is not None:
-            need_recompute = self._cached_cos.place != key_place or self._cached_sin.place != key_place
-        if not need_recompute and self._cached_cos is not None:
-            need_recompute = self._cached_cos.dtype != key_dtype or self._cached_sin.dtype != key_dtype
-
-        if need_recompute:
-            self._cached_seq_length = max(key_len, self._cached_seq_length)
-
-            pos_index = paddle.arange(
-                self._cached_seq_length,
-                dtype="float32",
-            )
-            pos_index_theta = paddle.einsum("i,j->ij", pos_index, self.inv_freq)
-            emb = paddle.concat((pos_index_theta, pos_index_theta), axis=-1)
-
-            cos_emb = emb.cos().cast(key_dtype)
-            sin_emb = emb.sin().cast(key_dtype)
-
-            self._cached_cos = cos_emb[None, None, :, :]
-            self._cached_sin = sin_emb[None, None, :, :]
-
-    def forward(
-        self,
-        query: paddle.Tensor,
-        key: paddle.Tensor,
-    ) -> Tuple[paddle.Tensor, paddle.Tensor]:
-        """Apply RoPE to query and key embeddings.
-
-        Args:
-            query: Query embeddings.
-            key: Key embeddings.
-
-        Returns:
-            Tuple of query and key embeddings with positional information.
-        """
-        dim = key.shape[-1]
-        key_len = key.shape[2]
-        query_len = query.shape[2]
-
-        assert dim == self.model_dim
-        assert key.place == query.place
-        assert key.dtype == query.dtype
-
-        assert key_len >= query_len, "Number of keys has to be greater than or equal to number of queries."
-
-        query_float = query.astype(paddle.float32)
-        key_float = key.astype(paddle.float32)
-
-        self._compute_sin_cos_embeddings(key_len, key_place=key_float.place, key_dtype=key_float.dtype)
-        query_float = _apply_rotary_pos_emb(
-            x=query_float,
-            pos_sin=self._cached_sin[..., key_len - query_len : key_len, :],
-            pos_cos=self._cached_cos[..., key_len - query_len : key_len, :],
-        )
-        key_float = _apply_rotary_pos_emb(
-            x=key_float,
-            pos_sin=self._cached_sin[..., :key_len, :],
-            pos_cos=self._cached_cos[..., :key_len, :],
-        )
-
-        return query_float.astype(query.dtype), key_float.astype(key.dtype)
+    def forward(self, x: Tensor, position_ids: Tensor) -> Tuple[Tensor, Tensor]:
+        with paddle.amp.auto_cast(enable=False):
+            inv_freq = self.inv_freq
+            if inv_freq.dtype != paddle.float32:
+                # Layer.to(dtype) can cast non-persistent buffers as well.
+                inv_freq = 1.0 / (
+                    self.config.rope_freq_constant
+                    ** (paddle.arange(0, self.config.head_dim, 2, dtype="float32") / self.config.head_dim)
+                )
+            freqs = position_ids.astype("float32").unsqueeze(-1) * inv_freq
+            emb = paddle.concat([freqs, freqs], axis=-1)
+            return emb.cos(), emb.sin()
 
 
-class OpenELMMultiHeadCausalAttention(nn.Layer):
+class OpenELMAttention(nn.Layer):
     """Multi-head causal attention with optional Group Query Attention (GQA)."""
 
     def __init__(self, config: OpenELMConfig, layer_idx: int) -> None:
         super().__init__()
         self.layer_idx = layer_idx
+        self.config = config
         head_dim = config.head_dim
         q_heads = config.num_query_heads[layer_idx]
         k_heads = config.num_kv_heads[layer_idx]
         v_heads = config.num_kv_heads[layer_idx]
+        tp_size = max(config.tensor_model_parallel_size, 1)
+        if q_heads % tp_size or k_heads % tp_size:
+            raise ValueError("Query and KV head counts must be divisible by the tensor parallel size.")
 
-        self.qkv_proj = nn.Linear(
-            in_features=config.model_dim,
-            out_features=(q_heads + k_heads + v_heads) * head_dim,
-            bias_attr=False,
+        self.q_proj = GeneralLinear.create(
+            config.model_dim, q_heads * head_dim, has_bias=False, config=config, tp_plan="colwise"
         )
-
-        self.pos_embedding = OpenELMRotaryEmbedding(
-            model_dim=config.head_dim,
-            max_seq_length=config.rope_max_length,
-            freq_constant=config.rope_freq_constant,
+        self.q_proj._openelm_init_std = config.model_dim**-0.5
+        self.k_proj = GeneralLinear.create(
+            config.model_dim, k_heads * head_dim, has_bias=False, config=config, tp_plan="colwise"
         )
+        self.k_proj._openelm_init_std = config.model_dim**-0.5
+        self.v_proj = GeneralLinear.create(
+            config.model_dim, v_heads * head_dim, has_bias=False, config=config, tp_plan="colwise"
+        )
+        self.v_proj._openelm_init_std = config.model_dim**-0.5
 
         if config.normalize_qk_projections:
-            self.q_norm = OpenELMRMSNorm(
-                num_features=config.head_dim,
+            self.q_norm = GeneralNorm.create(
+                config,
+                hidden_size=config.head_dim,
+                norm_eps=config.rms_norm_eps,
+                input_is_parallel=config.tensor_model_parallel_size > 1,
             )
-            self.k_norm = OpenELMRMSNorm(
-                num_features=config.head_dim,
+            self.k_norm = GeneralNorm.create(
+                config,
+                hidden_size=config.head_dim,
+                norm_eps=config.rms_norm_eps,
+                input_is_parallel=config.tensor_model_parallel_size > 1,
             )
         else:
             self.q_norm = None
             self.k_norm = None
 
-        self.out_proj = nn.Linear(
-            in_features=q_heads * head_dim,
-            out_features=config.model_dim,
-            bias_attr=False,
+        self.o_proj = GeneralLinear.create(
+            q_heads * head_dim, config.model_dim, has_bias=False, config=config, tp_plan="rowwise"
         )
 
+        self.o_proj._openelm_init_std = (config.model_dim**-0.5) * ((2 * config.num_transformer_layers) ** -0.5)
+
         self.head_dim = config.head_dim
-        self.num_q_heads = q_heads
-        self.num_k_heads = k_heads
-        self.num_v_heads = v_heads
-        self.transformer_dim = config.model_dim
-        self.num_groups = self.num_q_heads // self.num_k_heads
+        self.num_q_heads = q_heads // tp_size
+        self.num_k_heads = k_heads // tp_size
+        self.num_v_heads = v_heads // tp_size
+        self.model_dim = config.model_dim
+        self.num_key_value_groups = self.num_q_heads // self.num_k_heads
+        self.scaling = self.head_dim**-0.5
+        self.is_causal = True
 
     def extra_repr(self) -> str:
         return (
@@ -272,91 +335,65 @@ class OpenELMMultiHeadCausalAttention(nn.Layer):
 
     def forward(
         self,
-        hidden_states: paddle.Tensor,
-        attention_mask: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Cache] = None,
+        hidden_states: Tensor,
+        attention_mask: Optional[Tensor] = None,
+        position_embeddings: Optional[Tuple[Tensor, Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
+        attn_mask_startend_row_indices: Optional[Tensor] = None,
         output_attentions: bool = False,
-        use_cache: bool = False,
-        cache_position: Optional[paddle.Tensor] = None,
-    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
-        """Forward pass of multi-head self-attention.
-
-        Args:
-            hidden_states: Input tensor [batch, seq_len, model_dim].
-            past_key_value: Cached keys and values.
-            output_attentions: Whether to output attention weights.
-            use_cache: Whether to use kv-cache for generation.
-            cache_position: Cache position indices.
-
-        Returns:
-            Output tensor, optionally with cached keys and values.
-        """
-
-        # scaled_dot_product_attention does not return attention weights, set output_attentions to False
-        output_attentions = False
-        batch_size, seq_length, d_model = hidden_states.shape
-
-        # [B, S, d] --> [B, S, (q_h + k_h + v_h) * h]
-        qkv = self.qkv_proj(hidden_states)
-        # [B, S, (q_h + k_h + v_h) * h] --> [B, S, (q_h + k_h + v_h), h]
-        qkv = qkv.reshape(
-            [
-                batch_size,
-                seq_length,
-                self.num_q_heads + self.num_k_heads + self.num_v_heads,
-                self.head_dim,
-            ]
+    ):
+        if self.config.sequence_parallel:
+            seq_length = self.config.max_sequence_length
+            batch_size = hidden_states.shape[0] * self.config.tensor_model_parallel_size // seq_length
+        else:
+            batch_size, seq_length, _ = hidden_states.shape
+        queries = (
+            self.q_proj(hidden_states)
+            .reshape([batch_size, seq_length, self.num_q_heads, self.head_dim])
+            .transpose([0, 2, 1, 3])
         )
-        # [B, S, (q_h + k_h + v_h), h] --> [B, (q_h + k_h + v_h), S, h]
-        qkv = qkv.transpose([0, 2, 1, 3])
-        # [B, (q_h + k_h + v_h), S, h] --> [B, q_h, S, h], [B, k_h, S, h], [B, v_h, S, h]
-        queries, keys, values = paddle.split(
-            qkv,
-            [self.num_q_heads, self.num_k_heads, self.num_v_heads],
-            axis=1,
+        keys = (
+            self.k_proj(hidden_states)
+            .reshape([batch_size, seq_length, self.num_k_heads, self.head_dim])
+            .transpose([0, 2, 1, 3])
         )
-
+        values = (
+            self.v_proj(hidden_states)
+            .reshape([batch_size, seq_length, self.num_v_heads, self.head_dim])
+            .transpose([0, 2, 1, 3])
+        )
         if self.q_norm is not None:
             queries = self.q_norm(queries)
-
-        if self.k_norm is not None:
             keys = self.k_norm(keys)
-
-        past_key_value = getattr(self, "past_key_value", past_key_value)
-
-        if past_key_value is not None:
-            cache_kwargs = {"cache_position": cache_position}
-            keys, values = past_key_value.update(keys, values, self.layer_idx, cache_kwargs)
-
-        # Add positional embedding
-        queries, keys = self.pos_embedding(queries, keys)
-
-        if self.num_groups != 1:
-            # GQA: [B, k_h, S, h] --> [B, q_h, S, h]
-            keys = paddle.repeat_interleave(keys, self.num_groups, axis=1)
-            values = paddle.repeat_interleave(values, self.num_groups, axis=1)
-
-        causal_mask = attention_mask
-        if attention_mask is not None and cache_position is not None:
-            causal_mask = causal_mask[:, :, cache_position, : keys.shape[-2]]
-
-        scale = self.head_dim**-0.5
-        # [B, q_h, S_q, h] x [B, q_h, h, S_k] -> [B, q_h, S_q, S_k]
-        attn_weights = paddle.matmul(queries * scale, keys, transpose_y=True)
-        if causal_mask is not None:
-            attn_weights = attn_weights + causal_mask
-        attn_weights = F.softmax(attn_weights, axis=-1)
-        attn_output = paddle.matmul(attn_weights, values)
-
-        attn_output = attn_output.transpose([0, 2, 1, 3])
-        attn_output = attn_output.reshape([batch_size, seq_length, self.num_q_heads * self.head_dim])
-        attn_output = self.out_proj(attn_output)
-        if not output_attentions:
-            attn_weights = None
-        return attn_output, attn_weights, past_key_value
+        cos, sin = position_embeddings
+        queries = _apply_rotary_pos_emb(queries.astype("float32"), sin.unsqueeze(1), cos.unsqueeze(1)).astype(
+            queries.dtype
+        )
+        keys = _apply_rotary_pos_emb(keys.astype("float32"), sin.unsqueeze(1), cos.unsqueeze(1)).astype(keys.dtype)
+        if past_key_values is not None:
+            keys, values = past_key_values.update(keys, values, self.layer_idx)
+        backend = self.config._attn_implementation
+        if backend == "flashmask" and attention_mask is not None:
+            backend = "sdpa"
+        if output_attentions and backend in ("sdpa", "flashmask"):
+            raise ValueError("Attention weights are only available with the eager attention backend.")
+        attention_interface = ALL_ATTENTION_FUNCTIONS[backend]
+        attn_output, attn_weights = attention_interface(
+            self,
+            query=queries,
+            key=keys,
+            value=values,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            scaling=self.scaling,
+            dropout=0.0,
+        )
+        if self.config.sequence_parallel:
+            attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
+        return self.o_proj(attn_output), attn_weights
 
 
-class OpenELMFeedForwardNetwork(nn.Layer):
+class OpenELMMLP(nn.Layer):
     """Feed-forward network with optional GLU."""
 
     def __init__(self, config: OpenELMConfig, layer_idx: int) -> None:
@@ -368,31 +405,21 @@ class OpenELMFeedForwardNetwork(nn.Layer):
                 divisor=config.ffn_dim_divisor,
             )
         )
-        if config.ffn_with_glu:
-            # FFN with Gated linear unit (https://arxiv.org/abs/2002.05202v1)
-            self.proj_1 = nn.Linear(
-                in_features=config.model_dim,
-                out_features=2 * intermediate_dim,
-                bias_attr=False,
+        self.ffn_with_glu = config.ffn_with_glu
+        self.fuse_swiglu = config.fuse_swiglu
+        if self.ffn_with_glu:
+            self.gate_proj = GeneralLinear.create(
+                config.model_dim, intermediate_dim, has_bias=False, config=config, tp_plan="colwise"
             )
-            self.proj_2 = nn.Linear(
-                in_features=intermediate_dim,
-                out_features=config.model_dim,
-                bias_attr=False,
-            )
-            self.ffn_with_glu = True
-        else:
-            self.proj_1 = nn.Linear(
-                in_features=config.model_dim,
-                out_features=intermediate_dim,
-                bias_attr=False,
-            )
-            self.proj_2 = nn.Linear(
-                in_features=intermediate_dim,
-                out_features=config.model_dim,
-                bias_attr=False,
-            )
-            self.ffn_with_glu = False
+            self.gate_proj._openelm_init_std = config.model_dim**-0.5
+        self.up_proj = GeneralLinear.create(
+            config.model_dim, intermediate_dim, has_bias=False, config=config, tp_plan="colwise"
+        )
+        self.up_proj._openelm_init_std = config.model_dim**-0.5
+        self.down_proj = GeneralLinear.create(
+            intermediate_dim, config.model_dim, has_bias=False, config=config, tp_plan="rowwise"
+        )
+        self.down_proj._openelm_init_std = (config.model_dim**-0.5) * ((2 * config.num_transformer_layers) ** -0.5)
 
         if config.activation_fn_name == "swish":
             self.act = nn.Silu()
@@ -408,12 +435,10 @@ class OpenELMFeedForwardNetwork(nn.Layer):
 
     def forward(self, x: Tensor) -> Tensor:
         if self.ffn_with_glu:
-            y_12 = self.proj_1(x)
-            y_1, y_2 = paddle.chunk(y_12, chunks=2, axis=-1)
-            y = self.act(y_1) * y_2
-            return self.proj_2(y)
-        else:
-            return self.proj_2(self.act(self.proj_1(x)))
+            gate, up = self.gate_proj(x), self.up_proj(x)
+            hidden = fused_swiglu(paddle.concat([gate, up], axis=-1)) if self.fuse_swiglu else self.act(gate) * up
+            return self.down_proj(hidden)
+        return self.down_proj(self.act(self.up_proj(x)))
 
 
 class OpenELMDecoderLayer(nn.Layer):
@@ -421,69 +446,49 @@ class OpenELMDecoderLayer(nn.Layer):
 
     def __init__(self, config: OpenELMConfig, layer_idx: int) -> None:
         super().__init__()
-        self.attn = OpenELMMultiHeadCausalAttention(config=config, layer_idx=layer_idx)
-        self.ffn = OpenELMFeedForwardNetwork(config=config, layer_idx=layer_idx)
-        self.ffn_norm = OpenELMRMSNorm(
-            num_features=config.model_dim,
+        self.config = config
+        self.self_attn = OpenELMAttention(config=config, layer_idx=layer_idx)
+        self.mlp = OpenELMMLP(config=config, layer_idx=layer_idx)
+        self.post_attention_layernorm = GeneralNorm.create(
+            config,
+            hidden_size=config.model_dim,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
-        self.attn_norm = OpenELMRMSNorm(
-            num_features=config.model_dim,
+        self.input_layernorm = GeneralNorm.create(
+            config,
+            hidden_size=config.model_dim,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
 
     def forward(
         self,
-        hidden_states: paddle.Tensor,
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        past_key_value: Optional[Tuple[paddle.Tensor]] = None,
-        output_attentions: Optional[bool] = False,
-        use_cache: Optional[bool] = False,
-        cache_position: Optional[paddle.Tensor] = None,
+        hidden_states: Tensor,
+        attention_mask: Optional[Tensor] = None,
+        position_ids: Optional[Tensor] = None,
+        position_embeddings: Optional[Tuple[Tensor, Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
+        attn_mask_startend_row_indices: Optional[Tensor] = None,
+        output_attentions: bool = False,
         **kwargs,
-    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
-        """Forward pass of decoder layer.
-
-        Args:
-            hidden_states: Input [batch, seq_len, embed_dim].
-            attention_mask: Attention mask.
-            output_attentions: Whether to return attention weights.
-            use_cache: Whether to return cached key-value states.
-            past_key_value: Cached past key and value projection states.
-        """
+    ):
         residual = hidden_states
-        hidden_states = self.attn_norm(hidden_states)
-
-        # Self Attention
-        hidden_states, self_attn_weights, present_key_value = self.attn(
-            hidden_states=hidden_states,
+        hidden_states, attn_weights = self.self_attn(
+            self.input_layernorm(hidden_states),
             attention_mask=attention_mask,
-            past_key_value=past_key_value,
+            position_embeddings=position_embeddings,
+            past_key_values=past_key_values,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             output_attentions=output_attentions,
-            use_cache=use_cache,
-            cache_position=cache_position,
-            **kwargs,
         )
         hidden_states = residual + hidden_states
-
-        # Fully Connected
-        residual = hidden_states
-        hidden_states = self.ffn_norm(hidden_states)
-        hidden_states = self.ffn(hidden_states)
-        hidden_states = residual + hidden_states
-
-        outputs = (hidden_states,)
-
-        if output_attentions:
-            outputs += (self_attn_weights,)
-
-        if use_cache:
-            outputs += (present_key_value,)
-
-        return outputs
+        hidden_states = hidden_states + self.mlp(self.post_attention_layernorm(hidden_states))
+        return (hidden_states, attn_weights) if output_attentions else hidden_states
 
 
 @register_base_model
-class OpenELMModel(OpenELMPreTrainedModel):
+class OpenELMModel(OpenELMPretrainedModel):
     """OpenELM Model (base model without language modeling head)."""
 
     config_class = OpenELMConfig
@@ -491,10 +496,10 @@ class OpenELMModel(OpenELMPreTrainedModel):
     def __init__(self, config: OpenELMConfig):
         super().__init__(config)
         self.config = config
+        self._validate_config(config)
 
-        self.token_embeddings = nn.Embedding(
-            num_embeddings=config.vocab_size,
-            embedding_dim=config.model_dim,
+        self.embed_tokens = GeneralEmbedding.create(
+            config=config, num_embeddings=config.vocab_size, embedding_dim=config.model_dim, padding_idx=None
         )
 
         self.layers = nn.LayerList(
@@ -503,135 +508,106 @@ class OpenELMModel(OpenELMPreTrainedModel):
                 for layer_idx in range(config.num_transformer_layers)
             ]
         )
-        self.norm = OpenELMRMSNorm(num_features=config.model_dim)
-        if config.share_input_output_layers:
-            self.classifier = None
-        else:
-            self.classifier = nn.Linear(
-                in_features=config.model_dim,
-                out_features=config.vocab_size,
-                bias_attr=False,
-            )
+        self.norm = GeneralNorm.create(
+            config,
+            hidden_size=config.model_dim,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
         self.num_transformer_layers = config.num_transformer_layers
         self.gradient_checkpointing = False
 
-        # Register a causal mask to separate causal and padding mask creation.
-        causal_mask = paddle.full(
-            [config.max_context_length, config.max_context_length],
-            fill_value=True,
-            dtype="bool",
-        )
-        self.register_buffer("causal_mask", paddle.triu(causal_mask, diagonal=1), persistable=False)
+        self.rotary_emb = OpenELMRotaryEmbedding(config)
 
     def get_input_embeddings(self):
-        return self.token_embeddings
+        return self.embed_tokens
 
     def set_input_embeddings(self, new_embeddings: paddle.Tensor):
-        self.token_embeddings = new_embeddings
-
-    def init_weights(self):
-        """Initialize weights for the model."""
-        super().init_weights()
-        self.reset_parameters(self.config)
-
-    def reset_parameters(self, config: OpenELMConfig) -> None:
-        """Initialize layers following OPT (https://arxiv.org/pdf/2205.01068.pdf)."""
-        for module in self.sublayers():
-            if isinstance(module, nn.Linear):
-                std = module.in_features**-0.5
-                module.weight.set_value(paddle.normal(mean=0.0, std=std, shape=module.weight.shape))
-                if module.bias is not None:
-                    module.bias.set_value(paddle.zeros(module.bias.shape))
-            elif isinstance(module, nn.Embedding):
-                std = module._embedding_dim**-0.5
-                module.weight.set_value(paddle.normal(mean=0.0, std=std, shape=module.weight.shape))
-            elif isinstance(module, OpenELMRMSNorm):
-                if module.weight is not None:
-                    module.weight.set_value(paddle.ones(module.weight.shape))
-
-        model_dim = config.model_dim
-        n_layers = config.num_transformer_layers
-        std = (model_dim**-0.5) * ((2 * n_layers) ** -0.5)
-        for param_name, param in self.named_parameters():
-            if param_name.endswith("out_proj.weight") or param_name.endswith("ffn.proj_2.weight"):
-                param.set_value(paddle.normal(mean=0.0, std=std, shape=param.shape))
+        self.embed_tokens = new_embeddings
 
     def forward(
         self,
-        input_ids: paddle.Tensor = None,
-        attention_mask: Optional[paddle.Tensor] = None,
-        position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
-        inputs_embeds: Optional[paddle.Tensor] = None,
+        input_ids: Optional[Tensor] = None,
+        attention_mask: Optional[Tensor] = None,
+        position_ids: Optional[Tensor] = None,
+        past_key_values: Optional[Cache] = None,
+        inputs_embeds: Optional[Tensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        cache_position: Optional[paddle.Tensor] = None,
+        cache_position: Optional[Tensor] = None,
+        attn_mask_startend_row_indices: Optional[Tensor] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
-        """Forward pass of OpenELMModel.
-
-        Args:
-            input_ids: Input token IDs.
-            attention_mask: Attention mask.
-            position_ids: Position IDs.
-            past_key_values: Past key-value cache.
-            inputs_embeds: Input embeddings.
-            use_cache: Whether to use KV cache.
-            output_attentions: Whether to output attention weights.
-            output_hidden_states: Whether to output hidden states.
-            return_dict: Whether to return a dict.
-            cache_position: Cache position indices.
-        """
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_attentions = self.config.output_attentions if output_attentions is None else output_attentions
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            self.config.output_hidden_states if output_hidden_states is None else output_hidden_states
         )
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        if (input_ids is None) ^ (inputs_embeds is not None):
-            raise ValueError(
-                "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
+        use_cache = self.config.use_cache if use_cache is None else use_cache
+        return_dict = self.config.use_return_dict if return_dict is None else return_dict
+        if output_attentions and self.config._attn_implementation in ("sdpa", "flashmask"):
+            raise ValueError("Attention weights are only available with the eager attention backend.")
+        if (input_ids is None) == (inputs_embeds is None):
+            raise ValueError("You must specify exactly one of input_ids or inputs_embeds.")
+        recompute_active = (
+            self.training
+            and paddle.is_grad_enabled()
+            and (
+                self.gradient_checkpointing
+                or (
+                    self.config.recompute_granularity == "full"
+                    and self.config.recompute_method == "uniform"
+                    and self.config.recompute_num_layers == 1
+                )
             )
-
-        if self.gradient_checkpointing and self.training and use_cache:
-            logger.warning("`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.")
+        )
+        if recompute_active and (use_cache or past_key_values is not None):
+            if past_key_values is not None:
+                raise ValueError("A mutable cache cannot be passed during activation recomputation.")
+            logger.warning("Disabling cache during activation recomputation.")
             use_cache = False
-
         if inputs_embeds is None:
-            inputs_embeds = self.token_embeddings(input_ids)
-
-        past_seen_tokens = 0
-        if use_cache:
-            if past_key_values is None:
-                past_key_values = DynamicCache(config=self.config)
-            past_seen_tokens = past_key_values.get_seq_length()
-
-        if cache_position is None:
-            cache_position = paddle.arange(
-                past_seen_tokens,
-                past_seen_tokens + inputs_embeds.shape[1],
-            )
-
+            inputs_embeds = self.embed_tokens(input_ids)
+        batch_size, seq_length, _ = inputs_embeds.shape
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
         if position_ids is None:
-            position_ids = cache_position.unsqueeze(0)
-
-        causal_mask = self._update_causal_mask(attention_mask, inputs_embeds, cache_position)
-
-        # embed positions
+            positions = (
+                cache_position
+                if cache_position is not None
+                else paddle.arange(cache_length, cache_length + seq_length, dtype="int64")
+            )
+            position_ids = positions.unsqueeze(0).tile([batch_size, 1])
+        causal_mask, row_indices = self._prepare_attention_mask(
+            self.config,
+            inputs_embeds,
+            batch_size,
+            seq_length,
+            cache_length,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+        )
+        position_embeddings = self.rotary_emb(inputs_embeds, position_ids)
         hidden_states = inputs_embeds
-
-        # decoder layers
-        all_hidden_states = () if output_hidden_states else None
-        all_self_attns = () if output_attentions else None
-        next_decoder_cache = None
-
+        if self.config.sequence_parallel:
+            if seq_length != self.config.max_sequence_length:
+                raise ValueError("Sequence parallel input length must equal config.max_sequence_length.")
+            hidden_states = ScatterOp.apply(hidden_states.reshape([-1, hidden_states.shape[-1]]))
+        all_hidden_states = [] if output_hidden_states else None
+        all_attentions = [] if output_attentions else None
         for decoder_layer in self.layers:
             if output_hidden_states:
-                all_hidden_states += (hidden_states,)
-
-            if self.gradient_checkpointing and self.training:
+                all_hidden_states.append(hidden_states)
+            layer_kwargs = dict(
+                attention_mask=causal_mask,
+                position_ids=position_ids,
+                position_embeddings=position_embeddings,
+                past_key_values=past_key_values,
+                attn_mask_startend_row_indices=row_indices,
+                output_attentions=output_attentions,
+            )
+            if recompute_active:
                 from paddle.distributed.fleet.utils import recompute
 
                 layer_outputs = recompute(
@@ -639,95 +615,49 @@ class OpenELMModel(OpenELMPreTrainedModel):
                     hidden_states,
                     causal_mask,
                     position_ids,
-                    past_key_values,
+                    position_embeddings,
+                    None,
+                    row_indices,
                     output_attentions,
-                    use_cache,
-                    cache_position,
+                    use_reentrant=self.config.recompute_use_reentrant and not hidden_states.stop_gradient,
                 )
             else:
-                layer_outputs = decoder_layer(
-                    hidden_states,
-                    attention_mask=causal_mask,
-                    position_ids=position_ids,
-                    past_key_value=past_key_values,
-                    output_attentions=output_attentions,
-                    use_cache=use_cache,
-                    cache_position=cache_position,
-                )
-
-            hidden_states = layer_outputs[0]
-
-            if use_cache:
-                next_decoder_cache = layer_outputs[2 if output_attentions else 1]
-
+                layer_outputs = decoder_layer(hidden_states, **layer_kwargs)
             if output_attentions:
-                all_self_attns += (layer_outputs[1],)
-
+                hidden_states, attn_weights = layer_outputs
+                all_attentions.append(attn_weights)
+            else:
+                hidden_states = layer_outputs
         hidden_states = self.norm(hidden_states)
-
-        # add hidden states from the last decoder layer
         if output_hidden_states:
-            all_hidden_states += (hidden_states,)
-
-        next_cache = next_decoder_cache if use_cache else None
-
-        if not return_dict:
-            return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
-        return BaseModelOutputWithPast(
+            all_hidden_states.append(hidden_states)
+        result = BaseModelOutputWithPast(
             last_hidden_state=hidden_states,
-            past_key_values=next_cache,
-            hidden_states=all_hidden_states,
-            attentions=all_self_attns,
+            past_key_values=past_key_values,
+            hidden_states=tuple(all_hidden_states) if all_hidden_states is not None else None,
+            attentions=tuple(all_attentions) if all_attentions is not None else None,
         )
-
-    def _update_causal_mask(self, attention_mask, input_tensor, cache_position=None):
-        """Update the causal mask for the attention."""
-        batch_size = input_tensor.shape[0]
-        dtype = input_tensor.dtype
-
-        target_length = attention_mask.shape[-1] if attention_mask is not None else input_tensor.shape[1]
-        if cache_position is not None:
-            target_length = max(target_length, int(cache_position[-1]) + 1)
-
-        while target_length > self.causal_mask.shape[-1]:
-            new_length = max(target_length, 2 * self.causal_mask.shape[-1])
-            causal_mask = paddle.full([new_length, new_length], fill_value=True, dtype="bool")
-            self.register_buffer("causal_mask", paddle.triu(causal_mask, diagonal=1), persistable=False)
-
-        min_dtype = paddle.finfo(dtype).min
-        causal_mask = self.causal_mask[None, None, :, :].tile([batch_size, 1, 1, 1]).cast(dtype) * min_dtype
-
-        if attention_mask is not None and len(attention_mask.shape) == 2:
-            mask_length = attention_mask.shape[-1]
-            padding_mask = (causal_mask[..., :mask_length] == 0.0) * (attention_mask[:, None, None, :] == 0.0)
-            causal_mask[..., :mask_length] = paddle.where(
-                padding_mask,
-                paddle.full_like(causal_mask[..., :mask_length], min_dtype),
-                causal_mask[..., :mask_length],
-            )
-
-        return causal_mask
+        return result if return_dict else result.to_tuple()
 
 
-class OpenELMForCausalLM(OpenELMPreTrainedModel):
+class OpenELMForCausalLM(OpenELMPretrainedModel):
     """OpenELM model with a language modeling head."""
 
     _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config: OpenELMConfig):
         super().__init__(config)
-        self.transformer = OpenELMModel(config)
+        self.model = OpenELMModel(config)
         self.vocab_size = config.vocab_size
-        if config.share_input_output_layers:
-            self.lm_head = None
-        else:
-            self.lm_head = nn.Linear(config.model_dim, config.vocab_size, bias_attr=False)
+        self.lm_head = GeneralLMHead(config)
+        self.criterion = CriterionLayer(config)
+        self.tie_weights()
 
     def get_input_embeddings(self):
-        return self.transformer.token_embeddings
+        return self.model.embed_tokens
 
     def set_input_embeddings(self, value):
-        self.transformer.token_embeddings = value
+        self.model.embed_tokens = value
 
     def get_output_embeddings(self):
         return self.lm_head
@@ -736,19 +666,20 @@ class OpenELMForCausalLM(OpenELMPreTrainedModel):
         self.lm_head = new_embeddings
 
     def set_decoder(self, decoder):
-        self.transformer = decoder
+        self.model = decoder
 
     def get_decoder(self):
-        return self.transformer
+        return self.model
 
     def forward(
         self,
         input_ids: paddle.Tensor = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
-        past_key_values: Optional[List[paddle.Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[paddle.Tensor] = None,
         labels: Optional[paddle.Tensor] = None,
+        loss_mask: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
@@ -762,8 +693,13 @@ class OpenELMForCausalLM(OpenELMPreTrainedModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        if attn_mask_startend_row_indices is None:
+            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices", None)
+        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+            logger.warning("Both dense and row-index masks were supplied; using row indices.")
+            attention_mask = None
         # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
-        outputs = self.transformer(
+        outputs = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -774,22 +710,14 @@ class OpenELMForCausalLM(OpenELMPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
             cache_position=cache_position,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
 
         hidden_states = outputs[0]
-        if self.lm_head is None:
-            # shared embedding weights: Paddle matmul needs transpose_y=True for tied weights
-            logits = paddle.matmul(hidden_states, self.transformer.token_embeddings.weight, transpose_y=True)
-        else:
-            logits = self.lm_head(hidden_states)
-        logits = logits[:, : self.config.vocab_size]
+        logits = self.lm_head(hidden_states)
         loss = None
         if labels is not None:
-            # Labels are pre-shifted by SFTDataset, do not shift again.
-            loss_fct = nn.CrossEntropyLoss()
-            shift_logits = logits.reshape([-1, self.config.vocab_size])
-            shift_labels = labels.reshape([-1])
-            loss = loss_fct(shift_logits, shift_labels)
+            loss, _ = self.criterion(logits, labels, loss_mask=loss_mask)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -814,30 +742,33 @@ class OpenELMForCausalLM(OpenELMPreTrainedModel):
         """Prepare inputs for generation."""
         past_length = 0
         if past_key_values is not None:
-            if isinstance(past_key_values, Cache):
-                cache_length = past_key_values.get_seq_length()
-                past_length = cache_length
-                max_cache_length = past_key_values.get_max_cache_shape()
-            else:
-                cache_length = past_length = past_key_values[0][0].shape[2]
-                max_cache_length = None
+            if not isinstance(past_key_values, Cache):
+                raise TypeError("past_key_values must use the shared Cache interface.")
+            cache_length = past_key_values.get_seq_length()
+            past_length = cache_length
+            max_cache_length = past_key_values.get_max_cache_shape()
 
             # Keep only the unprocessed tokens:
-            if attention_mask is not None and attention_mask.shape[1] > input_ids.shape[1]:
-                input_ids = input_ids[:, -(attention_mask.shape[1] - past_length) :]
+            if (
+                attention_mask is not None
+                and attention_mask.ndim == 2
+                and attention_mask.shape[-1] > input_ids.shape[1]
+            ):
+                input_ids = input_ids[:, -(attention_mask.shape[-1] - past_length) :]
             elif past_length < input_ids.shape[1]:
                 input_ids = input_ids[:, past_length:]
 
             # If we are about to go beyond the maximum cache length, we need to crop the input attention mask.
             if (
                 max_cache_length is not None
+                and max_cache_length > 0
                 and attention_mask is not None
                 and cache_length + input_ids.shape[1] > max_cache_length
             ):
-                attention_mask = attention_mask[:, -max_cache_length:]
+                attention_mask = attention_mask[..., -max_cache_length:]
 
         position_ids = kwargs.get("position_ids", None)
-        if attention_mask is not None and position_ids is None:
+        if attention_mask is not None and attention_mask.ndim == 2 and position_ids is None:
             # create position_ids on the fly for batch generation
             position_ids = attention_mask.cast(paddle.int64).cumsum(axis=-1) - 1
             position_ids = paddle.where(
@@ -848,10 +779,16 @@ class OpenELMForCausalLM(OpenELMPreTrainedModel):
             if past_key_values:
                 position_ids = position_ids[:, -input_ids.shape[1] :]
 
-        cache_position = paddle.arange(
-            past_length,
-            past_length + position_ids.shape[-1],
+        query_length = (
+            inputs_embeds.shape[1] if inputs_embeds is not None and past_key_values is None else input_ids.shape[-1]
         )
+        if position_ids is None:
+            position_ids = paddle.arange(past_length, past_length + query_length, dtype="int64").unsqueeze(0)
+        elif past_key_values is not None:
+            position_ids = position_ids[:, -query_length:]
+        cache_position = paddle.arange(past_length, past_length + query_length, dtype="int64")
+        if attention_mask is not None and attention_mask.ndim >= 3 and past_key_values is not None:
+            attention_mask = attention_mask[..., -query_length:, :]
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
         if inputs_embeds is not None and past_key_values is None:
@@ -870,127 +807,75 @@ class OpenELMForCausalLM(OpenELMPreTrainedModel):
         )
         return model_inputs
 
-    @classmethod
-    def _gen_aoa_config(cls, config: OpenELMConfig):
-        """Generate AOA (Auto-Optimized Architecture) config for flex_checkpoint loading.
 
-        Maps HuggingFace safetensors weight names to PaddlePaddle weight names.
-        Since OpenELM uses the same naming convention in both frameworks
-        (base_model_prefix='transformer'), the source and target keys are identical.
-        The ^T suffix indicates weights that need transposition (Linear layer weights).
+class OpenELMEmbeddingPipe(EmbeddingPipe):
+    """Prepare one mask and rotary tensor before pipeline communication."""
 
-        Args:
-            config: OpenELMConfig instance.
-
-        Returns:
-            Dict with 'aoa_statements' list of mapping strings.
-        """
-        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
-
-        aoa_statements = [
-            # Embedding and final norm
-            f"transformer.token_embeddings.weight -> {model_prefix}token_embeddings.weight",
-            f"transformer.norm.weight -> {model_prefix}norm.weight",
-            # Layer norms
-            f"transformer.layers.$LAYER_ID.attn_norm.weight -> {model_prefix}layers.$LAYER_ID.attn_norm.weight",
-            f"transformer.layers.$LAYER_ID.ffn_norm.weight -> {model_prefix}layers.$LAYER_ID.ffn_norm.weight",
-        ]
-
-        # Attention projections (need transposition for Linear weights)
-        aoa_statements.extend(
-            [
-                f"transformer.layers.$LAYER_ID.attn.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.attn.{proj_name}.weight"
-                for proj_name in ["qkv_proj", "out_proj"]
-            ]
+    def forward(self, args):
+        input_ids, attention_mask, position_ids, _, _ = parse_args(args, is_embed=True)
+        inputs_embeds = self.embed_tokens(input_ids)
+        batch_size, seq_length, _ = inputs_embeds.shape
+        if position_ids is None:
+            position_ids = paddle.arange(seq_length, dtype="int64").unsqueeze(0).tile([batch_size, 1])
+        row_indices = None
+        if attention_mask is not None and attention_mask.dtype == paddle.int32 and attention_mask.ndim >= 3:
+            row_indices, attention_mask = attention_mask, None
+        mask, row_indices = OpenELMPretrainedModel._prepare_attention_mask(
+            self.config,
+            inputs_embeds,
+            batch_size,
+            seq_length,
+            0,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=row_indices,
         )
+        positions = paddle.stack(self.rotary_emb(inputs_embeds, position_ids))
+        if self.config.sequence_parallel:
+            if seq_length != self.config.max_sequence_length:
+                raise ValueError("Sequence parallel input length must equal config.max_sequence_length.")
+            inputs_embeds = ScatterOp.apply(inputs_embeds.reshape([-1, inputs_embeds.shape[-1]]))
+        if row_indices is not None:
+            mask = row_indices
+        if mask is None:
+            return inputs_embeds, position_ids, positions
+        return inputs_embeds, mask, position_ids, positions
 
-        # Optional Q/K normalization (normalize_qk_projections=True for OpenELM-1_1B)
-        if config.normalize_qk_projections:
-            aoa_statements.extend(
-                [
-                    f"transformer.layers.$LAYER_ID.attn.{norm_name}.weight -> {model_prefix}layers.$LAYER_ID.attn.{norm_name}.weight"
-                    for norm_name in ["q_norm", "k_norm"]
-                ]
-            )
 
-        # FFN projections (need transposition for Linear weights)
-        aoa_statements.extend(
-            [
-                f"transformer.layers.$LAYER_ID.ffn.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.ffn.{proj_name}.weight"
-                for proj_name in ["proj_1", "proj_2"]
-            ]
-        )
+class OpenELMCriterionPipe(CriterionLayer):
+    """Preserve the SFT loss mask across the pipeline criterion boundary."""
 
-        # LM head or tied embeddings
-        if cls != cls.base_model_class and not config.share_input_output_layers:
-            aoa_statements.append("lm_head.weight -> lm_head.weight")
+    def __init__(self, config, **kwargs):
+        super().__init__(config, return_tuple=False, **kwargs)
 
-        return {"aoa_statements": aoa_statements}
+    def forward(self, logits, labels):
+        loss_mask = None
+        if isinstance(labels, tuple) and "sft" in self.loss_type:
+            labels, loss_mask = labels
+        return super().forward(logits, labels, loss_mask=loss_mask)
 
-    @classmethod
-    def _gen_inv_aoa_config(cls, config: OpenELMConfig):
-        """Generate inverse AOA config for saving PaddlePaddle weights to HuggingFace format.
 
-        This is the reverse mapping of _gen_aoa_config.
+class OpenELMForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = OpenELMConfig
+    _decoder_layer_cls = OpenELMDecoderLayer
+    _rotary_emb_cls = OpenELMRotaryEmbedding
+    _embedding_pipe_cls = OpenELMEmbeddingPipe
+    _criterion_pipe_cls = OpenELMCriterionPipe
+    _init_weights = OpenELMPretrainedModel._init_weights
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = OpenELMPretrainedModel.transpose_weight_keys
+    _gen_aoa_config = OpenELMPretrainedModel._gen_aoa_config
+    _gen_inv_aoa_config = OpenELMPretrainedModel._gen_inv_aoa_config
 
-        Args:
-            config: OpenELMConfig instance.
+    def __init__(self, config):
+        OpenELMPretrainedModel._validate_config(config)
+        self._openelm_initializer_range = config.initializer_range
+        super().__init__(config)
 
-        Returns:
-            Dict with 'aoa_statements' list of mapping strings.
-        """
-        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
-
-        aoa_statements = [
-            # Embedding and final norm
-            f"{model_prefix}token_embeddings.weight -> transformer.token_embeddings.weight",
-            f"{model_prefix}norm.weight -> transformer.norm.weight",
-            # Layer norms
-            f"{model_prefix}layers.$LAYER_ID.attn_norm.weight -> transformer.layers.$LAYER_ID.attn_norm.weight",
-            f"{model_prefix}layers.$LAYER_ID.ffn_norm.weight -> transformer.layers.$LAYER_ID.ffn_norm.weight",
-        ]
-
-        # Attention projections (need transposition)
-        aoa_statements.extend(
-            [
-                f"{model_prefix}layers.$LAYER_ID.attn.{proj_name}.weight^T -> transformer.layers.$LAYER_ID.attn.{proj_name}.weight"
-                for proj_name in ["qkv_proj", "out_proj"]
-            ]
-        )
-
-        # Optional Q/K normalization
-        if config.normalize_qk_projections:
-            aoa_statements.extend(
-                [
-                    f"{model_prefix}layers.$LAYER_ID.attn.{norm_name}.weight -> transformer.layers.$LAYER_ID.attn.{norm_name}.weight"
-                    for norm_name in ["q_norm", "k_norm"]
-                ]
-            )
-
-        # FFN projections (need transposition)
-        aoa_statements.extend(
-            [
-                f"{model_prefix}layers.$LAYER_ID.ffn.{proj_name}.weight^T -> transformer.layers.$LAYER_ID.ffn.{proj_name}.weight"
-                for proj_name in ["proj_1", "proj_2"]
-            ]
-        )
-
-        # LM head or tied embeddings
-        if not config.share_input_output_layers and cls != cls.base_model_class:
-            aoa_statements.append("lm_head.weight -> lm_head.weight")
-
-        return {"aoa_statements": aoa_statements}
-
-    @staticmethod
-    def _reorder_cache(past_key_values, beam_idx):
-        """Reorder cache for beam search."""
-        if isinstance(past_key_values, Cache):
-            past_key_values.reorder_cache(beam_idx)
-            return past_key_values
-
-        reordered_past = ()
-        for layer_past in past_key_values:
-            reordered_past += (
-                tuple(past_state.index_select(0, beam_idx.to(past_state.place)) for past_state in layer_past),
-            )
-        return reordered_past
+    def get_sequential_layers(self):
+        self.config.initializer_range = self._openelm_initializer_range
+        layers = super().get_sequential_layers()
+        for layer in layers:
+            # The shared embedding branch in the builder uses the base class directly.
+            if getattr(layer, "layer_func", None) is EmbeddingPipe:
+                layer.layer_func = OpenELMEmbeddingPipe
+        return layers
