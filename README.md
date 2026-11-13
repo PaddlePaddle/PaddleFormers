@@ -131,6 +131,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>jinja</td>
     </tr>
     <tr>
+      <td>OLMo3</td>
+      <td>allenai/OLMo-3-7B-Instruct</td>
+      <td>jinja</td>
+    </tr>
+    <tr>
       <td>phi-4</td>
       <td>microsoft/phi-4</td>
       <td>phi4</td>
