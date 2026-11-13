@@ -55,7 +55,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   <tbody>
     <!-- LLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="20" style="vertical-align: top;">LLM</td>
+      <td rowspan="21" style="vertical-align: top;">LLM</td>
       <td>DeepSeekv3</td>
       <td>deepseek-ai/DeepSeek-V3-Base、deepseek-ai/DeepSeek-V3、deepseek-ai/DeepSeek-V3-0324</td>
       <td>deepseek3</td>
@@ -109,6 +109,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>Granite</td>
       <td>ibm-granite/granite-3.2-2b-base、ibm-granite/granite-3.2-2b-instruct、ibm-granite/granite-3.2-8b-base、ibm-granite/granite-3.2-8b-instruct</td>
       <td>granite</td>
+    </tr>
+    <tr>
+      <td>Hunyuan Dense V1</td>
+      <td>tencent/Hunyuan-0.5B-Pretrain、tencent/Hunyuan-0.5B-Instruct</td>
+      <td>hunyuan</td>
     </tr>
     <tr>
       <td>Llama-3</td>

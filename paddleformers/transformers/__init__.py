@@ -288,6 +288,21 @@ import_structure = {
         "CosineAnnealingWithWarmupDecay",
         "LinearAnnealingWithWarmupDecay",
     ],
+    "hunyuan.configuration": ["HunyuanConfig"],
+    "hunyuan.modeling": [
+        "HunyuanModel",
+        "HunYuanDenseV1Model",
+        "HunyuanPretrainedModel",
+        "HunyuanForCausalLM",
+        "HunYuanDenseV1ForCausalLM",
+        "HunyuanForCausalLMPipe",
+        "HunYuanDenseV1ForCausalLMPipe",
+        "HunyuanForSequenceClassification",
+        "HunyuanForTokenClassification",
+        "HunyuanSentenceEmbedding",
+        "HunyuanForCausalLMEager",
+        "HunyuanForCausalLMPipeEager",
+    ],
     "qwen2.configuration": ["Qwen2Config"],
     "qwen2.modeling": [
         "Qwen2Model",
@@ -399,6 +414,7 @@ import_structure = {
     ],
     "molmo.processing": ["MolmoProcessor"],
     "llama": [],
+    "hunyuan": [],
     "llama4": [],
     "qwen2": [],
     "glm_ocr": [],
@@ -600,6 +616,7 @@ if TYPE_CHECKING:
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
+    from .hunyuan import *
     from .qwen2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *
