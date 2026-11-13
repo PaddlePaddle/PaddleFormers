@@ -40,7 +40,7 @@
 |LLaMA3|✓|✓|-|x|✓|✓|
 |LLaMA4-Text|x|x|x|x|✓|✓|
 |MiniMax-Text-01|x|x|x|x|✓|✓|
-|OpenELM|-|-|-|x|-|-|
+|OpenELM|✓|✓|-|x|✓|✓|
 |OLMo2|✓|✓|-|x|✓|✓|
 |Phi4|✓|✓|-|x|✓|✓|
 |Qwen2|✓|✓|x|x|✓|✓|
