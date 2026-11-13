@@ -20,7 +20,6 @@ from typing import Any, Optional
 
 import paddle
 
-from paddleformers.mergekit import MergeConfig, MergeModel
 from paddleformers.trainer import get_last_checkpoint
 from paddleformers.utils.download import check_repo, resolve_file_path
 from paddleformers.utils.env import SAFE_WEIGHTS_INDEX_NAME, SAFE_WEIGHTS_NAME
@@ -106,6 +105,8 @@ def run_export(args: Optional[dict[str, Any]] = None) -> None:
         raise FileNotFoundError(f"No valid checkpoint found in: {finetuning_args.output_dir}")
 
     if model_args.lora:
+        from paddleformers.mergekit import MergeConfig, MergeModel
+
         start = time.time()
         logger.info("***** Start merging LoRA model *****")
 
