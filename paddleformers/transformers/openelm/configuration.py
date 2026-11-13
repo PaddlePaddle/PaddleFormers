@@ -43,6 +43,10 @@ def compute_heads(model_dim: int, head_dim: int) -> int:
         raise ValueError(f"Model dimension should be divisible by head dimension. Got: {model_dim} and {head_dim}.")
 
 
+def compute_ffn_dim(config, layer_idx: int) -> int:
+    return int(make_divisible(config.ffn_multipliers[layer_idx] * config.model_dim, config.ffn_dim_divisor))
+
+
 class OpenELMConfig(PretrainedConfig):
     """OpenELM configuration; standard attention-head aliases expose per-layer lists."""
 
@@ -65,7 +69,7 @@ class OpenELMConfig(PretrainedConfig):
         model_dim: int = 2048,
         head_dim: int = 128,
         qkv_multipliers: Union[Number, List[Number]] = 1.0,
-        num_query_heads: Union[int, None] = None,
+        num_query_heads: Optional[Union[int, List[int]]] = None,
         num_gqa_groups: int = 1,
         ffn_multipliers: Union[Number, List[Number]] = 4.0,
         ffn_with_glu: bool = True,
@@ -119,6 +123,7 @@ class OpenELMConfig(PretrainedConfig):
 
         self.__post_init__()
         for name, supplied, derived in (
+            ("num_query_heads", num_query_heads, self.num_query_heads),
             ("num_attention_heads", standard_q_heads, self.num_query_heads),
             ("num_key_value_heads", standard_kv_heads, self.num_kv_heads),
         ):
@@ -163,7 +168,7 @@ class OpenELMConfig(PretrainedConfig):
                 for m in qkv_multipliers
             ]
         else:
-            raise NotImplementedError(
+            raise ValueError(
                 f"QKV multipliers should be a single number or a list containing exactly two numbers. Got: {self.qkv_multipliers}."
             )
 
@@ -186,8 +191,9 @@ class OpenELMConfig(PretrainedConfig):
             else:
                 ffn_multipliers = list(self.ffn_multipliers)
         else:
-            raise NotImplementedError(
-                f"FFN multipliers should be a single number or a list containing exactly two numbers. Got: {self.ffn_multipliers}."
+            raise ValueError(
+                "FFN multipliers should be a single number, two endpoints, or a per-layer list. "
+                f"Got: {self.ffn_multipliers}."
             )
 
         if len(ffn_multipliers) != self.num_transformer_layers:

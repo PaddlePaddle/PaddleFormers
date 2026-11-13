@@ -42,7 +42,7 @@ from ..linear_utils import (
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
-from .configuration import OpenELMConfig, make_divisible
+from .configuration import OpenELMConfig, compute_ffn_dim
 
 
 class OpenELMPretrainedModel(PretrainedModel):
@@ -109,7 +109,7 @@ class OpenELMPretrainedModel(PretrainedModel):
         if config.sequence_parallel and tp_size == 1:
             raise ValueError("Sequence parallelism requires tensor_model_parallel_size > 1.")
         for layer_idx, (q_heads, kv_heads) in enumerate(zip(config.num_query_heads, config.num_kv_heads)):
-            width = int(make_divisible(config.ffn_multipliers[layer_idx] * config.model_dim, config.ffn_dim_divisor))
+            width = compute_ffn_dim(config, layer_idx)
             if q_heads % tp_size or kv_heads % tp_size or width % tp_size:
                 raise ValueError(
                     f"Layer {layer_idx} query/KV heads and MLP width must be divisible by TP size {tp_size}."
@@ -398,13 +398,7 @@ class OpenELMMLP(nn.Layer):
 
     def __init__(self, config: OpenELMConfig, layer_idx: int) -> None:
         super().__init__()
-        ffn_multiplier = config.ffn_multipliers[layer_idx]
-        intermediate_dim = int(
-            make_divisible(
-                ffn_multiplier * config.model_dim,
-                divisor=config.ffn_dim_divisor,
-            )
-        )
+        intermediate_dim = compute_ffn_dim(config, layer_idx)
         self.ffn_with_glu = config.ffn_with_glu
         self.fuse_swiglu = config.fuse_swiglu
         if self.ffn_with_glu:
@@ -522,7 +516,7 @@ class OpenELMModel(OpenELMPretrainedModel):
     def get_input_embeddings(self):
         return self.embed_tokens
 
-    def set_input_embeddings(self, new_embeddings: paddle.Tensor):
+    def set_input_embeddings(self, new_embeddings: nn.Layer):
         self.embed_tokens = new_embeddings
 
     def forward(
@@ -877,5 +871,5 @@ class OpenELMForCausalLMPipe(GeneralModelForCausalLMPipe):
         for layer in layers:
             # The shared embedding branch in the builder uses the base class directly.
             if getattr(layer, "layer_func", None) is EmbeddingPipe:
-                layer.layer_func = OpenELMEmbeddingPipe
+                layer.layer_func = self._embedding_pipe_cls
         return layers
