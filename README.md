@@ -163,6 +163,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>ernie_vl、ernie_vl_nothink</td>
     </tr>
     <tr>
+      <td>AyaVision</td>
+      <td>CohereLabs/aya-vision-8b</td>
+      <td>aya_vision</td>
+    </tr>
+    <tr>
       <td>Phi-4-multimodal</td>
       <td>microsoft/Phi-4-multimodal-instruct</td>
       <td>phi4_multimodal</td>
