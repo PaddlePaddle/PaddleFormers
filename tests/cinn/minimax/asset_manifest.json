@@ -1,0 +1,50 @@
+[
+  {
+    "kind": "weight",
+    "file": "initial.pdparams",
+    "bytes": 51451931,
+    "sha256": "26242c908613ab02041fd6dce4b41d6a71018e414613e70cc75f9282d8ceedc2"
+  },
+  {
+    "kind": "weight",
+    "file": "inference.pdparams",
+    "bytes": 51451931,
+    "sha256": "118e0bf8004510cc85a929167d36b32b1149bf4da00ff577737e25bd64d81dfe"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/config.json",
+    "bytes": 1306,
+    "sha256": "8d987e3a074c6c82b5355877c677ef583ff90d15c3bf7fb625bda1e44929baab"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/merges.txt",
+    "bytes": 2414077,
+    "sha256": "ca47ea60cf5bd48832586adc264f439d0ea4254176b24a95f85eaa9750e2b5f9"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/tokenizer.json",
+    "bytes": 15517820,
+    "sha256": "20100e44c9df6c679569dfd88c250ed4110af956d4383819b410f320f422b053"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/tokenizer_config.json",
+    "bytes": 382,
+    "sha256": "d7977fdd910b988820a3e130838c9b34d67d1396e874d25149edc91c9225f279"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/vocab.json",
+    "bytes": 4705413,
+    "sha256": "b44c066b5dc34c800c4e3ecbd85f3e95ce3bfdbf8a5fe30223e005175103578a"
+  },
+  {
+    "kind": "asset",
+    "file": "data/gsm8k_24.jsonl",
+    "bytes": 13854,
+    "sha256": "5133d8683c45e32d90e5ba83836e61216abeaaabf6ef630b770a59b575ae7be2"
+  }
+]
