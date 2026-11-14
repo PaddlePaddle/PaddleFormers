@@ -1,0 +1,92 @@
+[
+  {
+    "kind": "weight",
+    "file": "initial.pdparams",
+    "bytes": 51716375,
+    "sha256": "a4244b2f31a38fd969a9bc26bff045a94d0bad878f555a381c555f8f577d605a"
+  },
+  {
+    "kind": "weight",
+    "file": "inference.pdparams",
+    "bytes": 51716375,
+    "sha256": "af070e80d2073f5e9dae60f3d47b4321b8a49bb3d3230ffaac85c6d9199b53a0"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/added_tokens.json",
+    "bytes": 249,
+    "sha256": "d4f2aceb0f20b71dd1f4bcc7e052e4412946bf281840b8f83d39f259571af486"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/chat_template.jinja",
+    "bytes": 423,
+    "sha256": "febf589225c9728ab791f52e8897d7607a823d45368f0a4c92fa68997b40cce9"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/config.json",
+    "bytes": 2360,
+    "sha256": "11e35dcd625f02042dec544000c9309299b6407ec264bb44230813ff3523d6aa"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/generation_config.json",
+    "bytes": 182,
+    "sha256": "1fbcf71eac69065b9efe86923a708804fae8a4af6d95e61d851fa66bfc6f7e2f"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/merges.txt",
+    "bytes": 2418348,
+    "sha256": "856ce61180bb689282eed6b3a6838bb1f438399be23aefe9d20eb379791fb4ad"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/preprocessor_config.json",
+    "bytes": 629,
+    "sha256": "4a38f2f1bdeb121210d0a135466b17feca64b7605364543448ea722377674502"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/processor_config.json",
+    "bytes": 51,
+    "sha256": "182b8b9f29ea386abaf62f87c27c3e9c709fa54c4f0025b083f579068eb19d40"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/special_tokens_map.json",
+    "bytes": 473,
+    "sha256": "57491904f8680d4b52ed440f1f7ba48cad1c31ecf3eb453b03484e6ff4723ae8"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/tokenizer.json",
+    "bytes": 15524860,
+    "sha256": "ccc555d496aef5a320995c269e8e86e818c3be07db06cdf2bb15c02e4ed6d7a0"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/tokenizer_config.json",
+    "bytes": 360,
+    "sha256": "013687a38f3498d0aeb1a8cc948674f7c0e24906d56dd9a71489fa7c72941e59"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/vocab.json",
+    "bytes": 3910310,
+    "sha256": "6cb65a857824fa6615bb1782d95d882617a8bbce1da0317118586b36f39e98bd"
+  },
+  {
+    "kind": "asset",
+    "file": "data/data_manifest.json",
+    "bytes": 1655,
+    "sha256": "784f3ae0ed49f00e284557d2a21a6b92829e6963ccc0d32df47cbc2b0a467267"
+  },
+  {
+    "kind": "asset",
+    "file": "data/images24.npz",
+    "bytes": 3613374,
+    "sha256": "37ada9317bb4676633e6e4da9df5cdfd9c66e882fbcb2192cf95c405ffb2e3d5"
+  }
+]
