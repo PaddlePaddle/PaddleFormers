@@ -1,4 +1,4 @@
-name: gpu-sweep
+name: gpu-sweep # sync
 on:
   pull_request:
 jobs:
