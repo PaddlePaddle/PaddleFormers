@@ -14,6 +14,7 @@
 |LLaMA4-Text|✓|✓|✓|x|x|
 |MiniMax-Text-01|✓|✓|✓|x|x|
 |OLMo2|✓|✓|✓|✓|✓|
+|OLMo3|✓|✓|✓|x|✓|
 |Phi4|✓|✓|✓|✓|✓|
 |Qwen2|✓|✓|✓|✓|✓|
 |Qwen3|✓|✓|✓|✓|✓|
@@ -43,6 +44,7 @@
 |LLaMA4-Text|x|x|x|x|✓|✓|
 |MiniMax-Text-01|x|x|x|x|✓|✓|
 |OLMo2|✓|✓|-|x|✓|✓|
+|OLMo3|✓|✓|-|x|✓|x|
 |Phi4|✓|✓|-|x|✓|✓|
 |Qwen2|✓|✓|x|x|✓|✓|
 |Qwen3|✓|✓|✓|✓|✓|✓|
