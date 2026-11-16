@@ -25,6 +25,8 @@ import_structure = {
         "Olmo3Model",
         "Olmo3ForCausalLM",
         "Olmo3ForCausalLMPipe",
+        "Olmo3ForCausalLMDeprecated",
+        "Olmo3ForCausalLMPipeDeprecated",
     ],
 }
 

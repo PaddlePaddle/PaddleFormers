@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -25,10 +26,13 @@ import paddle
 
 from paddleformers.transformers import (
     AutoModelForCausalLM,
+    AutoModelForCausalLMPipe,
     AutoTokenizer,
     Olmo3Config,
     Olmo3ForCausalLM,
+    Olmo3ForCausalLMDeprecated,
     Olmo3ForCausalLMPipe,
+    Olmo3ForCausalLMPipeDeprecated,
     Olmo3Model,
 )
 from paddleformers.utils import device_guard
@@ -150,7 +154,7 @@ class Olmo3ModelTester:
         self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
 
     def create_and_check_lm_head_model(self, config, input_ids, input_mask):
-        model = Olmo3ForCausalLM(config)
+        model = Olmo3ForCausalLMDeprecated(config)
         model.eval()
         result = model(input_ids, attention_mask=input_mask, return_dict=self.return_dict)
         if self.return_dict:
@@ -161,7 +165,7 @@ class Olmo3ModelTester:
 
 # Basic config test class, tests whether the basic configuration is correct
 class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
-    all_model_classes = (Olmo3Model, Olmo3ForCausalLM)
+    all_model_classes = (Olmo3Model, Olmo3ForCausalLMDeprecated)
 
     def setUp(self):
         self.model_tester = Olmo3ModelTester(self)
@@ -183,8 +187,8 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
             strategy.hybrid_configs = dict(dp_degree=1, mp_degree=1, pp_degree=1, sharding_degree=1)
             fleet.init(is_collective=True, strategy=strategy)
         with device_guard("gpu"):
-            for tied in (False, True):
-                with self.subTest(tie_word_embeddings=tied):
+            for tied, recompute_enabled, use_reentrant in product((False, True), repeat=3):
+                with self.subTest(tie_word_embeddings=tied, recompute=recompute_enabled, use_reentrant=use_reentrant):
                     config = Olmo3Config(
                         vocab_size=32,
                         hidden_size=16,
@@ -210,34 +214,79 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                         dtype="float32",
                         max_sequence_length=4,
                         _attn_implementation="eager",
+                        recompute_granularity="full" if recompute_enabled else None,
+                        recompute_method="uniform" if recompute_enabled else None,
+                        recompute_num_layers=1 if recompute_enabled else None,
+                        recompute_use_reentrant=use_reentrant,
                     )
-                    model = Olmo3ForCausalLM(config)
-                    input_ids = paddle.to_tensor([[2, 3, 4, 5]], dtype="int64")
-                    labels = paddle.to_tensor([[3, 4, 5, 6]], dtype="int64")
-                    expected = model(input_ids, labels=labels, return_dict=True)
+                    model = Olmo3ForCausalLMDeprecated(config)
+                    input_ids = paddle.to_tensor([[2, 3, 4, 5], [1, 1, 6, 7]], dtype="int64")
+                    labels = paddle.to_tensor([[3, 4, 5, 6], [1, 6, 7, 8]], dtype="int64")
+                    loss_mask = paddle.to_tensor([[1, 0, 1, 1], [0, 0, 1, 1]], dtype="float32")
+                    attention_mask = paddle.to_tensor([[1, 1, 1, 1], [0, 0, 1, 1]], dtype="bool")
+                    position_ids = paddle.clip(attention_mask.astype("int64").cumsum(-1) - 1, min=0)
+                    inputs = dict(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids)
+                    expected = model(**inputs, labels=labels, loss_mask=loss_mask, return_dict=True)
+                    expected.loss.backward()
+                    unmasked_loss = model(**inputs, labels=labels, return_dict=True).loss
                     with tempfile.TemporaryDirectory() as checkpoint:
                         model.save_pretrained(checkpoint, safe_serialization=True)
-                        pipe = Olmo3ForCausalLMPipe.from_pretrained(checkpoint, config=config, dtype="float32")
-                        actual = pipe.run_function[0](dict(input_ids=input_ids))
-                        actual, structured = tuple_to_dict_helper(dict_to_tuple_helper(actual))
-                        self.assertTrue(structured)
-                        for stage in pipe.run_function[1:]:
-                            actual = stage(actual)
-                        np.testing.assert_allclose(actual.numpy(), expected.logits.numpy(), atol=1e-5, rtol=1e-5)
-                        loss = pipe._loss_fn[0](actual, labels).reshape([])
-                        np.testing.assert_allclose(loss.numpy(), expected.loss.numpy(), atol=1e-5, rtol=1e-5)
-                        loss.backward()
-                        self.assertTrue(all(p.grad is not None for p in pipe.parameters()))
-                        pipe.save_pretrained(checkpoint, safe_serialization=True)
-                        restored = Olmo3ForCausalLM.from_pretrained(checkpoint, config=config, dtype="float32")
-                        for name, value in model.state_dict().items():
-                            np.testing.assert_allclose(
-                                restored.state_dict()[name].numpy(), value.numpy(), atol=1e-5, rtol=1e-5
+                        for model_class in (
+                            Olmo3ForCausalLM,
+                            Olmo3ForCausalLMPipe,
+                            Olmo3ForCausalLMPipeDeprecated,
+                        ):
+                            pipe = model_class.from_pretrained(checkpoint, config=config, dtype="float32")
+                            calls = []
+                            attention = pipe.run_function[1].self_attn
+                            if pipe.is_fleet:
+                                attention = attention.core_attention
+                            hook = attention.register_forward_post_hook(lambda layer, args, output: calls.append(1))
+                            pipeline_inputs = inputs if pipe.is_fleet else (input_ids, attention_mask, position_ids)
+                            actual = pipe.run_function[0](pipeline_inputs)
+                            actual, structured = tuple_to_dict_helper(dict_to_tuple_helper(actual))
+                            self.assertEqual(structured, pipe.is_fleet)
+                            for stage in pipe.run_function[1:]:
+                                actual = stage(actual)
+                            np.testing.assert_allclose(actual.numpy(), expected.logits.numpy(), atol=1e-5, rtol=1e-5)
+                            loss_labels = labels if pipe.is_fleet else (labels, loss_mask)
+                            loss = pipe._loss_fn[0](actual, loss_labels).reshape([])
+                            expected_loss = unmasked_loss if pipe.is_fleet else expected.loss
+                            np.testing.assert_allclose(loss.numpy(), expected_loss.numpy(), atol=1e-5, rtol=1e-5)
+                            loss.backward()
+                            hook.remove()
+                            self.assertEqual(len(calls), 2 if recompute_enabled else 1)
+                            self.assertTrue(all(p.grad is not None for p in pipe.parameters()))
+                            if not pipe.is_fleet:
+                                for name, parameter in pipe.state_dict().items():
+                                    np.testing.assert_allclose(
+                                        parameter.grad.numpy(),
+                                        model.state_dict()[name].grad.numpy(),
+                                        atol=1e-5,
+                                        rtol=1e-5,
+                                        err_msg=name,
+                                    )
+                            pipe.save_pretrained(checkpoint, safe_serialization=True)
+                            restored = Olmo3ForCausalLMDeprecated.from_pretrained(
+                                checkpoint, config=config, dtype="float32"
                             )
-                        result = restored(input_ids, labels=labels, return_dict=True)
-                        np.testing.assert_allclose(
-                            result.logits.numpy(), expected.logits.numpy(), atol=1e-5, rtol=1e-5
-                        )
+                            for name, value in model.state_dict().items():
+                                np.testing.assert_allclose(
+                                    restored.state_dict()[name].numpy(), value.numpy(), atol=1e-5, rtol=1e-5
+                                )
+                            result = restored(**inputs, labels=labels, loss_mask=loss_mask, return_dict=True)
+                            np.testing.assert_allclose(
+                                result.logits.numpy(), expected.logits.numpy(), atol=1e-5, rtol=1e-5
+                            )
+                            before = [parameter.clone() for parameter in pipe.parameters()]
+                            optimizer = paddle.optimizer.SGD(learning_rate=0.01, parameters=pipe.parameters())
+                            optimizer.step()
+                            self.assertTrue(
+                                any(
+                                    not paddle.equal_all(old, new).item()
+                                    for old, new in zip(before, pipe.parameters())
+                                )
+                            )
 
     @require_gpu(min_gpus=2)
     @require_package("paddlefleet")
@@ -253,7 +302,15 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
         #     python -m pytest tests/transformers/olmo3/test_modeling.py -k test_pipeline_tensor_parallel_checkpoint_roundtrip
         self._check_pipeline_parallel_training(tp_size=2, learning_rate=0.0)
 
-    def _check_pipeline_parallel_training(self, tp_size, learning_rate):
+    @require_gpu(min_gpus=2)
+    def test_native_pipeline_parallel_training(self):
+        self._check_pipeline_parallel_training(tp_size=1, learning_rate=0.01, native=True)
+
+    @require_gpu(min_gpus=4)
+    def test_native_pipeline_tensor_parallel_checkpoint_roundtrip(self):
+        self._check_pipeline_parallel_training(tp_size=2, learning_rate=0.0, native=True)
+
+    def _check_pipeline_parallel_training(self, tp_size, learning_rate, native=False):
         from paddle.distributed import fleet
         from safetensors.numpy import load_file
 
@@ -282,7 +339,7 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                     _attn_implementation="eager",
                 )
                 paddle.seed(42)
-                model = Olmo3ForCausalLM(config)
+                model = Olmo3ForCausalLMDeprecated(config)
                 input_ids = paddle.to_tensor([[2, 3, 4, 5]], dtype="int64")
                 labels = paddle.to_tensor([[3, 4, 5, 6]], dtype="int64")
                 expected = model(input_ids, labels=labels, return_dict=True).loss
@@ -294,13 +351,14 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                     paddle.distributed.barrier()
                     config.pipeline_model_parallel_size = 2
                     config.tensor_model_parallel_size = tp_size
-                    pipe = Olmo3ForCausalLMPipe.from_pretrained(directories[0], config=config, dtype="float32")
+                    model_class = Olmo3ForCausalLMPipeDeprecated if native else Olmo3ForCausalLMPipe
+                    pipe = model_class.from_pretrained(directories[0], config=config, dtype="float32")
                     engine = fleet.distributed_model(pipe)
                     optimizer = fleet.distributed_optimizer(
                         paddle.optimizer.SGD(learning_rate=learning_rate, parameters=pipe.parameters())
                     )
                     before = [parameter.clone() for parameter in pipe.parameters()]
-                    data = [dict(input_ids=input_ids), labels]
+                    data = [input_ids if native else dict(input_ids=input_ids), labels]
                     actual = engine.eval_batch(data, compute_loss=True).reshape([])
                     np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
                     loss = engine.train_batch(data, optimizer).reshape([])
@@ -358,8 +416,21 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
 
-        for architectures in (None, [], ["Olmo3ForCausalLM"]):
-            with self.subTest(architectures=architectures):
+    @require_gpu(min_gpus=1)
+    @require_package("paddlefleet")
+    def test_fleet_lm_head_model(self):
+        from paddle.distributed import fleet
+
+        from paddleformers.transformers.gpt_provider import GPTModel
+
+        if getattr(fleet.fleet, "_hcg", None) is None:
+            strategy = fleet.DistributedStrategy()
+            strategy.hybrid_configs = dict(dp_degree=1, mp_degree=1, pp_degree=1, sharding_degree=1)
+            fleet.init(is_collective=True, strategy=strategy)
+        for auto_class, architectures in product(
+            (AutoModelForCausalLM, AutoModelForCausalLMPipe), (None, [], ["Olmo3ForCausalLM"])
+        ):
+            with self.subTest(auto_class=auto_class.__name__, architectures=architectures):
                 config = Olmo3Config(
                     vocab_size=128,
                     hidden_size=32,
@@ -371,14 +442,15 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                     fuse_rms_norm=False,
                     _attn_implementation="eager",
                 )
-                model = AutoModelForCausalLM.from_config(config, dtype="float32")
-                self.assertIsInstance(model, Olmo3ForCausalLM)
+                model = auto_class.from_config(config, dtype="float32")
+                self.assertIsInstance(model, GPTModel)
+                self.assertTrue(model.is_fleet)
                 model.eval()
                 input_ids = ids_tensor([2, 6], config.vocab_size)
                 with paddle.no_grad():
-                    result = model(input_ids, return_dict=True)
-                self.assertEqual(result.logits.shape, [2, 6, config.vocab_size])
-                self.assertTrue(paddle.isfinite(result.logits).all().item())
+                    logits = model(dict(input_ids=input_ids))
+                self.assertEqual(logits.shape, [2, 6, config.vocab_size])
+                self.assertTrue(paddle.isfinite(logits).all().item())
 
     def test_training_with_recompute(self):
         for recompute in (False, True):
@@ -400,7 +472,7 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                     config.recompute_granularity = "full"
                     config.recompute_method = "uniform"
                     config.recompute_num_layers = 1
-                model = Olmo3ForCausalLM(config)
+                model = Olmo3ForCausalLMDeprecated(config)
                 model.train()
                 input_ids = ids_tensor([2, 6], config.vocab_size)
                 loss = model(input_ids, labels=input_ids, return_dict=True).loss
@@ -437,14 +509,14 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
                     **rope_kwargs,
                 )
                 self.assertEqual(set(config.rope_parameters), set(config.layer_types))
-                model = Olmo3ForCausalLM(config)
+                model = Olmo3ForCausalLMDeprecated(config)
                 model.eval()
                 input_ids = ids_tensor([2, 6], config.vocab_size)
                 with paddle.no_grad():
                     expected = model(input_ids, return_dict=True).logits
                 with tempfile.TemporaryDirectory() as directory:
                     model.save_pretrained(directory, safe_serialization=True)
-                    restored = Olmo3ForCausalLM.from_pretrained(
+                    restored = Olmo3ForCausalLMDeprecated.from_pretrained(
                         directory, dtype="float32", fuse_rms_norm=False, _attn_implementation="eager"
                     )
                 restored.eval()
@@ -468,7 +540,7 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
             fuse_rms_norm=False,
             _attn_implementation="eager",
         )
-        model = Olmo3ForCausalLM(config)
+        model = Olmo3ForCausalLMDeprecated(config)
         model.eval()
         self.assertTrue(model.can_generate())
         self.assertIsNotNone(model.generation_config)
@@ -511,7 +583,7 @@ class Olmo3ModelTest(ModelTesterMixin, unittest.TestCase):
             fuse_rms_norm=False,
             _attn_implementation="eager",
         )
-        model = Olmo3ForCausalLM(config)
+        model = Olmo3ForCausalLMDeprecated(config)
         model.eval()
         for left_padding in (False, True):
             with self.subTest(left_padding=left_padding), paddle.no_grad():
@@ -574,7 +646,7 @@ class Olmo3GenerationTest(unittest.TestCase):
     def test_generation_capital_of_china(self):
         tokenizer = AutoTokenizer.from_pretrained(self._MODEL_ID, trust_remote_code=True, download_hub="modelscope")
 
-        model = Olmo3ForCausalLM.from_pretrained(
+        model = Olmo3ForCausalLMDeprecated.from_pretrained(
             self._MODEL_ID,
             dtype="bfloat16",
             download_hub="modelscope",
@@ -717,7 +789,7 @@ class Olmo3DiffTest(unittest.TestCase):
             config = Olmo3Config.from_pretrained(cls._MODEL_ID, download_hub="modelscope")
             config.fuse_rms_norm = False
             config._attn_implementation = "sdpa"
-            cls._model = Olmo3ForCausalLM.from_pretrained(
+            cls._model = Olmo3ForCausalLMDeprecated.from_pretrained(
                 cls._MODEL_ID,
                 dtype="float32",
                 config=config,

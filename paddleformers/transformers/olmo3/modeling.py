@@ -27,7 +27,10 @@ from paddle import nn
 from paddle.distributed import fleet
 from paddle.distributed.fleet.layers.mpu import mp_ops
 from paddle.distributed.fleet.meta_parallel import (
+    LayerDesc,
     LayerSpec,
+    PipelineLayer,
+    SharedLayerDesc,
     build_spec_layer,
     get_rng_state_tracker,
 )
@@ -50,7 +53,14 @@ from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
-from ...nn.pp_model import GeneralModelForCausalLMPipe
+from ...nn.norm import RMSNorm as GeneralRMSNorm
+from ...nn.pp_model import (
+    CriterionLayerPipe,
+    EmptyLayer,
+    GeneralModelForCausalLMPipe,
+    LMHeadPipe,
+    parse_args,
+)
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
 from ..gpt_provider import GPTModel, GPTModelProvider
@@ -684,10 +694,11 @@ class Olmo3Model(Olmo3PretrainedModel):
         )
 
 
-class Olmo3ForCausalLM(Olmo3PretrainedModel):
+class Olmo3ForCausalLMDeprecated(Olmo3PretrainedModel):
     """OLMo3 model for causal language modeling."""
 
     _tied_weights_keys = ["lm_head.weight"]
+    is_fleet = False
     _model_cls = Olmo3Model
 
     def __init__(self, config: Olmo3Config):
@@ -1070,8 +1081,8 @@ class Olmo3ModelProvider(GPTModelProvider):
         return wrapped
 
 
-class Olmo3ForCausalLMPipe(GeneralModelForCausalLMPipe):
-    """OLMo3 pipeline model with per-layer masks and rotary embeddings."""
+class Olmo3ForCausalLM(Olmo3PretrainedModel):
+    """OLMo3 Fleet model with per-layer masks and rotary embeddings."""
 
     config_class = Olmo3Config
     is_fleet = True
@@ -1080,8 +1091,6 @@ class Olmo3ForCausalLMPipe(GeneralModelForCausalLMPipe):
         provider = Olmo3ModelProvider.from_config(config)
         loss_fn = None
         if getattr(config, "dpo_config", None):
-            from ...nn.pp_model import CriterionLayerPipe
-
             loss_fn = CriterionLayerPipe(config, use_infohub=True)
         model = provider.provide(loss_fn=loss_fn)
         model._gen_aoa_config = cls._gen_aoa_config
@@ -1137,7 +1146,180 @@ class Olmo3ForCausalLMPipe(GeneralModelForCausalLMPipe):
         return {"aoa_statements": statements}
 
 
+class Olmo3ForCausalLMPipe(Olmo3ForCausalLM, GeneralModelForCausalLMPipe):
+    """Fleet pipeline entry using the same provider as the default model."""
+
+
+class Olmo3EmbeddingPipe(nn.Layer):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.embed_tokens = GeneralEmbedding.create(config, padding_idx=None)
+        self.rotary_embs = nn.LayerDict(
+            {kind: Olmo3RotaryEmbedding(config, layer_type=kind) for kind in dict.fromkeys(config.layer_types)}
+        )
+
+    @property
+    def embedding_weight(self):
+        return self.embed_tokens.weight
+
+    def forward(self, args):
+        input_ids, attention_mask, position_ids, _, _ = parse_args(args, is_embed=True)
+        hidden_states = self.embed_tokens(input_ids)
+        batch_size, seq_length = input_ids.shape
+        if position_ids is None:
+            position_ids = paddle.arange(seq_length, dtype="int64").unsqueeze(0).tile([batch_size, 1])
+        indices = None
+        if attention_mask is not None and attention_mask.dtype == paddle.int32:
+            indices, attention_mask = attention_mask, None
+        masks, indices = _build_attention_masks(
+            self.config,
+            hidden_states,
+            batch_size,
+            seq_length,
+            attention_mask,
+            indices,
+            Olmo3Model._prepare_decoder_attention_mask,
+            "sliding_attention" in self.config.layer_types,
+        )
+        position_embeddings = {
+            kind: paddle.stack(rotary(hidden_states, position_ids)) for kind, rotary in self.rotary_embs.items()
+        }
+        if self.config.sequence_parallel:
+            hidden_states = ScatterOp.apply(hidden_states.reshape([-1, hidden_states.shape[-1]]))
+        if paddle.is_grad_enabled():
+            hidden_states.stop_gradient = False
+        return _pack_pipeline_args(hidden_states, masks, indices, position_ids, position_embeddings)
+
+
+class Olmo3DecoderLayerPipe(Olmo3DecoderLayer):
+    def forward(self, args, _recompute=False, *metadata):
+        if metadata:
+            args = (args,) + metadata
+        hidden_states, masks, indices, position_ids, position_embeddings = _unpack_pipeline_args(args)
+        kind = self.self_attn.attention_type
+        rotary = position_embeddings[kind]
+        layer_inputs = dict(
+            attention_mask=masks[kind],
+            attn_mask_startend_row_indices=indices[kind],
+            position_ids=position_ids,
+            position_embeddings=(rotary[0], rotary[1]),
+        )
+        if (
+            not _recompute
+            and self.training
+            and paddle.is_grad_enabled()
+            and self.config.recompute_granularity == "full"
+        ):
+            if self.config.recompute_method != "uniform" or self.config.recompute_num_layers != 1:
+                raise ValueError("OLMo3 full recompute requires uniform recompute with one layer per group.")
+            return recompute(
+                self,
+                args[0],
+                True,
+                *args[1:],
+                use_reentrant=self.config.recompute_use_reentrant and not hidden_states.stop_gradient,
+            )
+        hidden_states = super().forward(hidden_states, **layer_inputs)
+        return (hidden_states,) + tuple(value.clone() for value in args[1:])
+
+
+class Olmo3RMSNormPipe(GeneralRMSNorm):
+    def __init__(self, config):
+        super().__init__(config, input_is_parallel=config.sequence_parallel)
+
+    def forward(self, args):
+        return super().forward(args[0])
+
+
+class Olmo3CriterionLayerPipe(CriterionLayerPipe):
+    def forward(self, logits, labels, mtp_logits=None):
+        loss_mask = None
+        if isinstance(labels, tuple):
+            labels, loss_mask = labels
+        return CriterionLayer.forward(self, logits, labels, loss_mask=loss_mask, mtp_logits=mtp_logits)
+
+
+class Olmo3ForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
+    """Native pipeline fallback preserving OLMo3 masks, RoPE and post-norm semantics."""
+
+    config_class = Olmo3Config
+    is_fleet = False
+    _decoder_layer_cls = Olmo3DecoderLayer
+    _decoder_layer_pipe_cls = Olmo3DecoderLayerPipe
+    _init_weights = Olmo3Model._init_weights
+    _keep_in_fp32_modules = Olmo3Model._keep_in_fp32_modules
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = Olmo3Model.transpose_weight_keys
+    _gen_aoa_config = Olmo3ForCausalLMDeprecated._gen_aoa_config
+    _gen_inv_aoa_config = Olmo3ForCausalLMDeprecated._gen_inv_aoa_config
+
+    def __init__(self, config):
+        self.config = config
+        hcg = fleet.get_hybrid_communicate_group()
+        config.tensor_model_parallel_size = max(hcg.get_model_parallel_world_size(), 1)
+        config.tensor_parallel_rank = max(hcg.get_model_parallel_rank(), 0)
+        config.virtual_pipeline_model_parallel_size = max(config.virtual_pipeline_model_parallel_size, 1)
+        local_shared_weight = config.tie_word_embeddings and hcg.get_pipe_parallel_world_size() == 1
+        if config.tie_word_embeddings and not local_shared_weight:
+            embedding = SharedLayerDesc(
+                "model_shared_weight", Olmo3EmbeddingPipe, shared_weight_attr="embedding_weight", config=config
+            )
+            head = SharedLayerDesc(
+                "model_shared_weight", LMHeadPipe, shared_weight_attr="embedding_weight", config=config
+            )
+        else:
+            embedding = LayerDesc(Olmo3EmbeddingPipe, config=config)
+            head = LayerDesc(LMHeadPipe, config=config)
+        self.add_sequential_layer(embedding, "model")
+        for index in range(config.num_hidden_layers):
+            self.add_sequential_layer(
+                LayerDesc(Olmo3DecoderLayerPipe, config=config, layer_idx=index), f"model.layers.{index}"
+            )
+        for index in range(config.num_empty_layers_add_in_tail):
+            self.add_sequential_layer(LayerDesc(EmptyLayer), f"empty.layers.{index + config.num_hidden_layers}")
+        self.add_sequential_layer(LayerDesc(Olmo3RMSNormPipe, config=config), "model.norm")
+        self.add_sequential_layer(head, "lm_head")
+        seg_method = getattr(config, "pp_seg_method", "layer:DecoderLayer|EmptyLayer")
+        if (
+            seg_method == "layer:DecoderLayer|EmptyLayer"
+            and (config.num_hidden_layers + config.num_empty_layers_add_in_tail) % hcg.get_pipe_parallel_world_size()
+        ):
+            seg_method = "uniform"
+        PipelineLayer.__init__(
+            self,
+            layers=self.get_sequential_layers(),
+            loss_fn=Olmo3CriterionLayerPipe(config, use_infohub=bool(getattr(config, "dpo_config", None))),
+            topology=hcg.topology(),
+            seg_method=seg_method,
+            recompute_interval=0,
+            recompute_ctx={"mp_group": hcg.get_model_parallel_group(), "offload": False, "partition": False},
+            num_virtual_pipeline_stages=config.virtual_pipeline_model_parallel_size,
+        )
+        if local_shared_weight:
+            self.run_function[-1].weight = self.run_function[0].embedding_weight
+
+
 _MASK_SLOTS = ("full_attention", "sliding_attention")
+
+
+def _pack_pipeline_args(hidden_states, masks, indices, position_ids, position_embeddings):
+    """Flat tensor packet: hidden states, positions, mask pairs, then RoPE per type."""
+    rotary = tuple(
+        position_embeddings[kind] if kind in position_embeddings else paddle.zeros([1], dtype="bool")
+        for kind in _MASK_SLOTS
+    )
+    return (hidden_states, position_ids) + _pack_attention_masks(masks, indices, masks) + rotary
+
+
+def _unpack_pipeline_args(args):
+    hidden_states, position_ids, *metadata = args
+    mask_count = 2 * len(_MASK_SLOTS)
+    masks, indices = {}, {}
+    for kind in _MASK_SLOTS:
+        masks[kind], indices[kind] = _unpack_attention_masks(metadata[:mask_count], kind)
+    rotary = dict(zip(_MASK_SLOTS, metadata[mask_count:]))
+    return hidden_states, masks, indices, position_ids, rotary
 
 
 def _pack_attention_masks(masks, indices, layer_types):
@@ -1353,4 +1535,6 @@ __all__ = [
     "Olmo3PretrainedModel",
     "Olmo3ForCausalLM",
     "Olmo3ForCausalLMPipe",
+    "Olmo3ForCausalLMDeprecated",
+    "Olmo3ForCausalLMPipeDeprecated",
 ]

@@ -496,6 +496,8 @@ import_structure = {
         "Olmo3PretrainedModel",
         "Olmo3ForCausalLM",
         "Olmo3ForCausalLMPipe",
+        "Olmo3ForCausalLMDeprecated",
+        "Olmo3ForCausalLMPipeDeprecated",
     ],
     "intern_lm3.configuration": ["InternLM3Config"],
     "intern_lm3.modeling": [
