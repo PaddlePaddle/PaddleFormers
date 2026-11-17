@@ -142,6 +142,18 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
             ".*up_proj.*",
         ]
+    elif model.config.model_type == "hunyuan_v1_dense":
+        target_modules = [
+            ".*qkv_proj.*",
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*up_gate_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "mixtral":
         target_modules = [
             ".*q_proj.*",
