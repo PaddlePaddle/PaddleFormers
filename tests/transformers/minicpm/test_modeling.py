@@ -14,15 +14,27 @@
 # limitations under the License.
 from __future__ import annotations
 
+import tempfile
 import unittest
 
+import numpy as np
 import paddle
 
+from paddleformers.nn.pp_model import (
+    EmbeddingPipe,
+    RMSNormPipe,
+    make_decoder_layer_pipe,
+)
 from paddleformers.transformers import (
     MiniCPMConfig,
     MiniCPMForCausalLM,
     MiniCPMForSequenceClassification,
     MiniCPMModel,
+)
+from paddleformers.transformers.minicpm.modeling import (
+    MiniCPMForCausalLMPipe,
+    MiniCPMLMHeadPipe,
+    _create_scaled_embedding,
 )
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
@@ -376,17 +388,26 @@ class MiniCPMGenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
     internal_testing_model = "PaddleFormers/tiny-random-minicpm"
 
 
-class MiniCPMReviewRegressionTest(unittest.TestCase):
-    def test_pp_component_chain_matches_forward_and_gradients(self):
-        import numpy as np
-
-        from paddleformers.nn.pp_model import (
-            EmbeddingPipe,
-            RMSNormPipe,
-            make_decoder_layer_pipe,
+class MiniCPMCompatibilityTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        if paddle.device.cuda.device_count():
+            paddle.set_device("gpu:0")
+        self.config = MiniCPMConfig(
+            vocab_size=32,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            scale_emb=3.0,
+            dim_model_base=8,
+            scale_depth=1.4,
+            _attn_implementation="eager",
+            fuse_rms_norm=False,
         )
-        from paddleformers.transformers.minicpm.modeling import MiniCPMForCausalLMPipe
 
+    def test_pp_component_chain_matches_forward_and_gradients(self):
         model = MiniCPMForCausalLM(self.config)
         model.eval()
         pipe_cls = MiniCPMForCausalLMPipe
@@ -421,10 +442,6 @@ class MiniCPMReviewRegressionTest(unittest.TestCase):
         )
 
     def test_safetensors_flex_roundtrip(self):
-        import tempfile
-
-        import numpy as np
-
         with tempfile.TemporaryDirectory() as directory:
             model = MiniCPMForCausalLM(self.config)
             model.eval()
@@ -438,22 +455,6 @@ class MiniCPMReviewRegressionTest(unittest.TestCase):
                 np.testing.assert_array_equal(value.numpy(), restored.state_dict()[name].numpy(), err_msg=name)
             np.testing.assert_array_equal(expected, restored(ids)[0].numpy())
 
-    def setUp(self):
-        paddle.set_device("cpu")
-        self.config = MiniCPMConfig(
-            vocab_size=32,
-            hidden_size=16,
-            intermediate_size=32,
-            num_hidden_layers=2,
-            num_attention_heads=2,
-            num_key_value_heads=1,
-            scale_emb=3.0,
-            dim_model_base=8,
-            scale_depth=1.4,
-            _attn_implementation="eager",
-            fuse_rms_norm=False,
-        )
-
     def test_hf_defaults(self):
         config = MiniCPMConfig()
         self.assertEqual((config.vocab_size, config.hidden_size, config.num_hidden_layers), (32000, 4096, 32))
@@ -463,13 +464,6 @@ class MiniCPMReviewRegressionTest(unittest.TestCase):
         self.assertFalse(hasattr(config, "sliding_window"))
 
     def test_pp_scaling_components(self):
-        import numpy as np
-
-        from paddleformers.transformers.minicpm.modeling import (
-            MiniCPMLMHeadPipe,
-            _create_scaled_embedding,
-        )
-
         embedding = _create_scaled_embedding(self.config)
         ids = paddle.to_tensor([[1, 2, 3]])
         expected = paddle.nn.functional.embedding(ids, embedding.weight) * self.config.scale_emb
@@ -479,7 +473,7 @@ class MiniCPMReviewRegressionTest(unittest.TestCase):
         expected = paddle.matmul(hidden / 2, head.weight, transpose_y=True)
         np.testing.assert_allclose(head(hidden).numpy(), expected.numpy())
 
-    def test_cpu_forward_backward(self):
+    def test_forward_backward(self):
         model = MiniCPMForCausalLM(self.config)
         ids = paddle.to_tensor([[1, 2, 3]])
         result = model(ids, labels=ids, return_dict=True)
