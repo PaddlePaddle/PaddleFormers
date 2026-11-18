@@ -311,17 +311,13 @@ class Phi4MultimodalVisionEmbeddings(nn.Layer):
         self.position_embedding = nn.Embedding(self.num_patches_per_side**2, config.hidden_size)
 
     def forward(self, pixel_values: paddle.Tensor, patch_attention_mask: paddle.Tensor) -> paddle.Tensor:
-        batch_size, _, max_im_h, max_im_w = pixel_values.shape
+        batch_size = pixel_values.shape[0]
 
         patch_embeds = self.patch_embedding(pixel_values)
         embeddings = patch_embeds.flatten(2).transpose([0, 2, 1])
 
-        max_nb_patches_h, max_nb_patches_w = max_im_h // self.patch_size, max_im_w // self.patch_size
         boundaries = paddle.arange(1 / self.num_patches_per_side, 1.0, 1 / self.num_patches_per_side).astype(
             pixel_values.dtype
-        )
-        position_ids = paddle.full(
-            shape=[batch_size, max_nb_patches_h * max_nb_patches_w], fill_value=0, dtype="int64"
         )
 
         nb_patches_h = patch_attention_mask[:, :, 0].astype("int64").sum(axis=1)
@@ -351,9 +347,9 @@ class Phi4MultimodalVisionEmbeddings(nn.Layer):
         pos_ids = pos_ids.reshape([batch_size, -1])
 
         flat_mask = patch_attention_mask.reshape([batch_size, -1]).astype("bool")
-        for i in range(batch_size):
-            mask_i = flat_mask[i]
-            position_ids[i][mask_i] = pos_ids[i][mask_i]
+        # Chained indexed assignment may update a temporary when traced.
+        # Select all positions functionally, preserving zero IDs for padding.
+        position_ids = paddle.where(flat_mask, pos_ids, paddle.zeros_like(pos_ids))
 
         embeddings = embeddings + self.position_embedding(position_ids)
         return embeddings
