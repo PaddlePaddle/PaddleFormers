@@ -13,11 +13,29 @@
 # limitations under the License.
 from __future__ import annotations
 
+import json
+import re
+import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
+import numpy as np
 import paddle
 
-from paddleformers.transformers import MiMoConfig, MiMoForCausalLM, MiMoModel
+from paddleformers.cli.train.dpo.dpo_argument import DPOConfig
+from paddleformers.cli.utils.llm_utils import get_lora_target_modules
+from paddleformers.nn.criterion.interface import CriterionLayer
+from paddleformers.nn.pp_model import GeneralModelForCausalLMPipe
+from paddleformers.transformers import (
+    MiMoConfig,
+    MiMoForCausalLM,
+    MiMoForCausalLMPipe,
+    MiMoModel,
+)
+from paddleformers.transformers.configuration_utils import LlmMetaConfig
+from paddleformers.transformers.mimo.modeling import MiMoMTPWeights
+from paddleformers.transformers.model_outputs import BaseModelOutputWithPast
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
@@ -134,20 +152,81 @@ class MiMoModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
         self.model_tester.create_and_check_for_causal_lm(config, input_ids, input_mask, token_labels)
 
 
-class MiMoReviewRegressionTest(unittest.TestCase):
+class MiMoCompatibilityTest(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        if paddle.device.cuda.device_count():
+            paddle.set_device("gpu:0")
+        self.config = MiMoConfig(
+            vocab_size=32,
+            hidden_size=16,
+            intermediate_size=32,
+            num_hidden_layers=2,
+            num_attention_heads=2,
+            num_key_value_heads=1,
+            head_dim=8,
+            num_nextn_predict_layers=1,
+            _attn_implementation="eager",
+            fuse_rms_norm=False,
+        )
+
+    def test_mtp_count_survives_training_config_and_hf_serialization(self):
+        self.assertEqual(self.config.num_mtp_layers, 1)
+        self.assertEqual(self.config.num_nextn_predict_layers, 0)
+        LlmMetaConfig.set_llm_config(self.config, SimpleNamespace(num_nextn_predict_layers=0))
+        self.assertEqual(len(MiMoModel(self.config).mtp_layers), 1)
+        with tempfile.TemporaryDirectory() as directory:
+            self.config.save_pretrained(directory)
+            with open(directory + "/config.json") as stream:
+                serialized = json.load(stream)
+            self.assertEqual(serialized["num_nextn_predict_layers"], 1)
+            self.assertNotIn("num_mtp_layers", serialized)
+            restored = MiMoConfig.from_pretrained(directory)
+            self.assertEqual(restored.num_mtp_layers, 1)
+            self.assertEqual(restored.num_nextn_predict_layers, 0)
+        zero = MiMoConfig(num_mtp_layers=0)
+        self.assertEqual(MiMoConfig.from_dict(zero.to_dict()).num_mtp_layers, 0)
+
+    def test_base_model_safetensors_flex_roundtrip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            model = MiMoModel(self.config)
+            model.eval()
+            ids = paddle.to_tensor([[1, 2, 3]])
+            expected = model(ids)[0].numpy()
+            model.save_pretrained(directory, safe_serialization=True)
+            restored = MiMoModel.from_pretrained(directory, load_checkpoint_format="flex_checkpoint")
+            restored.eval()
+            self.assertEqual(set(model.state_dict()), set(restored.state_dict()))
+            for name, value in model.state_dict().items():
+                np.testing.assert_array_equal(value.numpy(), restored.state_dict()[name].numpy(), err_msg=name)
+            np.testing.assert_array_equal(expected, restored(ids)[0].numpy())
+
+    def test_cached_forward_matches_full_forward(self):
+        model = MiMoModel(self.config)
+        model.eval()
+        ids = paddle.to_tensor([[1, 2, 3, 4]])
+        full = model(ids, use_cache=False)[0]
+        prefix = model(ids[:, :3], use_cache=True, return_dict=True)
+        cached = model(ids[:, 3:], past_key_values=prefix.past_key_values, use_cache=True)[0]
+        np.testing.assert_allclose(full[:, -1].numpy(), cached[:, -1].numpy(), atol=1e-6, rtol=1e-5)
+
+    def test_pipeline_retains_frozen_mtp_without_shifting_tokens(self):
+        stage = MiMoMTPWeights(self.config)
+        hidden = paddle.randn([1, 3, self.config.hidden_size])
+        self.assertIs(stage(hidden), hidden)
+        self.assertTrue(all(parameter.stop_gradient for parameter in stage.parameters()))
+        self.assertEqual(list(stage.state_dict())[0].split(".")[0], "0")
+        pipe = object.__new__(MiMoForCausalLMPipe)
+        pipe.config = self.config
+        pipe.add_sequential_layer(None, "lm_head")
+        self.assertEqual(list(pipe.get_sequential_name_prefixes().values()), ["model.mtp_layers", "lm_head"])
+
     def test_lora_targets_exclude_mtp(self):
-        import re
-
-        from paddleformers.cli.utils.llm_utils import get_lora_target_modules
-
         targets = get_lora_target_modules(MiMoForCausalLM(self.config))
         self.assertTrue(any(re.fullmatch(pattern, "model.layers.0.self_attn.qkv_proj") for pattern in targets))
         self.assertFalse(any(re.fullmatch(pattern, "model.mtp_layers.0.self_attn.qkv_proj") for pattern in targets))
 
     def test_dpo_criterion_backward(self):
-        from paddleformers.cli.train.dpo.dpo_argument import DPOConfig
-        from paddleformers.nn.criterion.interface import CriterionLayer
-
         model = MiMoForCausalLM(self.config)
         self.config.dpo_config = DPOConfig()
         criterion = CriterionLayer(self.config)
@@ -162,10 +241,6 @@ class MiMoReviewRegressionTest(unittest.TestCase):
         self.assertTrue(all(p.grad is None for p in model.model.mtp_layers.parameters()))
 
     def test_safetensors_flex_roundtrip(self):
-        import tempfile
-
-        import numpy as np
-
         with tempfile.TemporaryDirectory() as directory:
             model = MiMoForCausalLM(self.config)
             model.eval()
@@ -179,21 +254,6 @@ class MiMoReviewRegressionTest(unittest.TestCase):
                 np.testing.assert_array_equal(value.numpy(), restored.state_dict()[name].numpy(), err_msg=name)
             np.testing.assert_array_equal(expected, restored(ids)[0].numpy())
 
-    def setUp(self):
-        paddle.set_device("cpu")
-        self.config = MiMoConfig(
-            vocab_size=32,
-            hidden_size=16,
-            intermediate_size=32,
-            num_hidden_layers=2,
-            num_attention_heads=2,
-            num_key_value_heads=1,
-            head_dim=8,
-            num_nextn_predict_layers=1,
-            _attn_implementation="eager",
-            fuse_rms_norm=False,
-        )
-
     def test_mtp_frozen_and_lm_backward(self):
         model = MiMoForCausalLM(self.config)
         self.assertTrue(all(p.stop_gradient for p in model.model.mtp_layers.parameters()))
@@ -205,10 +265,6 @@ class MiMoReviewRegressionTest(unittest.TestCase):
         self.assertIsNotNone(model.model.embed_tokens.weight.grad)
 
     def test_mask_precedence(self):
-        from unittest.mock import patch
-
-        from paddleformers.transformers.model_outputs import BaseModelOutputWithPast
-
         model = MiMoForCausalLM(self.config)
         ids = paddle.to_tensor([[1, 2, 3]])
         indices = paddle.zeros([1, 1, 3, 1], dtype="int32")
@@ -219,12 +275,12 @@ class MiMoReviewRegressionTest(unittest.TestCase):
         self.assertIs(forward.call_args.kwargs["attn_mask_startend_row_indices"], indices)
 
     def test_pp_uses_mimo_mapping(self):
-        from paddleformers.nn.pp_model import GeneralModelForCausalLMPipe
-        from paddleformers.transformers import MiMoForCausalLMPipe
-
         self.assertIn(GeneralModelForCausalLMPipe, MiMoForCausalLMPipe.__bases__)
         mapping = MiMoForCausalLMPipe._gen_aoa_config(self.config)
-        self.assertTrue(any("mtp_layers" in item for item in mapping["aoa_statements"]))
+        self.assertIn(
+            "model.mtp_layers.0.input_proj.weight^T -> model.mtp_layers.0.input_proj.weight",
+            mapping["aoa_statements"],
+        )
 
 
 if __name__ == "__main__":

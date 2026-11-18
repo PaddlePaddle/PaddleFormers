@@ -23,6 +23,14 @@ class MiMoConfig(Qwen2Config):
     MiMo-7B uses a Qwen2-compatible decoder backbone and adds one or more MTP
     layers for speculative decoding. The default values match
     `XiaomiMiMo/MiMo-7B-Base`.
+
+    Args:
+        num_mtp_layers (int, optional):
+            Number of frozen auxiliary layers retained in checkpoints. Defaults
+            to the HF `num_nextn_predict_layers` value.
+        num_nextn_predict_layers (int, optional, defaults to 1):
+            HF checkpoint alias for `num_mtp_layers`. Internally the generic
+            training field is kept at zero: auxiliary MTP training is disabled.
     """
 
     model_type = "mimo"
@@ -44,6 +52,7 @@ class MiMoConfig(Qwen2Config):
         head_dim=128,
         attention_bias=True,
         num_nextn_predict_layers=1,
+        num_mtp_layers=None,
         **kwargs,
     ):
         tokenizer_class = kwargs.get("tokenizer_class", None)
@@ -63,10 +72,21 @@ class MiMoConfig(Qwen2Config):
             sliding_window=sliding_window,
             **kwargs,
         )
-        self.num_nextn_predict_layers = num_nextn_predict_layers
+        # HF uses this name for stored MTP tensors. PaddleFormers uses the
+        # same name for the number of auxiliary objectives to train.
+        self.num_mtp_layers = num_nextn_predict_layers if num_mtp_layers is None else num_mtp_layers
+        if self.num_mtp_layers < 0:
+            raise ValueError("num_mtp_layers must be non-negative")
+        self.num_nextn_predict_layers = 0
         self.use_mrope = use_mrope
         self.head_dim = head_dim
         self.attention_bias = attention_bias
+
+    def to_dict(self, saving_file=False):
+        output = super().to_dict(saving_file=saving_file)
+        if saving_file:
+            output["num_nextn_predict_layers"] = output.pop("num_mtp_layers")
+        return output
 
 
 __all__ = ["MiMoConfig"]
