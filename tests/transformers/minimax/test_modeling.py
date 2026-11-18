@@ -16,6 +16,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
+import numpy as np
 import paddle
 import paddle.nn.functional as F
 
@@ -312,6 +313,47 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
 
         self.assertEqual(expert_calls, list(range(config.num_local_experts)))
         self.assertEqual(output.shape, hidden_states.shape)
+
+    @unittest.skipUnless(paddle.device.cuda.device_count() > 0, "CINN test requires a CUDA device")
+    def test_sparse_moe_cinn_matches_dense_reference_with_empty_experts(self):
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        paddle.set_device("gpu:0")
+        config = self.model_tester.get_config()
+        config.router_jitter_noise = 0.0
+        reference = MiniMaxSparseMoeBlock(config)
+        dynamic = MiniMaxSparseMoeBlock(config)
+        compiled = MiniMaxSparseMoeBlock(config)
+        # Positive inputs and strictly ordered gate columns route every token
+        # to the same two experts, leaving the other experts empty.
+        gate_weight = paddle.arange(config.num_local_experts, dtype="float32").unsqueeze(0)
+        gate_weight = gate_weight.expand([config.hidden_size, config.num_local_experts]) / config.hidden_size
+        reference.gate.weight.set_value(gate_weight)
+        dynamic.set_state_dict(reference.state_dict())
+        compiled.set_state_dict(reference.state_dict())
+        compiled = paddle.jit.to_static(compiled, full_graph=True, backend="CINN")
+        source = paddle.ones([1, 2, config.hidden_size])
+        x = source.clone()
+        x.stop_gradient = False
+        flat = x.reshape([-1, config.hidden_size])
+        scores = F.softmax(reference.gate(flat).astype("float32"), axis=-1)
+        weights, selected = paddle.topk(scores, config.num_experts_per_tok, axis=-1)
+        weights = weights / weights.sum(axis=-1, keepdim=True)
+        routing = (F.one_hot(selected, config.num_local_experts) * weights.unsqueeze(-1)).sum(axis=1)
+        expected = sum(expert(flat) * routing[:, index : index + 1] for index, expert in enumerate(reference.experts))
+        expected = expected.reshape(source.shape)
+        expected.square().sum().backward()
+        for model in (dynamic, compiled):
+            actual_x = source.clone()
+            actual_x.stop_gradient = False
+            actual = model(actual_x)
+            np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
+            actual.square().sum().backward()
+            np.testing.assert_allclose(actual_x.grad.numpy(), x.grad.numpy(), atol=1e-5, rtol=1e-5)
+            for expected_param, actual_param in zip(reference.parameters(), model.parameters()):
+                self.assertIsNotNone(actual_param.grad)
+                np.testing.assert_allclose(
+                    actual_param.grad.numpy(), expected_param.grad.numpy(), atol=1e-5, rtol=1e-5
+                )
 
     def test_linear_attention_accepts_3d_causal_mask(self):
         config = self.model_tester.get_config()
