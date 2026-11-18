@@ -188,6 +188,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>molmo</td>
     </tr>
     <tr>
+      <td>Moondream2</td>
+      <td>vikhyatk/moondream2</td>
+      <td>moondream2</td>
+    </tr>
+    <tr>
       <td>Qwen2.5-VL</td>
       <td>Qwen/Qwen2.5-VL-3B-Instruct、Qwen/Qwen2.5-VL-7B-Instruct、Qwen/Qwen2.5-VL-32B-Instruct、Qwen/Qwen2.5-VL-72B-Instruct</td>
       <td>qwen2_vl</td>

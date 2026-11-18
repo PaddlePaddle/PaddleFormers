@@ -1874,6 +1874,55 @@ class KimiK3Plugin(BasePlugin):
         return dict(image_processor.preprocess(medias, return_tensors="pd"))
 
 
+@dataclass
+class Moondream2Plugin(BasePlugin):
+    """Plugin for Moondream2's single-image vision-language prompts.
+
+    The reference model does not expand ``<image>`` into text tokens: it
+    injects a BOS plus 729 projected image tokens as a bidirectional prefix.
+    The placeholder is therefore dropped from the text and the crops are
+    forwarded separately through the image processor.
+    """
+
+    @override
+    def get_mm_inputs(
+        self,
+        images,
+        videos,
+        audios,
+        processor,
+        **kwargs,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        if len(videos) != 0 or len(audios) != 0:
+            raise ValueError("Moondream2Plugin only supports image inputs.")
+        if len(images) == 0:
+            return {}
+        if len(images) != 1:
+            raise ValueError(f"Moondream2 accepts one image per sample, but got {len(images)}.")
+
+        image = images[0]
+        pil_image = self._img_download(image).convert("RGB") if isinstance(image, str) else image
+        return processor.image_processor([pil_image], return_tensors="pd")
+
+    @override
+    def process_messages(
+        self,
+        messages,
+        images,
+        videos,
+        audios,
+        mm_inputs,
+        processor,
+    ):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        messages = deepcopy(messages)
+        for message in messages:
+            message["content"] = message["content"].replace(IMAGE_PLACEHOLDER, "").strip()
+        return messages
+
+
 PLUGINS = {
     "base": BasePlugin,
     "phi4_multimodal": Phi4MultimodalPlugin,
@@ -1889,6 +1938,7 @@ PLUGINS = {
     "glm_ocr": GlmOcrPlugin,
     "molmo": MolmoPlugin,
     "kimi_k3": KimiK3Plugin,
+    "moondream2": Moondream2Plugin,
 }
 
 

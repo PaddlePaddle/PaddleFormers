@@ -24,6 +24,7 @@
 |AyaVision|x|✓|✓|x|x|
 |🏛️PaddleOCR-VL|x|✓|✓|x|x|
 |Molmo|x|✓|✓|x|x|
+|Moondream2|x|✓|x|x|x|
 |Qwen2.5-VL|x|✓|✓|x|x|
 |Qwen3-VL|x|✓|✓|x|x|
 
@@ -53,6 +54,7 @@
 |AyaVision|x|x|-|x|✓|✓|
 |🏛️PaddleOCR-VL|x|x|-|x|✓|✓|
 |Molmo|x|x|x|x|✓|✓|
+|Moondream2|x|x|-|x|✓|✓|
 |Qwen2.5-VL|✓|x|-|x|✓|✓|
 |Qwen3-VL|x|x|✓|x|✓|✓|
 

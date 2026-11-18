@@ -1359,3 +1359,12 @@ register_template(
     thought_words=("<|channel>thought\n", "\n<channel|>"),
     template_class=Llama2Template,
 )
+
+register_template(
+    name="moondream2",
+    format_user=StringFormatter(slots=["\n\nQuestion: {{content}}\n\nAnswer:"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["{{content}}\n\n"]),
+    format_observation=StringFormatter(slots=["\n\nObservation: {{content}}\n\n"]),
+    mm_plugin=get_mm_plugin(name="moondream2", image_token="<image>"),
+)

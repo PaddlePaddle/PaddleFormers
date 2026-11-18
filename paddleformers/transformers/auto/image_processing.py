@@ -56,6 +56,7 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "kimi_k25": ("KimiK25VisionProcessor"),
         "kimi_k3": ("KimiK3VisionProcessor"),
         "paddleocr_vl": ("PaddleOCRVLImageProcessor"),
+        "moondream2": ("Moondream2ImageProcessor"),
         "phi4_multimodal": ("Phi4MultimodalImageProcessor"),
         "gemma3": ("Gemma3ImageProcessor", "Gemma3ImageProcessorFast"),
         "llama4": ("Llama4ImageProcessor", "Llama4ImageProcessorFast"),
