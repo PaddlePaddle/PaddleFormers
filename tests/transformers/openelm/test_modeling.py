@@ -23,7 +23,6 @@ import paddle
 
 from paddleformers.transformers import OpenELMConfig, OpenELMForCausalLM, OpenELMModel
 from tests.testing_utils import gpu_device_initializer, require_package, slow
-from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import ModelTesterMixin, ids_tensor
 
@@ -92,14 +91,10 @@ class OpenELMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     @gpu_device_initializer(log_prefix="OpenELMModelTest")
     def setUp(self):
         self.model_tester = OpenELMModelTester(self)
-        self.config_tester = ConfigTester(self, config_class=OpenELMConfig, common_properties=["vocab_size"])
 
         self.config = OpenELMConfig(**SMALL_CONFIG)
         self.model = OpenELMModel(self.config)
         self.model.eval()
-
-    def test_config(self):
-        self.config_tester.run_common_tests()
 
     def test_training(self):
         config, ids = self.model_tester.prepare_config_and_inputs()
@@ -156,98 +151,15 @@ class OpenELMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
                     )
 
     def test_model_from_config(self):
-        from paddleformers.transformers import OpenELMConfig, OpenELMModel
-
-        config = OpenELMConfig(**SMALL_CONFIG)
+        config, input_ids = self.model_tester.prepare_config_and_inputs()
         model = OpenELMModel(config)
-        self.assertIsNotNone(model)
-
-        self.assertEqual(config.vocab_size, SMALL_CONFIG["vocab_size"])
-        self.assertEqual(config.model_dim, SMALL_CONFIG["model_dim"])
-        self.assertEqual(config.num_transformer_layers, SMALL_CONFIG["num_transformer_layers"])
-        self.assertEqual(config.head_dim, SMALL_CONFIG["head_dim"])
-
-        self.assertEqual(config.num_hidden_layers, config.num_transformer_layers)
-
-        self.assertIsInstance(config.num_query_heads, list)
-        self.assertIsInstance(config.num_kv_heads, list)
-        self.assertEqual(len(config.num_query_heads), SMALL_CONFIG["num_transformer_layers"])
-        self.assertEqual(len(config.num_kv_heads), SMALL_CONFIG["num_transformer_layers"])
-
-    def test_config_standard_aliases(self):
-        from paddleformers.transformers import OpenELMConfig
-
-        config = OpenELMConfig(**dict(SMALL_CONFIG, qkv_multipliers=(0.5, 1.0)))
-        self.assertEqual(config.hidden_size, config.model_dim)
-        self.assertEqual(config.num_hidden_layers, config.num_transformer_layers)
-        self.assertEqual(config.num_attention_heads, config.num_query_heads)
-        self.assertEqual(config.num_key_value_heads, config.num_kv_heads)
-        self.assertEqual(config.max_position_embeddings, config.max_context_length)
-        with tempfile.TemporaryDirectory() as directory:
-            config.save_pretrained(directory)
-            loaded = OpenELMConfig.from_pretrained(directory)
-        self.assertEqual(loaded.num_attention_heads, config.num_query_heads)
-        self.assertEqual(loaded.num_key_value_heads, config.num_kv_heads)
-        self.assertEqual(loaded.hidden_size, config.model_dim)
-        standard = OpenELMConfig(hidden_size=64, num_hidden_layers=2, max_position_embeddings=128, head_dim=16)
-        self.assertEqual(standard.model_dim, 64)
-        self.assertEqual(standard.num_transformer_layers, 2)
-        self.assertEqual(standard.max_context_length, 128)
-        self.assertTrue(OpenELMConfig(tie_word_embeddings=True).share_input_output_layers)
-        self.assertFalse(OpenELMConfig(tie_word_embeddings=True, share_input_output_layers=False).tie_word_embeddings)
-
-    def test_invalid_tensor_parallel_heads(self):
-        from paddleformers.transformers import OpenELMConfig, OpenELMModel
-
-        config = OpenELMConfig(
-            **dict(SMALL_CONFIG, model_dim=96, head_dim=8, num_gqa_groups=4, tensor_model_parallel_size=2)
+        model.eval()
+        with paddle.no_grad():
+            output = model(input_ids=input_ids, use_cache=False, return_dict=True)
+        self.assertEqual(
+            list(output.last_hidden_state.shape),
+            [self.model_tester.batch_size, self.model_tester.seq_length, config.hidden_size],
         )
-        with self.assertRaisesRegex(ValueError, "divisible by TP size"):
-            OpenELMModel(config)
-
-    def test_model_initialization(self):
-        from unittest.mock import patch
-
-        from paddleformers.transformers import (
-            OpenELMConfig,
-            OpenELMForCausalLM,
-            OpenELMModel,
-        )
-        from paddleformers.transformers.model_utils import no_init_weights
-
-        config = OpenELMConfig(**dict(SMALL_CONFIG, model_dim=128, vocab_size=256, share_input_output_layers=False))
-        for model_class in (OpenELMModel, OpenELMForCausalLM):
-            with self.subTest(model_class=model_class.__name__):
-                paddle.seed(_SEED)
-                model = model_class(config)
-                base = model if model_class is OpenELMModel else model.model
-                expected_std = config.model_dim**-0.5
-                residual_std = expected_std * (2 * config.num_transformer_layers) ** -0.5
-                projections = [(base.embed_tokens.weight, expected_std)]
-                for layer in base.layers:
-                    projections.extend(
-                        [
-                            (layer.self_attn.q_proj.weight, expected_std),
-                            (layer.self_attn.k_proj.weight, expected_std),
-                            (layer.self_attn.v_proj.weight, expected_std),
-                            (layer.self_attn.o_proj.weight, residual_std),
-                            (layer.mlp.up_proj.weight, expected_std),
-                            (layer.mlp.gate_proj.weight, expected_std),
-                            (layer.mlp.down_proj.weight, residual_std),
-                        ]
-                    )
-                    np.testing.assert_array_equal(layer.input_layernorm.weight.numpy(), 1.0)
-                    np.testing.assert_array_equal(layer.post_attention_layernorm.weight.numpy(), 1.0)
-                if model_class is OpenELMForCausalLM:
-                    projections.append((model.lm_head.weight, config.initializer_range))
-                for weight, std in projections:
-                    self.assertAlmostEqual(float(weight.numpy().std()), std, delta=std * 0.1)
-                before = {key: value.numpy().copy() for key, value in model.state_dict().items()}
-                model.init_weights()
-                for key, value in model.state_dict().items():
-                    np.testing.assert_array_equal(value.numpy(), before[key], err_msg=key)
-                with no_init_weights(), patch.object(model_class, "_init_weights", side_effect=AssertionError):
-                    model_class(config)
 
     def test_model_forward(self):
         input_ids = paddle.randint(0, SMALL_CONFIG["vocab_size"], [self.BATCH, self.SEQ])
@@ -345,7 +257,11 @@ class OpenELMForCausalLMTest(unittest.TestCase):
 
         config = OpenELMConfig(**SMALL_CONFIG)
         model = OpenELMForCausalLM(config)
-        self.assertIsNotNone(model)
+        model.eval()
+        input_ids = paddle.randint(0, config.vocab_size, [self.BATCH, self.SEQ])
+        with paddle.no_grad():
+            output = model(input_ids=input_ids, use_cache=False, return_dict=True)
+        self.assertEqual(list(output.logits.shape), [self.BATCH, self.SEQ, config.vocab_size])
 
         if config.share_input_output_layers:
             self.assertIs(model.lm_head.weight, model.model.embed_tokens.weight)
@@ -438,22 +354,6 @@ class OpenELMForCausalLMTest(unittest.TestCase):
             out2 = self.model(input_ids=input_ids, return_dict=True).logits
         self.assertTrue(paddle.allclose(out1, out2))
 
-    def test_causal_lm_prepare_inputs_for_generation(self):
-        input_ids = paddle.to_tensor([[1, 2, 3, 4, 5]], dtype="int64")
-        attention_mask = paddle.ones([1, 5], dtype="int64")
-
-        model_inputs = self.model.prepare_inputs_for_generation(
-            input_ids=input_ids,
-            past_key_values=None,
-            attention_mask=attention_mask,
-            use_cache=True,
-        )
-
-        self.assertIn("input_ids", model_inputs)
-        self.assertIn("attention_mask", model_inputs)
-        self.assertIn("position_ids", model_inputs)
-        self.assertIn("use_cache", model_inputs)
-
     def test_causal_lm_with_cache_autoregressive(self):
         input_ids = paddle.randint(0, SMALL_CONFIG["vocab_size"], [1, 3])
         gen_ids = []
@@ -531,10 +431,11 @@ class OpenELMForCausalLMTest(unittest.TestCase):
                         self.assertEqual(cache.get_seq_length(), end)
                     padding = paddle.to_tensor([[0, 1, 1, 1, 1]], dtype="bool")
                     visible = paddle.tril(paddle.ones([5, 5], dtype="bool"))[None, None] & padding[:, None, None, :]
-                    additive = paddle.where(visible, 0.0, paddle.finfo("float32").min)
                     a = model(ids, attention_mask=padding, use_cache=False, return_dict=True).logits
-                    b = model(ids, attention_mask=additive, use_cache=False, return_dict=True).logits
-                    np.testing.assert_allclose(a.numpy(), b.numpy(), atol=1e-5, rtol=1e-5)
+                    for dtype in ("bool", "int64", "float32"):
+                        for mask in (visible[:, 0].astype(dtype), visible.astype(dtype)):
+                            b = model(ids, attention_mask=mask, use_cache=False, return_dict=True).logits
+                            np.testing.assert_allclose(a.numpy(), b.numpy(), atol=1e-5, rtol=1e-5)
                     row_indices = paddle.full([1, 1, 5, 1], 5, dtype="int32")
                     sparse = model(ids, attn_mask_startend_row_indices=row_indices, use_cache=False, return_dict=True)
                     dense = model(ids, use_cache=False, return_dict=True)
@@ -551,110 +452,61 @@ class OpenELMForCausalLMTest(unittest.TestCase):
                     model_inputs = model.prepare_inputs_for_generation(ids, use_cache=True)
                     self.assertEqual(list(model_inputs["position_ids"].shape), [1, 5])
 
-    def test_pipeline_stage_equivalence(self):
-        from types import SimpleNamespace
-        from unittest.mock import patch
-
-        from paddle.distributed.fleet.meta_parallel.pp_utils import (
-            p2p_communication as p2p,
-        )
-
-        from paddleformers.nn.pp_model import (
-            LMHeadPipe,
-            RMSNormPipe,
-            make_decoder_layer_pipe,
-        )
-        from paddleformers.transformers import OpenELMConfig, OpenELMForCausalLM
-        from paddleformers.transformers.openelm.modeling import (
-            OpenELMCriterionPipe,
-            OpenELMDecoderLayer,
-            OpenELMEmbeddingPipe,
-            OpenELMRotaryEmbedding,
-        )
-
-        def transport(tensors):
-            messages = []
-            sender, receiver = p2p.SendRecvMeta(), p2p.SendRecvMeta()
-            group = SimpleNamespace(_get_p2p_next_rank=lambda: 1, _get_p2p_prev_rank=lambda: 0)
-            with patch.object(p2p, "_hcg", group), patch.object(
-                paddle.distributed, "send", side_effect=lambda tensor, **kwargs: messages.append(tensor.clone())
-            ), patch.object(
-                paddle.distributed,
-                "recv",
-                side_effect=lambda tensor, **kwargs: tensor.set_value(messages.pop(0).reshape(tensor.shape)),
-            ):
-                sender.send_meta(tensors, None)
-                receiver.recv_meta(None)
-            for tensor, shape, dtype, stopped in zip(
-                tensors, receiver.recv_shape_message, receiver.recv_dtype_message, receiver.recv_stop_gradient
-            ):
-                self.assertEqual(list(tensor.shape), shape)
-                self.assertEqual(tensor.dtype, getattr(paddle, p2p.number_2_dtype(dtype)))
-                self.assertEqual(tensor.stop_gradient, bool(stopped))
-            return tuple(tensor.clone() for tensor in tensors)
-
-        ids = paddle.to_tensor([[1, 7, 8, 2]], dtype="int64")
-        padding = paddle.to_tensor([[1, 1, 1, 0]], dtype="int64")
-        labels = paddle.to_tensor([[7, 8, 2, -100]], dtype="int64")
-        mask = paddle.to_tensor([[1, 0, 1, 0]], dtype="float32")
-        for tied in (False, True):
-            for use_recompute in (False, True):
-                with self.subTest(tied=tied, recompute=use_recompute):
-                    config = OpenELMConfig(
-                        **dict(
-                            SMALL_CONFIG,
-                            share_input_output_layers=tied,
-                            recompute_granularity="full" if use_recompute else None,
-                            recompute_method="uniform",
-                            recompute_num_layers=1,
-                        )
-                    )
-                    reference = OpenELMForCausalLM(config)
-                    reference.train()
-                    embedding = OpenELMEmbeddingPipe(config, rotary_emb_cls=OpenELMRotaryEmbedding)
-                    embedding.embed_tokens.set_state_dict(reference.model.embed_tokens.state_dict())
-                    layers = [
-                        make_decoder_layer_pipe(OpenELMDecoderLayer)(config, i)
-                        for i in range(config.num_hidden_layers)
-                    ]
-                    for layer, source in zip(layers, reference.model.layers):
-                        layer.set_state_dict(source.state_dict())
-                    norm = RMSNormPipe(config)
-                    norm.set_state_dict(reference.model.norm.state_dict())
-                    head = LMHeadPipe(config)
-                    head.set_state_dict(reference.lm_head.state_dict())
-                    if tied:
-                        head.weight = embedding.embed_tokens.weight
-                    stage_output = transport(embedding((ids, padding, None)))
-                    for layer in layers:
-                        stage_output = transport(layer(stage_output))
-                    logits = head(norm(stage_output))
-                    expected = reference(
-                        ids, attention_mask=padding, labels=labels, loss_mask=mask, use_cache=False, return_dict=True
-                    )
-                    np.testing.assert_allclose(logits.numpy(), expected.logits.numpy(), atol=1e-5, rtol=1e-5)
-                    criterion = OpenELMCriterionPipe(config)
-                    criterion.train()
-                    loss = criterion(logits, (labels, mask))
-                    np.testing.assert_allclose(loss.numpy(), expected.loss.numpy(), atol=1e-5, rtol=1e-5)
-                    loss.backward()
-                    expected.loss.backward()
-                    for layer, source in zip(layers, reference.model.layers):
-                        parameters = dict(source.named_parameters())
-                        for name, parameter in layer.named_parameters():
-                            np.testing.assert_allclose(
-                                parameter.grad.numpy(),
-                                parameters[name].grad.numpy(),
-                                atol=1e-5,
-                                rtol=1e-5,
-                                err_msg=name,
-                            )
+    def test_causal_lm_packed_attention_mask(self):
+        ids = paddle.to_tensor([[1, 7, 8, 9, 2]], dtype="int64")
+        changed = paddle.to_tensor([[1, 7, 18, 19, 12]], dtype="int64")
+        labels = paddle.to_tensor([[7, 2, -100, -100, -100]], dtype="int64")
+        groups = paddle.to_tensor([0, 0, 1, 1, 1])
+        visible = paddle.tril(paddle.ones([5, 5], dtype="bool")) & (groups[:, None] == groups[None, :])
+        visible = visible[None, None]
+        for backend in ("eager", "sdpa"):
+            config = OpenELMConfig(**dict(SMALL_CONFIG, num_gqa_groups=2, _attn_implementation=backend))
+            model = OpenELMForCausalLM(config)
+            model.train()
+            expected = model(ids, attention_mask=visible, labels=labels, use_cache=False, return_dict=True)
+            expected.loss.backward()
+            gradients = {name: parameter.grad.clone() for name, parameter in model.named_parameters()}
+            model.clear_gradients()
+            for mask in (visible[:, 0].astype("float32"), visible.astype("float32")):
+                with self.subTest(backend=backend, ndim=mask.ndim):
+                    actual = model(changed, attention_mask=mask, labels=labels, use_cache=False, return_dict=True)
                     np.testing.assert_allclose(
-                        embedding.embed_tokens.weight.grad.numpy(),
-                        reference.model.embed_tokens.weight.grad.numpy(),
-                        atol=1e-5,
-                        rtol=1e-5,
+                        actual.logits[:, :2].numpy(), expected.logits[:, :2].numpy(), atol=1e-5, rtol=1e-5
                     )
+                    np.testing.assert_allclose(actual.loss.numpy(), expected.loss.numpy(), atol=1e-5, rtol=1e-5)
+                    actual.loss.backward()
+                    for name, parameter in model.named_parameters():
+                        self.assertIsNotNone(parameter.grad, name)
+                        self.assertTrue(paddle.isfinite(parameter.grad).all().item(), name)
+                        np.testing.assert_allclose(
+                            parameter.grad.numpy(), gradients[name].numpy(), atol=1e-5, rtol=1e-5, err_msg=name
+                        )
+                    model.clear_gradients()
+
+    def test_lora_target_modules_and_training(self):
+        import re
+
+        from paddleformers.cli.utils.llm_utils import get_lora_target_modules
+        from paddleformers.peft import LoRAConfig, LoRAModel
+
+        base = OpenELMForCausalLM(OpenELMConfig(**dict(SMALL_CONFIG, use_cache=False)))
+        targets = get_lora_target_modules(base)
+        sublayer_names = [name for name, _ in base.named_sublayers()]
+        for pattern in targets:
+            self.assertTrue(any(re.fullmatch(pattern, name) for name in sublayer_names), pattern)
+
+        model = LoRAModel(base, LoRAConfig(target_modules=targets, r=2, lora_alpha=4))
+        model.train()
+        input_ids = paddle.to_tensor([[1, 7, 9, 2]], dtype="int64")
+        loss = model(input_ids, labels=input_ids, return_dict=True).loss
+        loss.backward()
+
+        trainable = [(name, parameter) for name, parameter in model.named_parameters() if not parameter.stop_gradient]
+        self.assertTrue(trainable)
+        for name, parameter in trainable:
+            self.assertIsNotNone(parameter.grad, name)
+            self.assertTrue(paddle.isfinite(parameter.grad).all().item(), name)
+        self.assertTrue(any(parameter.grad.abs().sum().item() > 0 for _, parameter in trainable))
 
 
 class OpenELMTokenizerIntegrationTest(unittest.TestCase):

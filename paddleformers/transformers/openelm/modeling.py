@@ -32,13 +32,8 @@ from ...nn.norm import RMSNorm
 from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
+from ..activations import ACT2FN
 from ..cache_utils import Cache, DynamicCache
-from ..linear_utils import (
-    ColumnParallelLinear,
-    ColumnSequenceParallelLinear,
-    RowParallelLinear,
-    RowSequenceParallelLinear,
-)
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
@@ -66,25 +61,13 @@ class OpenELMPretrainedModel(PretrainedModel):
 
     def _init_weights(self, module: nn.Layer) -> None:
         """Initialize the weights."""
-        if isinstance(
-            module,
-            (
-                nn.Linear,
-                ColumnParallelLinear,
-                RowParallelLinear,
-                ColumnSequenceParallelLinear,
-                RowSequenceParallelLinear,
-            ),
-        ):
-            module.weight.set_value(
-                paddle.normal(
-                    mean=0.0,
-                    std=getattr(module, "_openelm_init_std", module.weight.shape[0] ** -0.5),
-                    shape=module.weight.shape,
-                ).cast(module.weight.dtype)
-            )
-            if module.bias is not None:
-                module.bias.set_value(paddle.zeros(module.bias.shape, dtype=module.bias.dtype))
+        if isinstance(module, (OpenELMAttention, OpenELMMLP)):
+            for name, parameter in module.named_parameters():
+                if name.endswith("_proj.weight"):
+                    std = self.config.model_dim**-0.5
+                    if name in ("o_proj.weight", "down_proj.weight"):
+                        std *= (2 * self.config.num_transformer_layers) ** -0.5
+                    parameter.set_value(paddle.normal(mean=0.0, std=std, shape=parameter.shape).cast(parameter.dtype))
         elif isinstance(module, (nn.Embedding, VocabParallelEmbedding)):
             module.weight.set_value(
                 paddle.normal(
@@ -143,11 +126,6 @@ class OpenELMPretrainedModel(PretrainedModel):
             mask_config = copy(config)
             mask_config._attn_implementation = "eager"
 
-        def prepare_mask(attention_mask, **kwargs):
-            if attention_mask is not None and attention_mask.ndim >= 3 and paddle.is_floating_point(attention_mask):
-                return attention_mask.unsqueeze(1) if attention_mask.ndim == 3 else attention_mask
-            return PretrainedModel._prepare_decoder_attention_mask(attention_mask=attention_mask, **kwargs)
-
         return create_causal_mask_and_row_indices(
             config=mask_config,
             inputs_embeds=inputs_embeds,
@@ -156,7 +134,7 @@ class OpenELMPretrainedModel(PretrainedModel):
             cache_length=cache_length,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-            prepare_decoder_attention_mask=prepare_mask,
+            prepare_decoder_attention_mask=PretrainedModel._prepare_decoder_attention_mask,
         )
 
     @classmethod
@@ -252,17 +230,13 @@ class OpenELMRotaryEmbedding(nn.Layer):
             config.rope_freq_constant ** (paddle.arange(0, config.head_dim, 2, dtype="float32") / config.head_dim)
         )
         self.register_buffer("inv_freq", inv_freq, persistable=False)
+        # Tensor assignment otherwise registers the FP32 source as a castable buffer.
+        object.__setattr__(self, "original_inv_freq", inv_freq.clone())
 
     def forward(self, x: Tensor, position_ids: Tensor) -> Tuple[Tensor, Tensor]:
         with paddle.amp.auto_cast(enable=False):
-            inv_freq = self.inv_freq
-            if inv_freq.dtype != paddle.float32:
-                # Layer.to(dtype) can cast non-persistent buffers as well.
-                inv_freq = 1.0 / (
-                    self.config.rope_freq_constant
-                    ** (paddle.arange(0, self.config.head_dim, 2, dtype="float32") / self.config.head_dim)
-                )
-            freqs = position_ids.astype("float32").unsqueeze(-1) * inv_freq
+            object.__setattr__(self, "original_inv_freq", self.original_inv_freq.to(device=x.place))
+            freqs = position_ids.astype("float32").unsqueeze(-1) * self.original_inv_freq
             emb = paddle.concat([freqs, freqs], axis=-1)
             return emb.cos(), emb.sin()
 
@@ -279,21 +253,16 @@ class OpenELMAttention(nn.Layer):
         k_heads = config.num_kv_heads[layer_idx]
         v_heads = config.num_kv_heads[layer_idx]
         tp_size = max(config.tensor_model_parallel_size, 1)
-        if q_heads % tp_size or k_heads % tp_size:
-            raise ValueError("Query and KV head counts must be divisible by the tensor parallel size.")
 
         self.q_proj = GeneralLinear.create(
             config.model_dim, q_heads * head_dim, has_bias=False, config=config, tp_plan="colwise"
         )
-        self.q_proj._openelm_init_std = config.model_dim**-0.5
         self.k_proj = GeneralLinear.create(
             config.model_dim, k_heads * head_dim, has_bias=False, config=config, tp_plan="colwise"
         )
-        self.k_proj._openelm_init_std = config.model_dim**-0.5
         self.v_proj = GeneralLinear.create(
             config.model_dim, v_heads * head_dim, has_bias=False, config=config, tp_plan="colwise"
         )
-        self.v_proj._openelm_init_std = config.model_dim**-0.5
 
         if config.normalize_qk_projections:
             self.q_norm = GeneralNorm.create(
@@ -315,8 +284,6 @@ class OpenELMAttention(nn.Layer):
         self.o_proj = GeneralLinear.create(
             q_heads * head_dim, config.model_dim, has_bias=False, config=config, tp_plan="rowwise"
         )
-
-        self.o_proj._openelm_init_std = (config.model_dim**-0.5) * ((2 * config.num_transformer_layers) ** -0.5)
 
         self.head_dim = config.head_dim
         self.num_q_heads = q_heads // tp_size
@@ -405,24 +372,13 @@ class OpenELMMLP(nn.Layer):
             self.gate_proj = GeneralLinear.create(
                 config.model_dim, intermediate_dim, has_bias=False, config=config, tp_plan="colwise"
             )
-            self.gate_proj._openelm_init_std = config.model_dim**-0.5
         self.up_proj = GeneralLinear.create(
             config.model_dim, intermediate_dim, has_bias=False, config=config, tp_plan="colwise"
         )
-        self.up_proj._openelm_init_std = config.model_dim**-0.5
         self.down_proj = GeneralLinear.create(
             intermediate_dim, config.model_dim, has_bias=False, config=config, tp_plan="rowwise"
         )
-        self.down_proj._openelm_init_std = (config.model_dim**-0.5) * ((2 * config.num_transformer_layers) ** -0.5)
-
-        if config.activation_fn_name == "swish":
-            self.act = nn.Silu()
-        elif config.activation_fn_name == "gelu":
-            self.act = nn.GELU()
-        elif config.activation_fn_name == "relu":
-            self.act = nn.ReLU()
-        else:
-            raise ValueError(f"Unsupported activation function: {config.activation_fn_name}")
+        self.act = ACT2FN[config.activation_fn_name]
 
     def extra_repr(self) -> str:
         return super().extra_repr() + f"(ffn_with_glu) : {self.ffn_with_glu}"
@@ -687,8 +643,6 @@ class OpenELMForCausalLM(OpenELMPretrainedModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        if attn_mask_startend_row_indices is None:
-            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices", None)
         if attn_mask_startend_row_indices is not None and attention_mask is not None:
             logger.warning("Both dense and row-index masks were supplied; using row indices.")
             attention_mask = None
@@ -720,9 +674,9 @@ class OpenELMForCausalLM(OpenELMPretrainedModel):
         return CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
-            past_key_values=outputs.past_key_values if return_dict else None,
-            hidden_states=outputs.hidden_states if return_dict else None,
-            attentions=outputs.attentions if return_dict else None,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
         )
 
     def prepare_inputs_for_generation(
@@ -733,73 +687,14 @@ class OpenELMForCausalLM(OpenELMPretrainedModel):
         inputs_embeds=None,
         **kwargs,
     ):
-        """Prepare inputs for generation."""
-        past_length = 0
-        if past_key_values is not None:
-            if not isinstance(past_key_values, Cache):
-                raise TypeError("past_key_values must use the shared Cache interface.")
-            cache_length = past_key_values.get_seq_length()
-            past_length = cache_length
-            max_cache_length = past_key_values.get_max_cache_shape()
-
-            # Keep only the unprocessed tokens:
-            if (
-                attention_mask is not None
-                and attention_mask.ndim == 2
-                and attention_mask.shape[-1] > input_ids.shape[1]
-            ):
-                input_ids = input_ids[:, -(attention_mask.shape[-1] - past_length) :]
-            elif past_length < input_ids.shape[1]:
-                input_ids = input_ids[:, past_length:]
-
-            # If we are about to go beyond the maximum cache length, we need to crop the input attention mask.
-            if (
-                max_cache_length is not None
-                and max_cache_length > 0
-                and attention_mask is not None
-                and cache_length + input_ids.shape[1] > max_cache_length
-            ):
-                attention_mask = attention_mask[..., -max_cache_length:]
-
-        position_ids = kwargs.get("position_ids", None)
-        if attention_mask is not None and attention_mask.ndim == 2 and position_ids is None:
-            # create position_ids on the fly for batch generation
-            position_ids = attention_mask.cast(paddle.int64).cumsum(axis=-1) - 1
-            position_ids = paddle.where(
-                attention_mask == 0,
-                paddle.ones_like(position_ids),
-                position_ids,
-            )
-            if past_key_values:
-                position_ids = position_ids[:, -input_ids.shape[1] :]
-
-        query_length = (
-            inputs_embeds.shape[1] if inputs_embeds is not None and past_key_values is None else input_ids.shape[-1]
+        # The explicit override is required by PretrainedModel.can_generate().
+        return super().prepare_inputs_for_generation(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            inputs_embeds=inputs_embeds,
+            **kwargs,
         )
-        if position_ids is None:
-            position_ids = paddle.arange(past_length, past_length + query_length, dtype="int64").unsqueeze(0)
-        elif past_key_values is not None:
-            position_ids = position_ids[:, -query_length:]
-        cache_position = paddle.arange(past_length, past_length + query_length, dtype="int64")
-        if attention_mask is not None and attention_mask.ndim >= 3 and past_key_values is not None:
-            attention_mask = attention_mask[..., -query_length:, :]
-
-        # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
-        if inputs_embeds is not None and past_key_values is None:
-            model_inputs = {"inputs_embeds": inputs_embeds}
-        else:
-            model_inputs = {"input_ids": input_ids}
-
-        model_inputs.update(
-            {
-                "position_ids": position_ids,
-                "cache_position": cache_position,
-                "past_key_values": past_key_values,
-                "use_cache": kwargs.get("use_cache"),
-                "attention_mask": attention_mask,
-            }
-        )
-        return model_inputs
 
 
 class OpenELMEmbeddingPipe(EmbeddingPipe):

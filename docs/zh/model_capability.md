@@ -14,7 +14,7 @@
 |LLaMA3|✓|✓|✓|✓|✓|
 |LLaMA4-Text|✓|✓|✓|x|x|
 |MiniMax-Text-01|✓|✓|✓|x|x|
-|OpenELM|✓|✓|✓|✓|✓|
+|OpenELM|x|✓|✓|✓|✓|
 |OLMo2|✓|✓|✓|✓|✓|
 |Phi4|✓|✓|✓|✓|✓|
 |Qwen2|✓|✓|✓|✓|✓|
