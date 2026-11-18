@@ -15,6 +15,7 @@
 """Paddle implementation of the Moondream2 vision-language architecture."""
 
 import math
+from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -40,10 +41,10 @@ __all__ = [
     "Moondream2ModelOutputWithPast",
     "Moondream2PreTrainedModel",
     "Moondream2VisionModel",
-    "build_moondream2_prefix_mask",
 ]
 
 
+@dataclass
 class Moondream2ModelOutputWithPast(ModelOutput):
     """Base-model output, mirroring the other multimodal PaddleFormers models."""
 
@@ -51,8 +52,11 @@ class Moondream2ModelOutputWithPast(ModelOutput):
     past_key_values: Optional[Cache] = None
     hidden_states: Optional[Tuple[paddle.Tensor]] = None
     attentions: Optional[Tuple[paddle.Tensor]] = None
+    image_span: Optional[object] = None
+    image_expanded: Optional[bool] = None
 
 
+@dataclass
 class Moondream2CausalLMOutputWithPast(ModelOutput):
     """Causal-LM output carrying the Moondream2 logits and cache."""
 
@@ -65,24 +69,6 @@ class Moondream2CausalLMOutputWithPast(ModelOutput):
 
 def gelu_tanh(hidden_states):
     return F.gelu(hidden_states, approximate=True)
-
-
-def build_moondream2_prefix_mask(query_length, key_value_length, prefix_length, past_length=0, dtype="float32"):
-    """Build Moondream2's explicit additive attention mask.
-
-    The first ``prefix_length`` positions are mutually visible.  Every later
-    query can attend causally to all prior positions.  The returned tensor has
-    shape ``[1, 1, query_length, key_value_length]`` and is suitable for eager
-    attention scores.
-    """
-    query_positions = paddle.arange(past_length, past_length + query_length).unsqueeze(-1)
-    key_positions = paddle.arange(key_value_length).unsqueeze(0)
-    visible = key_positions <= query_positions
-    prefix_visible = (query_positions < prefix_length) & (key_positions < prefix_length)
-    visible = visible | prefix_visible
-    zero = paddle.zeros([query_length, key_value_length], dtype=dtype)
-    negative = paddle.full([query_length, key_value_length], -1e9, dtype=dtype)
-    return paddle.where(visible, zero, negative).unsqueeze(0).unsqueeze(0)
 
 
 def build_moondream2_block_mask(query_length, key_value_length, image_span=None, past_length=0, dtype="float32"):
@@ -545,6 +531,8 @@ class Moondream2Model(Moondream2PreTrainedModel):
         self.vision_model = Moondream2VisionModel(config.vision_config)
         self.vision_projector = Moondream2VisionProjector(config.vision_config)
         self.region_model = Moondream2RegionModel(config.region_config)
+        self._image_span = None
+        self._image_expanded = False
         self.embed_tokens = GeneralEmbedding.create(
             config=config.text_config,
             num_embeddings=config.text_config.vocab_size,
@@ -677,6 +665,20 @@ class Moondream2Model(Moondream2PreTrainedModel):
         # token columns (including a final one-token sequence) and excludes
         # padded columns before the image prefix is prepended.
         if attention_mask is not None and attention_mask.ndim == 4:
+            # A packed row lets earlier queries see later keys. Moondream2 keeps
+            # one image block per sample and has no per-document isolation yet,
+            # so fail loudly instead of silently collapsing the mask. Collators
+            # emit either a binary 0/1 mask or an additive 0/-1e9 one.
+            is_binary = bool(paddle.all((attention_mask == 0) | (attention_mask == 1)))
+            visible = attention_mask > 0.5 if is_binary else attention_mask > -1e4
+            # A padding mask is broadcast over queries; only a mask that varies
+            # per query row can describe packed documents.
+            uniform_rows = bool(paddle.all(visible == visible[:, :, :1, :]))
+            if not uniform_rows and bool(paddle.any(paddle.triu(visible, diagonal=1))):
+                raise ValueError(
+                    "Moondream2 does not support packed sequences: the 4-D attention mask allows "
+                    "tokens to attend across documents. Disable packing for this model."
+                )
             attention_mask = paddle.max(attention_mask, axis=[1, 2])
 
         if inputs_embeds is None:
@@ -725,13 +727,18 @@ class Moondream2Model(Moondream2PreTrainedModel):
         batch_size, query_length, _ = inputs_embeds.shape
         key_value_length = past_length + query_length
         position_ids = paddle.arange(past_length, key_value_length, dtype="int64").unsqueeze(0).expand([batch_size, -1])
-        if attn_mask_startend_row_indices is not None and has_image_prefix:
-            raise ValueError(
-                "attn_mask_startend_row_indices cannot be combined with pixel_values: the bidirectional "
-                "image block needs a dense mask until it is expressed with row indices"
-            )
         backend = getattr(self.config.text_config, "_attn_implementation", "eager")
-        if attn_mask_startend_row_indices is not None or (
+        row_indices = attn_mask_startend_row_indices
+        if row_indices is not None and image_span is not None:
+            # The CLI default couples flashmask with start/end row indices, but
+            # those indices are column-wise bands and cannot express the
+            # bidirectional image block. With a single image per sample the
+            # collator indices are plain causal, so drop them and build the
+            # dense causal + image-block mask instead; the attention layer then
+            # falls back from flashmask to eager for this step.
+            row_indices = None
+
+        if row_indices is not None or (
             image_span is None and attention_mask is None and backend in ("sdpa", "flashmask")
         ):
             # Either the packing layout is expressed with row indices, or a
@@ -773,12 +780,17 @@ class Moondream2Model(Moondream2PreTrainedModel):
                 hidden_mask,
                 past_key_values=past_key_values,
                 use_cache=use_cache,
-                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                attn_mask_startend_row_indices=row_indices,
             )
         last_hidden_state = self.norm(hidden_states)
         if not return_dict:
             return (last_hidden_state, past_key_values)
-        return Moondream2ModelOutputWithPast(last_hidden_state=last_hidden_state, past_key_values=past_key_values)
+        return Moondream2ModelOutputWithPast(
+            last_hidden_state=last_hidden_state,
+            past_key_values=past_key_values,
+            image_span=image_span,
+            image_expanded=self._image_expanded,
+        )
 
 
 class Moondream2ForConditionalGeneration(Moondream2PreTrainedModel):
@@ -791,17 +803,6 @@ class Moondream2ForConditionalGeneration(Moondream2PreTrainedModel):
         self.model = Moondream2Model(config)
         self.lm_head = GeneralLMHead(config)
         self.loss_fn = CriterionLayer(config)
-        # Strict FP64 inference is only required by the dedicated cross-framework
-        # logit-parity harness.  It must stay opt-in: SFT configurations that
-        # request FP32 need actual FP32 parameters, optimizer states and kernels.
-        self._strict_logits_alignment = False
-
-    def to(self, *args, **kwargs):
-        """Optionally promote the dedicated logit-parity harness to FP64."""
-        requested_dtype = kwargs.get("dtype")
-        if self._strict_logits_alignment and requested_dtype in ("float32", paddle.float32):
-            kwargs["dtype"] = "float64"
-        return super().to(*args, **kwargs)
 
     def get_input_embeddings(self):
         return self.model.embed_tokens
@@ -821,7 +822,7 @@ class Moondream2ForConditionalGeneration(Moondream2PreTrainedModel):
     def set_decoder(self, decoder):
         self.model = decoder
 
-    def _align_labels_to_image_block(self, labels):
+    def _align_labels_to_image_block(self, labels, spans, expanded):
         """Align SFT labels with the image block inserted by the base model.
 
         Prefix injection prepends the block, so the labels only need ignored
@@ -829,12 +830,10 @@ class Moondream2ForConditionalGeneration(Moondream2PreTrainedModel):
         inserts the block at its position, so the placeholder's own label is
         dropped and replaced by ignored targets.
         """
-        spans = getattr(self.model, "_image_span", None)
         if spans is None:
             return labels
         if not isinstance(spans, list):
             spans = [spans] * labels.shape[0]
-        expanded = getattr(self.model, "_image_expanded", False)
 
         rows = []
         for index in range(labels.shape[0]):
@@ -929,7 +928,7 @@ class Moondream2ForConditionalGeneration(Moondream2PreTrainedModel):
         loss = None
         if labels is not None:
             if pixel_values is not None:
-                labels = self._align_labels_to_image_block(labels)
+                labels = self._align_labels_to_image_block(labels, outputs.image_span, outputs.image_expanded)
             # PaddleFormers' SFT collator already shifts labels, so logits and
             # labels are position-aligned here and must not be shifted again.
             # ``CriterionLayer`` applies the same supervised-token normalization

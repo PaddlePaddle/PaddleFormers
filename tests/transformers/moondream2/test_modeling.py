@@ -174,9 +174,12 @@ class Moondream2ModelTest(ModelTesterMixin, unittest.TestCase):
     def test_model_construction(self):
         model, inputs = self._get_model_and_inputs()
         config = inputs[0]
-        self.assertIsInstance(model.vision_model, Moondream2VisionModel)
+        self.assertIsInstance(model.model.vision_model, Moondream2VisionModel)
         self.assertEqual(model.get_input_embeddings().weight.shape, [self.model_tester.vocab_size, 32])
-        self.assertEqual(model.get_output_embeddings().weight.shape, [32, self.model_tester.vocab_size])
+        # GeneralLMHead stores the vocabulary-first layout used by HF checkpoints.
+        self.assertEqual(
+            model.get_output_embeddings().weight.shape, [self.model_tester.vocab_size, 32]
+        )
         self.assertIs(model.get_decoder(), model.model)
         self.assertEqual(config.text_config.prefix_attn, self.model_tester.image_prefix_length)
 
@@ -184,7 +187,7 @@ class Moondream2ModelTest(ModelTesterMixin, unittest.TestCase):
         model, inputs = self._get_model_and_inputs()
         pixel_values = inputs[3][:, 0]
         with paddle.no_grad():
-            hidden_states = model.vision_model(pixel_values)
+            hidden_states = model.model.vision_model(pixel_values)
         self.assertEqual(
             hidden_states.shape,
             [self.model_tester.batch_size, self.model_tester.num_image_tokens, 24],
@@ -196,7 +199,7 @@ class Moondream2ModelTest(ModelTesterMixin, unittest.TestCase):
             [self.model_tester.batch_size, 3, self.model_tester.crop_size, self.model_tester.crop_size + 2]
         )
         with self.assertRaisesRegex(ValueError, "expects 8x8 crops"):
-            model.vision_model(invalid_pixels)
+            model.model.vision_model(invalid_pixels)
 
     def test_text_only_forward_and_gqa(self):
         model, inputs = self._get_model_and_inputs()
@@ -395,7 +398,7 @@ class Moondream2ModelTest(ModelTesterMixin, unittest.TestCase):
                 return_dict=True,
             ).logits
         with tempfile.TemporaryDirectory() as tempdir:
-            model.save_pretrained(tempdir, save_to_hf=False, save_checkpoint_format="")
+            model.save_pretrained(tempdir, save_safetensors=False, save_checkpoint_format="")
             loaded = Moondream2ForConditionalGeneration.from_pretrained(
                 tempdir,
                 convert_from_hf=False,

@@ -183,6 +183,8 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("gemma4_text", "gemma4_moe"),
         ("gemma4", "gemma4_moe"),
         ("phi4flash", "phi4"),
+        # The released checkpoint declares model_type "moondream1".
+        ("moondream1", "moondream2"),
     ]
 )
 

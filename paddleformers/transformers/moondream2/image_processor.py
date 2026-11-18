@@ -66,6 +66,8 @@ class Moondream2ImageProcessor(BaseImageProcessor):
     crops are valid and their `(tiles_h, tiles_w)` reconstruction layout.
     """
 
+    # The shared collator key ``image_sizes`` holds the local ``(tiles_h, tiles_w)``
+    # tiling grid here, not the original image height/width.
     model_input_names = ["pixel_values", "image_sizes", "crop_counts"]
 
     def __init__(

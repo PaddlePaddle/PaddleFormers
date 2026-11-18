@@ -1903,7 +1903,20 @@ class Moondream2Plugin(BasePlugin):
 
         image = images[0]
         pil_image = self._img_download(image).convert("RGB") if isinstance(image, str) else image
-        return processor.image_processor([pil_image], return_tensors="pd")
+        mm_inputs = processor.image_processor([pil_image], return_tensors="pd")
+
+        # The number of crops depends on the aspect ratio, so pad to the fixed
+        # maximum here; otherwise ``paddle.concat`` over a batch whose images
+        # need different crop counts fails in the collator.
+        pixel_values = mm_inputs["pixel_values"]
+        max_crops = getattr(processor.image_processor, "max_crops", None) or pixel_values.shape[1]
+        if pixel_values.shape[1] < max_crops:
+            padding = paddle.zeros(
+                [pixel_values.shape[0], max_crops - pixel_values.shape[1], *pixel_values.shape[2:]],
+                dtype=pixel_values.dtype,
+            )
+            mm_inputs["pixel_values"] = paddle.concat([pixel_values, padding], axis=1)
+        return mm_inputs
 
     @override
     def process_messages(
