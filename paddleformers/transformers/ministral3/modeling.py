@@ -12,1004 +12,818 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dataclasses import dataclass
-from typing import List, Optional, Tuple, Union
+from __future__ import annotations
+
+from contextlib import nullcontext
+from functools import partial
+from typing import Optional, Tuple, Union
 
 import paddle
-import paddle.nn as nn
-import paddle.nn.functional as F
-from paddle import Tensor
+from paddle import Tensor, nn
+from paddle.distributed.fleet.meta_parallel import get_rng_state_tracker
+from paddle.distributed.fleet.utils import recompute
+from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
-from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
-from ..activations import ACT2FN
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.criterion.interface import CriterionLayer
+from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.linear import Linear as GeneralLinear
+from ...nn.lm_head import LMHead as GeneralLMHead
+from ...nn.mlp import MLP as Ministral3MLP
+from ...nn.norm import Norm as GeneralNorm
+from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_args
+from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..model_outputs import BaseModelOutputWithPast, ModelOutput
-from ..model_utils import PretrainedModel, register_base_model
-from ..modeling_rope_utils import (
-    ROPE_INIT_FUNCTIONS,
-    dynamic_rope_update,
-    standardize_rope_params,
+from ..conversion_utils import split_or_merge_func
+from ..masking_utils import (
+    create_causal_mask_and_row_indices,
+    create_sliding_window_causal_mask_and_row_indices,
 )
-from .configuration import Ministral3TextConfig, Mistral3Config, Mistral3TextConfig
-
-__all__ = [
-    "Mistral3PreTrainedModel",
-    "Mistral3Model",
-    "Mistral3ForConditionalGeneration",
-    "Mistral3RMSNorm",
-    "Mistral3PatchMerger",
-    "Mistral3MultiModalProjector",
-    "Ministral3TextDecoder",
-    "Ministral3DecoderLayer",
-    "Ministral3Attention",
-    "Ministral3MLP",
-]
+from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
+from ..model_utils import PretrainedModel, register_base_model
+from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
+from .configuration import Ministral3Config
 
 
 def rotate_half(x: Tensor) -> Tensor:
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
-    return paddle.concat([-x2, x1], axis=-1)
+    return paddle.concat((-x2, x1), axis=-1)
 
 
-def apply_rotary_pos_emb(q: Tensor, k: Tensor, cos: Tensor, sin: Tensor) -> Tuple[Tensor, Tensor]:
-    return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+def apply_rotary_pos_emb(q: Tensor, k: Tensor, cos: Tensor, sin: Tensor, unsqueeze_dim: int = 1):
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed.astype(q.dtype), k_embed.astype(k.dtype)
 
 
-def repeat_kv(hidden_states: Tensor, n_rep: int) -> Tensor:
-    if n_rep == 1:
-        return hidden_states
-    batch, num_kv, slen, head_dim = hidden_states.shape
-    return (
-        hidden_states.unsqueeze(2)
-        .expand([batch, num_kv, n_rep, slen, head_dim])
-        .reshape([batch, num_kv * n_rep, slen, head_dim])
-    )
-
-
-def _get_llama4_attn_scale(cache_position: Tensor, beta: float, max_position_embeddings: int) -> Tensor:
-    pos = cache_position.astype("float32")
-    return (1.0 + beta * paddle.log(1.0 + paddle.floor(pos / max_position_embeddings))).reshape([1, 1, -1, 1])
-
-
-class _RMSNorm(nn.Layer):
-    def __init__(self, hidden_size: int, eps: float = 1e-6):
-        super().__init__()
-        self.weight = paddle.create_parameter(
-            shape=[hidden_size],
-            dtype=paddle.get_default_dtype(),
-            default_initializer=nn.initializer.Constant(1.0),
-        )
-        self.variance_epsilon = eps
-
-    def forward(self, hidden_states: Tensor) -> Tensor:
-        input_dtype = hidden_states.dtype
-        hidden_states = hidden_states.astype("float32")
-        hidden_states = hidden_states * paddle.rsqrt(
-            hidden_states.pow(2).mean(-1, keepdim=True) + self.variance_epsilon
-        )
-        return self.weight * hidden_states.astype(input_dtype)
-
-    def extra_repr(self):
-        return f"{tuple(self.weight.shape)}, eps={self.variance_epsilon}"
-
-
-Mistral3RMSNorm = _RMSNorm
-Ministral3RMSNorm = _RMSNorm
+def get_llama_4_attn_scale(position_ids: Tensor, beta: float, max_position_embeddings: int) -> Tensor:
+    positions = position_ids.astype("float32")
+    scaling = 1.0 + beta * paddle.log(1.0 + paddle.floor(positions / max_position_embeddings))
+    return scaling[:, None, :, None]
 
 
 class Ministral3RotaryEmbedding(nn.Layer):
-    def __init__(self, text_cfg: "Ministral3TextConfig"):
+    def __init__(self, config: Ministral3Config):
         super().__init__()
-        self.config = text_cfg
-        self.max_seq_len_cached = text_cfg.max_position_embeddings
-        self.original_max_seq_len = text_cfg.max_position_embeddings
-        standardize_rope_params(text_cfg)
+        self.max_seq_len_cached = config.max_position_embeddings
+        self.original_max_seq_len = config.max_position_embeddings
+        self.config = config
+        self.rope_parameters = config.rope_parameters
+        self.rope_type = self.rope_parameters.get("rope_type", self.rope_parameters.get("type", "default"))
 
-        rope_type = text_cfg.rope_parameters.get("rope_type", "default")
-        self.rope_type = rope_type
-        rope_init_fn = self._compute_default if rope_type == "default" else ROPE_INIT_FUNCTIONS[rope_type]
-        inv_freq, self.attention_scaling = rope_init_fn(text_cfg)
+        rope_init_fn = self.compute_default_rope_parameters
+        if self.rope_type != "default":
+            rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
+        inv_freq, self.attention_scaling = rope_init_fn(config)
+
         self.register_buffer("inv_freq", inv_freq, persistable=False)
-        self.original_inv_freq = inv_freq
+        self.register_buffer("original_inv_freq", inv_freq.clone(), persistable=False)
 
     @staticmethod
-    def _compute_default(config, **kwargs):
-        base = config.rope_parameters.get("rope_theta", 1000000.0)
-        dim = config.head_dim
+    def compute_default_rope_parameters(config: Ministral3Config, seq_len: Optional[int] = None):
+        base = config.rope_parameters["rope_theta"]
+        dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
         inv_freq = 1.0 / (base ** (paddle.arange(0, dim, 2, dtype=paddle.int64).astype("float32") / dim))
         return inv_freq, 1.0
 
     @dynamic_rope_update
     def forward(self, x: Tensor, position_ids: Tensor) -> Tuple[Tensor, Tensor]:
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
-            freqs = (inv_freq_expanded.float() @ position_ids[:, None, :].float()).transpose([0, 2, 1])
-            emb = paddle.concat([freqs, freqs], axis=-1)
+            inv_freq_expanded = self.inv_freq[None, :, None].astype("float32").expand([position_ids.shape[0], -1, 1])
+            position_ids_expanded = position_ids[:, None, :].astype("float32")
+            freqs = (inv_freq_expanded @ position_ids_expanded).transpose([0, 2, 1])
+            emb = paddle.concat((freqs, freqs), axis=-1)
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
-        return cos.cast(x.dtype), sin.cast(x.dtype)
+        return cos.astype(x.dtype), sin.astype(x.dtype)
 
 
 class Ministral3Attention(nn.Layer):
-    def __init__(self, text_cfg: "Ministral3TextConfig", layer_idx: int):
+    def __init__(self, config: Ministral3Config, layer_idx: int):
         super().__init__()
+        self.config = config
         self.layer_idx = layer_idx
-        self.head_dim = text_cfg.head_dim
-        self.num_heads = text_cfg.num_attention_heads
-        self.num_kv_heads = text_cfg.num_key_value_heads
-        self.num_kv_groups = self.num_heads // self.num_kv_heads
+        self.head_dim = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+        self.num_heads = config.num_attention_heads
+        self.num_key_value_heads = config.num_key_value_heads
+        self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.scaling = self.head_dim**-0.5
-        self.attention_dropout = text_cfg.attention_dropout
+        self.attention_dropout = config.attention_dropout
+        self.is_causal = True
 
-        rope_params = text_cfg.rope_parameters
-        self.llama4_beta = float(rope_params.get("llama_4_scaling_beta", 0.1))
-        self.original_max_pos = int(rope_params.get("original_max_position_embeddings", 16384))
+        q_hidden_size = config.num_attention_heads * self.head_dim
+        kv_hidden_size = config.num_key_value_heads * self.head_dim
 
-        hidden = text_cfg.hidden_size
-        self.q_proj = nn.Linear(hidden, self.num_heads * self.head_dim, bias_attr=False)
-        self.k_proj = nn.Linear(hidden, self.num_kv_heads * self.head_dim, bias_attr=False)
-        self.v_proj = nn.Linear(hidden, self.num_kv_heads * self.head_dim, bias_attr=False)
-        self.o_proj = nn.Linear(self.num_heads * self.head_dim, hidden, bias_attr=False)
+        if config.tensor_model_parallel_size > 1:
+            if self.num_heads % config.tensor_model_parallel_size:
+                raise ValueError("num_attention_heads must be divisible by tensor_model_parallel_size")
+            if self.num_key_value_heads % config.tensor_model_parallel_size:
+                raise ValueError("num_key_value_heads must be divisible by tensor_model_parallel_size")
+            self.num_heads = self.num_heads // config.tensor_model_parallel_size
+            self.num_key_value_heads = self.num_key_value_heads // config.tensor_model_parallel_size
+
+        self.q_proj = GeneralLinear.create(
+            config.hidden_size, q_hidden_size, has_bias=False, config=config, tp_plan="colwise"
+        )
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size, kv_hidden_size, has_bias=False, config=config, tp_plan="colwise"
+        )
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size, kv_hidden_size, has_bias=False, config=config, tp_plan="colwise"
+        )
+        self.o_proj = GeneralLinear.create(
+            q_hidden_size, config.hidden_size, has_bias=False, config=config, tp_plan="rowwise"
+        )
+
+        self.llama_4_scaling_beta = config.rope_parameters.get("llama_4_scaling_beta")
+        self.original_max_position_embeddings = config.rope_parameters.get(
+            "original_max_position_embeddings", config.max_position_embeddings
+        )
 
     def forward(
         self,
         hidden_states: Tensor,
-        cos: Tensor,
-        sin: Tensor,
-        attention_mask: Optional[Tensor],
-        cache_position: Tensor,
+        position_embeddings: Optional[Tuple[Tensor, Tensor]] = None,
+        attention_mask: Optional[Tensor] = None,
+        position_ids: Optional[Tensor] = None,
         past_key_values: Optional[Cache] = None,
+        use_cache: bool = False,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
+        **kwargs,
     ) -> Tuple[Tensor, Optional[Tensor]]:
-        batch, seq, _ = hidden_states.shape
+        if self.config.sequence_parallel:
+            q_len = position_embeddings[0].shape[-2]
+            bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // q_len
+        else:
+            bsz, q_len = hidden_states.shape[:2]
 
-        query = self.q_proj(hidden_states).reshape([batch, seq, self.num_heads, self.head_dim]).transpose([0, 2, 1, 3])
-        key = (
-            self.k_proj(hidden_states).reshape([batch, seq, self.num_kv_heads, self.head_dim]).transpose([0, 2, 1, 3])
+        query_states = (
+            self.q_proj(hidden_states).reshape([bsz, q_len, self.num_heads, self.head_dim]).transpose([0, 2, 1, 3])
         )
-        value = (
-            self.v_proj(hidden_states).reshape([batch, seq, self.num_kv_heads, self.head_dim]).transpose([0, 2, 1, 3])
+        key_states = (
+            self.k_proj(hidden_states)
+            .reshape([bsz, q_len, self.num_key_value_heads, self.head_dim])
+            .transpose([0, 2, 1, 3])
+        )
+        value_states = (
+            self.v_proj(hidden_states)
+            .reshape([bsz, q_len, self.num_key_value_heads, self.head_dim])
+            .transpose([0, 2, 1, 3])
         )
 
-        query, key = apply_rotary_pos_emb(query, key, cos.unsqueeze(1), sin.unsqueeze(1))
-        query = query * _get_llama4_attn_scale(cache_position, self.llama4_beta, self.original_max_pos).cast(
-            query.dtype
-        )
+        cos, sin = position_embeddings
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+        if self.llama_4_scaling_beta is not None and position_ids is not None:
+            query_states = query_states * get_llama_4_attn_scale(
+                position_ids, self.llama_4_scaling_beta, self.original_max_position_embeddings
+            ).astype(query_states.dtype)
 
         if past_key_values is not None:
-            key, value = past_key_values.update(
-                key,
-                value,
-                self.layer_idx,
-                {"sin": sin, "cos": cos, "cache_position": cache_position},
-            )
+            key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
-        key = repeat_kv(key, self.num_kv_groups)
-        value = repeat_kv(value, self.num_kv_groups)
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attn_output, attn_weights = attention_interface(
+            self,
+            query=query_states,
+            key=key_states,
+            value=value_states,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            dropout=0.0 if not self.training else self.attention_dropout,
+            scaling=self.scaling,
+        )
 
-        attn_weights = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * self.scaling
-        if attn_mask_startend_row_indices is not None:
-            attention_mask = _gen_from_sparse_attn_mask_indices(
-                attn_mask_startend_row_indices, query.dtype, is_causal=True
-            )
-            attention_mask = paddle.index_select(attention_mask, cache_position, axis=2)
-        if attention_mask is not None:
-            attn_weights = attn_weights + attention_mask[:, :, :, : key.shape[-2]]
-
-        attn_weights = F.softmax(attn_weights, axis=-1, dtype="float32").cast(query.dtype)
-        if self.training and self.attention_dropout > 0:
-            attn_weights = F.dropout(attn_weights, p=self.attention_dropout)
-
-        attn_output = paddle.matmul(attn_weights, value)
-        attn_output = attn_output.transpose([0, 2, 1, 3]).reshape([batch, seq, self.num_heads * self.head_dim])
-        return self.o_proj(attn_output), attn_weights
-
-
-class Ministral3MLP(nn.Layer):
-    def __init__(self, text_cfg: "Ministral3TextConfig"):
-        super().__init__()
-        self.gate_proj = nn.Linear(text_cfg.hidden_size, text_cfg.intermediate_size, bias_attr=False)
-        self.up_proj = nn.Linear(text_cfg.hidden_size, text_cfg.intermediate_size, bias_attr=False)
-        self.down_proj = nn.Linear(text_cfg.intermediate_size, text_cfg.hidden_size, bias_attr=False)
-        self.act_fn = ACT2FN[text_cfg.hidden_act]
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+        if self.config.sequence_parallel:
+            attn_output = attn_output.reshape([-1, attn_output.shape[-1]])
+        attn_output = self.o_proj(attn_output)
+        return attn_output, attn_weights
 
 
 class Ministral3DecoderLayer(nn.Layer):
-    def __init__(self, text_cfg: "Ministral3TextConfig", layer_idx: int):
+    def __init__(self, config: Ministral3Config, layer_idx: int):
         super().__init__()
-        self.self_attn = Ministral3Attention(text_cfg, layer_idx=layer_idx)
-        self.mlp = Ministral3MLP(text_cfg)
-        self.input_layernorm = Ministral3RMSNorm(text_cfg.hidden_size, eps=text_cfg.rms_norm_eps)
-        self.post_attention_layernorm = Ministral3RMSNorm(text_cfg.hidden_size, eps=text_cfg.rms_norm_eps)
+        self.config = config
+        self.hidden_size = config.hidden_size
+
+        self.self_attn = Ministral3Attention(config=config, layer_idx=layer_idx)
+        self.mlp = Ministral3MLP(config)
+        self.input_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
+        self.post_attention_layernorm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
 
     def forward(
         self,
         hidden_states: Tensor,
-        cos: Tensor,
-        sin: Tensor,
-        attention_mask: Optional[Tensor],
-        cache_position: Tensor,
-        past_key_values: Optional[Cache] = None,
+        attention_mask: Optional[Tensor] = None,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
-        output_attentions: Optional[bool] = False,
-    ) -> Tuple[Tensor, Optional[Tensor]]:
+        position_ids: Optional[Tensor] = None,
+        position_embeddings: Optional[Tuple[Tensor, Tensor]] = None,
+        past_key_values: Optional[Cache] = None,
+        use_cache: bool = False,
+        output_attentions: bool = False,
+        **kwargs,
+    ) -> Union[Tensor, Tuple[Tensor, Optional[Tensor]]]:
         residual = hidden_states
         hidden_states, attn_weights = self.self_attn(
             hidden_states=self.input_layernorm(hidden_states),
-            cos=cos,
-            sin=sin,
+            position_embeddings=position_embeddings,
             attention_mask=attention_mask,
-            cache_position=cache_position,
+            position_ids=position_ids,
             past_key_values=past_key_values,
+            use_cache=use_cache,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
         )
         hidden_states = residual + hidden_states
 
         residual = hidden_states
         hidden_states = residual + self.mlp(self.post_attention_layernorm(hidden_states))
-        return hidden_states, attn_weights if output_attentions else None
+
+        if output_attentions:
+            return hidden_states, attn_weights
+        return hidden_states
 
 
-class Ministral3TextDecoder(nn.Layer):
-    def __init__(self, text_cfg: "Ministral3TextConfig"):
-        super().__init__()
-        self.text_cfg = text_cfg
-        self.embed_tokens = nn.Embedding(text_cfg.vocab_size, text_cfg.hidden_size)
-        self.layers = nn.LayerList(
-            [Ministral3DecoderLayer(text_cfg, layer_idx=i) for i in range(text_cfg.num_hidden_layers)]
-        )
-        self.norm = Ministral3RMSNorm(text_cfg.hidden_size, eps=text_cfg.rms_norm_eps)
-        self.rotary_emb = Ministral3RotaryEmbedding(text_cfg)
-
-    def get_input_embeddings(self):
-        return self.embed_tokens
-
-    def set_input_embeddings(self, value):
-        self.embed_tokens = value
-
-    def forward(
-        self,
-        input_ids: Optional[Tensor] = None,
-        inputs_embeds: Optional[Tensor] = None,
-        attention_mask: Optional[Tensor] = None,
-        position_ids: Optional[Tensor] = None,
-        past_key_values: Optional[Cache] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        cache_position: Optional[Tensor] = None,
-        attn_mask_startend_row_indices: Optional[Tensor] = None,
-    ) -> BaseModelOutputWithPast:
-        if (input_ids is None) == (inputs_embeds is None):
-            raise ValueError("Specify exactly one of input_ids or inputs_embeds")
-        if inputs_embeds is None:
-            inputs_embeds = self.embed_tokens(input_ids)
-
-        if use_cache and past_key_values is None:
-            past_key_values = DynamicCache()
-
-        seq_len = inputs_embeds.shape[1]
-        past_len = past_key_values.get_seq_length() if past_key_values is not None else 0
-        if cache_position is None:
-            cache_position = paddle.arange(past_len, past_len + seq_len, dtype="int64")
-        if position_ids is None:
-            position_ids = cache_position.unsqueeze(0)
-
-        dtype = inputs_embeds.dtype
-        total_len = seq_len + past_len
-        causal_mask = paddle.full([seq_len, total_len], paddle.finfo(dtype).min, dtype=dtype)
-        is_future = paddle.arange(total_len, dtype="int64").unsqueeze(0) > cache_position.unsqueeze(1)
-        causal_mask = paddle.where(is_future, causal_mask, paddle.zeros_like(causal_mask)).unsqueeze(0).unsqueeze(0)
-        if attention_mask is not None:
-            pad_mask = (1.0 - attention_mask.unsqueeze(1).unsqueeze(2).cast(dtype)) * paddle.finfo(dtype).min
-            causal_mask = causal_mask + pad_mask
-
-        cos, sin = self.rotary_emb(inputs_embeds, position_ids=position_ids)
-
-        all_hidden_states = () if output_hidden_states else None
-        all_self_attns = () if output_attentions else None
-
-        hidden_states = inputs_embeds
-        for layer in self.layers:
-            if output_hidden_states:
-                all_hidden_states += (hidden_states,)
-            hidden_states, attn_weights = layer(
-                hidden_states=hidden_states,
-                cos=cos,
-                sin=sin,
-                attention_mask=causal_mask,
-                cache_position=cache_position,
-                past_key_values=past_key_values,
-                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
-                output_attentions=output_attentions,
-            )
-            if output_attentions:
-                all_self_attns += (attn_weights,)
-
-        hidden_states = self.norm(hidden_states)
-        if output_hidden_states:
-            all_hidden_states += (hidden_states,)
-
-        return BaseModelOutputWithPast(
-            last_hidden_state=hidden_states,
-            past_key_values=past_key_values if use_cache else None,
-            hidden_states=all_hidden_states,
-            attentions=all_self_attns,
-        )
+def _validate_execution_config(config: Ministral3Config):
+    if config.sequence_parallel and config.tensor_model_parallel_size <= 1:
+        raise ValueError("sequence_parallel requires tensor_model_parallel_size > 1")
+    if config.apply_rope_fusion:
+        raise ValueError("Ministral3 does not support apply_rope_fusion; disable it to use the unfused RoPE path")
 
 
-class Mistral3PatchMerger(nn.Layer):
-    def __init__(self, config: "Mistral3Config"):
-        super().__init__()
-        vision_cfg = config.vision_config
-        hidden_size = vision_cfg.get("hidden_size", 1024) if isinstance(vision_cfg, dict) else vision_cfg.hidden_size
-        patch_size = vision_cfg.get("patch_size", 14) if isinstance(vision_cfg, dict) else vision_cfg.patch_size
-        self.spatial_merge_size = config.spatial_merge_size
-        self.patch_size = patch_size
-        self.merging_layer = nn.Linear(hidden_size * self.spatial_merge_size**2, hidden_size, bias_attr=False)
-
-    def forward(self, image_features: Tensor, image_sizes: Tensor) -> Tensor:
-        p = self.patch_size
-        image_sizes_list = [(int(sz[0]) // p, int(sz[1]) // p) for sz in image_sizes.tolist()]
-        tokens_per_image = [h * w for h, w in image_sizes_list]
-        d = image_features.shape[-1]
-        permuted = []
-        for idx, img_tokens in enumerate(paddle.split(image_features, tokens_per_image, axis=0)):
-            h, w = image_sizes_list[idx]
-            grid = img_tokens.reshape([h, w, d]).transpose([2, 0, 1]).unsqueeze(0)
-            grid = F.unfold(grid, kernel_sizes=self.spatial_merge_size, strides=self.spatial_merge_size, paddings=0)
-            permuted.append(grid.reshape([d * self.spatial_merge_size**2, -1]).transpose([1, 0]))
-        return self.merging_layer(paddle.concat(permuted, axis=0))
-
-
-class Mistral3MultiModalProjector(nn.Layer):
-    def __init__(self, config: "Mistral3Config"):
-        super().__init__()
-        vision_cfg = config.vision_config
-        text_cfg = config.text_config
-        vision_hidden = vision_cfg.get("hidden_size", 1024) if isinstance(vision_cfg, dict) else vision_cfg.hidden_size
-        text_hidden = text_cfg.get("hidden_size", 4096) if isinstance(text_cfg, dict) else text_cfg.hidden_size
-        rms_eps = text_cfg.get("rms_norm_eps", 1e-5) if isinstance(text_cfg, dict) else text_cfg.rms_norm_eps
-        num_feature_layers = 1 if isinstance(config.vision_feature_layer, int) else len(config.vision_feature_layer)
-        self.norm = Mistral3RMSNorm(vision_hidden, eps=rms_eps)
-        self.patch_merger = Mistral3PatchMerger(config)
-        self.linear_1 = nn.Linear(
-            vision_hidden * num_feature_layers, text_hidden, bias_attr=config.multimodal_projector_bias
-        )
-        self.act = ACT2FN[config.projector_hidden_act]
-        self.linear_2 = nn.Linear(text_hidden, text_hidden, bias_attr=config.multimodal_projector_bias)
-
-    def forward(self, image_features: Tensor, image_sizes: Tensor) -> Tensor:
-        return self.linear_2(self.act(self.linear_1(self.patch_merger(self.norm(image_features), image_sizes))))
-
-
-@dataclass
-class Mistral3CausalLMOutputWithPast(ModelOutput):
-    loss: Optional[Tensor] = None
-    logits: Optional[Tensor] = None
-    past_key_values: Optional[Union[Tuple, Cache]] = None
-    hidden_states: Optional[Tuple[Tensor, ...]] = None
-    attentions: Optional[Tuple[Tensor, ...]] = None
-    image_hidden_states: Optional[Tensor] = None
-
-
-@dataclass
-class Mistral3ModelOutputWithPast(BaseModelOutputWithPast):
-    image_hidden_states: Optional[Tensor] = None
-
-
-class Mistral3PreTrainedModel(PretrainedModel):
-    config_class = Mistral3Config
+class Ministral3PretrainedModel(PretrainedModel):
+    config_class = Ministral3Config
+    base_model_class = None
     base_model_prefix = "model"
-    supports_gradient_checkpointing = True
-    transpose_weight_keys = [
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-        "gate_proj",
-        "up_proj",
-        "down_proj",
-    ]
+    _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
+    transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 
     @classmethod
-    def _gen_aoa_config(cls, config: Mistral3Config):
-        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+    def _get_tensor_parallel_mappings(cls, config: Ministral3Config, is_split=True):
+        fn = split_or_merge_func(
+            is_split=is_split,
+            tensor_model_parallel_size=config.tensor_model_parallel_size,
+            tensor_parallel_rank=getattr(config, "tensor_parallel_rank", 0),
+            num_attention_heads=config.num_attention_heads,
+        )
+        actions = {
+            "embed_tokens.weight": partial(fn, is_column=False),
+            "lm_head.weight": partial(fn, is_column=False),
+        }
+        for index in range(config.num_hidden_layers):
+            prefix = f"layers.{index}."
+            for name in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                actions[prefix + f"self_attn.{name}.weight"] = partial(fn, is_column=name != "o_proj")
+            for name in ("gate_proj", "up_proj", "down_proj"):
+                actions[prefix + f"mlp.{name}.weight"] = partial(fn, is_column=name != "down_proj")
+        return actions
 
+    @classmethod
+    def _gen_aoa_config(cls, config: Ministral3Config):
+        model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
         aoa_statements = [
             f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
             f"model.norm.weight -> {model_prefix}norm.weight",
             f"model.layers.$LAYER_ID.input_layernorm.weight -> {model_prefix}layers.$LAYER_ID.input_layernorm.weight",
             f"model.layers.$LAYER_ID.post_attention_layernorm.weight -> {model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight",
         ]
-
         aoa_statements.extend(
             [
                 f"model.layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{proj_name}.weight"
                 for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]
             ]
         )
-
         aoa_statements.extend(
             [
                 f"model.layers.$LAYER_ID.mlp.{proj_name}.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{proj_name}.weight"
                 for proj_name in ["gate_proj", "up_proj", "down_proj"]
             ]
         )
-
+        if cls != cls.base_model_class:
+            if config.tie_word_embeddings:
+                aoa_statements.append("model.embed_tokens.weight -> lm_head.weight")
+            else:
+                aoa_statements.append("lm_head.weight -> lm_head.weight")
         return {"aoa_statements": aoa_statements}
 
     @classmethod
-    def _gen_inv_aoa_config(cls, config: Mistral3Config):
+    def _gen_inv_aoa_config(cls, config: Ministral3Config):
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
-
         aoa_statements = [
             f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             f"{model_prefix}norm.weight -> model.norm.weight",
             f"{model_prefix}layers.$LAYER_ID.input_layernorm.weight -> model.layers.$LAYER_ID.input_layernorm.weight",
             f"{model_prefix}layers.$LAYER_ID.post_attention_layernorm.weight -> model.layers.$LAYER_ID.post_attention_layernorm.weight",
         ]
-
         aoa_statements.extend(
             [
                 f"{model_prefix}layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> model.layers.$LAYER_ID.self_attn.{proj_name}.weight"
                 for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]
             ]
         )
-
         aoa_statements.extend(
             [
                 f"{model_prefix}layers.$LAYER_ID.mlp.{proj_name}.weight^T -> model.layers.$LAYER_ID.mlp.{proj_name}.weight"
                 for proj_name in ["gate_proj", "up_proj", "down_proj"]
             ]
         )
-
+        if not config.tie_word_embeddings and cls != cls.base_model_class:
+            aoa_statements.append("lm_head.weight -> lm_head.weight")
         return {"aoa_statements": aoa_statements}
 
     def _init_weights(self, layer):
-        if isinstance(layer, nn.Linear):
-            layer.weight.set_value(paddle.randn(shape=layer.weight.shape) * self.config.initializer_range)
+        if isinstance(layer, GeneralLMHead) and self.config.tie_word_embeddings:
+            return
+        if isinstance(layer, tuple(GeneralLinear._global_mapping.values()) + (GeneralLMHead,)):
+            context = get_rng_state_tracker().rng_state() if layer.weight.is_distributed else nullcontext()
+            with context:
+                nn.initializer.Normal(std=self.config.initializer_range)(layer.weight)
             if layer.bias is not None:
-                layer.bias.set_value(paddle.zeros_like(layer.bias))
-        elif isinstance(layer, nn.Embedding):
-            layer.weight.set_value(paddle.randn(shape=layer.weight.shape) * self.config.initializer_range)
-        elif isinstance(layer, _RMSNorm):
-            layer.weight.set_value(paddle.ones_like(layer.weight))
+                nn.initializer.Constant(0.0)(layer.bias)
+        elif isinstance(layer, tuple(GeneralEmbedding._global_mapping.values())):
+            context = get_rng_state_tracker().rng_state() if layer.weight.is_distributed else nullcontext()
+            with context:
+                nn.initializer.Normal(std=self.config.initializer_range)(layer.weight)
+            padding_idx = self.config.pad_token_id
+            if padding_idx is not None and padding_idx >= 0:
+                if self.config.tensor_model_parallel_size > 1:
+                    padding_idx -= self.config.tensor_parallel_rank * layer.weight.shape[0]
+                with paddle.no_grad():
+                    if 0 <= padding_idx < layer.weight.shape[0]:
+                        layer.weight[padding_idx] = 0
 
 
 @register_base_model
-class Mistral3Model(Mistral3PreTrainedModel):
-    def __init__(self, config: Mistral3Config):
+class Ministral3Model(Ministral3PretrainedModel):
+    def __init__(self, config: Ministral3Config):
+        _validate_execution_config(config)
         super().__init__(config)
-        text_cfg_raw = config.text_config
-        if isinstance(text_cfg_raw, Ministral3TextConfig):
-            self._text_cfg = text_cfg_raw
-        elif isinstance(text_cfg_raw, Mistral3TextConfig):
-            self._text_cfg = Ministral3TextConfig.from_dict(text_cfg_raw.to_dict())
-        elif isinstance(text_cfg_raw, dict):
-            self._text_cfg = Ministral3TextConfig.from_dict(text_cfg_raw)
-        else:
-            self._text_cfg = text_cfg_raw
-        self.language_model = Ministral3TextDecoder(self._text_cfg)
-        self.multi_modal_projector = Mistral3MultiModalProjector(config)
+        self.padding_idx = config.pad_token_id
+        self.vocab_size = config.vocab_size
+        self.hidden_size = config.hidden_size
 
-    def get_input_embeddings(self):
-        return self.language_model.get_input_embeddings()
+        self.embed_tokens = GeneralEmbedding.create(
+            config=config,
+            num_embeddings=config.vocab_size,
+            embedding_dim=config.hidden_size,
+            padding_idx=self.padding_idx,
+        )
+        self.layers = nn.LayerList(
+            [Ministral3DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+        )
+        self.norm = GeneralNorm.create(
+            config=config,
+            norm_type="rms_norm",
+            hidden_size=config.hidden_size,
+            norm_eps=config.rms_norm_eps,
+            input_is_parallel=config.sequence_parallel,
+        )
+        self.rotary_emb = Ministral3RotaryEmbedding(config=config)
 
-    def set_input_embeddings(self, value):
-        self.language_model.set_input_embeddings(value)
+    @staticmethod
+    def _recompute_layer(
+        layer,
+        hidden_states,
+        attention_mask=None,
+        attn_mask_startend_row_indices=None,
+        position_ids=None,
+        position_embeddings=None,
+        past_key_values=None,
+        use_cache=False,
+    ):
+        # Keep Layer hooks without sharing the PP wrapper's unbound forward signature cache.
+        return layer(
+            hidden_states,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            position_ids=position_ids,
+            position_embeddings=position_embeddings,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+        )
 
     def forward(
         self,
         input_ids: Optional[Tensor] = None,
-        pixel_values: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None,
         position_ids: Optional[Tensor] = None,
         past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[Tensor] = None,
-        vision_feature_layer: Optional[Union[int, List[int]]] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        cache_position: Optional[Tensor] = None,
-        image_sizes: Optional[Tensor] = None,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
-    ) -> Union[Tuple, Mistral3ModelOutputWithPast]:
+        use_cache: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+    ) -> Union[Tuple, BaseModelOutputWithPast]:
+        use_cache = use_cache if use_cache is not None else self.config.use_cache
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        if output_attentions and self.config._attn_implementation != "eager":
+            raise ValueError("output_attentions is only supported by the eager attention implementation")
+
         if (input_ids is None) == (inputs_embeds is None):
-            raise ValueError("Specify exactly one of input_ids or inputs_embeds")
-        if pixel_values is not None or image_sizes is not None:
-            raise NotImplementedError("Mistral3 vision tower is not implemented; only text inputs are supported.")
+            raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
+
         if inputs_embeds is None:
-            inputs_embeds = self.language_model.embed_tokens(input_ids)
+            bsz, seq_length = input_ids.shape
+            inputs_embeds = self.embed_tokens(input_ids)
+        else:
+            bsz, seq_length = inputs_embeds.shape[:2]
+        inputs_embeds = inputs_embeds.astype(self.embed_tokens.weight.dtype)
 
-        outputs = self.language_model(
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
+        recompute_enabled = (
+            self.training
+            and paddle.is_grad_enabled()
+            and self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+        )
+        if recompute_enabled and output_attentions:
+            raise ValueError("output_attentions is not supported together with activation recompute")
+        if recompute_enabled and past_key_values is not None:
+            raise ValueError("past_key_values must be None during recompute training")
+        if recompute_enabled and use_cache:
+            logger.warning_once("use_cache=True is incompatible with recompute; disabling cache for this forward")
+            use_cache = False
+
+        if self.config.sequence_parallel:
+            inputs_embeds = inputs_embeds.reshape([-1, inputs_embeds.shape[-1]])
+            inputs_embeds = ScatterOp.apply(inputs_embeds)
+
+        if use_cache and past_key_values is None:
+            past_key_values = DynamicCache(config=self.config)
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
+
+        if position_ids is None:
+            position_ids = (
+                paddle.arange(cache_length, seq_length + cache_length, dtype=paddle.int64).unsqueeze(0).tile([bsz, 1])
+            )
+
+        mask_kwargs = {
+            "config": self.config,
+            "inputs_embeds": inputs_embeds,
+            "batch_size": bsz,
+            "seq_length": seq_length,
+            "cache_length": cache_length,
+            "attention_mask": attention_mask,
+            "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
+            "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
+        }
+        if self.config.sliding_window is not None:
+            causal_mask, attn_mask_startend_row_indices = create_sliding_window_causal_mask_and_row_indices(
+                **mask_kwargs
+            )
+        else:
+            causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        if cache_length > 0 and seq_length > 1 and causal_mask is None and attn_mask_startend_row_indices is None:
+            causal_mask = self._prepare_decoder_attention_mask(
+                attention_mask=paddle.ones([bsz, cache_length + seq_length], dtype="bool"),
+                input_shape=(bsz, seq_length),
+                past_key_values_length=cache_length,
+                dtype=inputs_embeds.dtype,
+            )
+
+        hidden_states = inputs_embeds
+        position_embeddings = self.rotary_emb(hidden_states, position_ids)
+
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attns = () if output_attentions else None
+
+        for decoder_layer in self.layers:
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
+            if recompute_enabled:
+                layer_outputs = recompute(
+                    self._recompute_layer,
+                    decoder_layer,
+                    hidden_states,
+                    attention_mask=causal_mask,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    position_ids=position_ids,
+                    position_embeddings=position_embeddings,
+                    past_key_values=past_key_values,
+                    use_cache=use_cache,
+                    use_reentrant=self.config.recompute_use_reentrant and not hidden_states.stop_gradient,
+                )
+            else:
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    attention_mask=causal_mask,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                    position_ids=position_ids,
+                    position_embeddings=position_embeddings,
+                    past_key_values=past_key_values,
+                    use_cache=use_cache,
+                    output_attentions=output_attentions,
+                )
+            if output_attentions:
+                hidden_states, attn_weights = layer_outputs
+                all_self_attns += (attn_weights,)
+            else:
+                hidden_states = layer_outputs
+
+        hidden_states = self.norm(hidden_states)
+        if output_hidden_states:
+            all_hidden_states += (hidden_states,)
+
+        output = BaseModelOutputWithPast(
+            last_hidden_state=hidden_states,
             past_key_values=past_key_values,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            cache_position=cache_position,
-            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            hidden_states=all_hidden_states,
+            attentions=all_self_attns,
         )
-        return Mistral3ModelOutputWithPast(
-            last_hidden_state=outputs.last_hidden_state,
-            past_key_values=outputs.past_key_values,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            image_hidden_states=None,
-        )
+        return output if return_dict else output.to_tuple()
 
 
-class Mistral3ForConditionalGeneration(Mistral3PreTrainedModel):
-    _checkpoint_conversion_mapping = {
-        r"^language_model\.model\.": "model.language_model.",
-        r"^language_model\.lm_head\.": "lm_head.",
-        r"^vision_tower\.": "model.vision_tower.",
-        r"^multi_modal_projector\.": "model.multi_modal_projector.",
-    }
-    _tied_weights_keys = {"lm_head.weight": "model.language_model.embed_tokens.weight"}
+class Ministral3ForCausalLM(Ministral3PretrainedModel):
+    base_model_class = Ministral3Model
+    _tied_weights_keys = ["lm_head.weight"]
 
-    @classmethod
-    def _detect_converted_weights(cls, model_path):
-        import os
-
-        if isinstance(model_path, str) and model_path.startswith("~"):
-            model_path = os.path.expanduser(model_path)
-
-        if os.path.isdir(model_path):
-            files = os.listdir(model_path)
-            if any(f.endswith(".pdparams") for f in files):
-                return True
-            marker_file = os.path.join(model_path, ".paddleformers_converted")
-            if os.path.exists(marker_file):
-                return True
-            config_file = os.path.join(model_path, "config.json")
-            if os.path.exists(config_file):
-                try:
-                    import json
-
-                    with open(config_file, "r") as f:
-                        config = json.load(f)
-                        if config.get("_paddleformers_converted", False):
-                            return True
-                except Exception:
-                    pass
-            if any(f.endswith(".safetensors") for f in files):
-                return False
-
-        return False
-
-    @classmethod
-    def _gen_aoa_config(cls, config: Mistral3Config):
-        aoa_statements = [
-            "language_model.model.embed_tokens.weight -> model.language_model.embed_tokens.weight",
-            "language_model.model.norm.weight -> model.language_model.norm.weight",
-            "language_model.model.layers.$LAYER_ID.input_layernorm.weight -> model.language_model.layers.$LAYER_ID.input_layernorm.weight",
-            "language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight -> model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight",
-        ]
-        aoa_statements.extend(
-            [
-                f"language_model.model.layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> model.language_model.layers.$LAYER_ID.self_attn.{proj_name}.weight"
-                for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]
-            ]
-        )
-        aoa_statements.extend(
-            [
-                f"language_model.model.layers.$LAYER_ID.mlp.{proj_name}.weight^T -> model.language_model.layers.$LAYER_ID.mlp.{proj_name}.weight"
-                for proj_name in ["gate_proj", "up_proj", "down_proj"]
-            ]
-        )
-        return {"aoa_statements": aoa_statements}
-
-    @classmethod
-    def _gen_inv_aoa_config(cls, config: Mistral3Config):
-        aoa_statements = [
-            "model.language_model.embed_tokens.weight -> language_model.model.embed_tokens.weight",
-            "model.language_model.norm.weight -> language_model.model.norm.weight",
-            "model.language_model.layers.$LAYER_ID.input_layernorm.weight -> language_model.model.layers.$LAYER_ID.input_layernorm.weight",
-            "model.language_model.layers.$LAYER_ID.post_attention_layernorm.weight -> language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight",
-        ]
-        aoa_statements.extend(
-            [
-                f"model.language_model.layers.$LAYER_ID.self_attn.{proj_name}.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.{proj_name}.weight"
-                for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]
-            ]
-        )
-        aoa_statements.extend(
-            [
-                f"model.language_model.layers.$LAYER_ID.mlp.{proj_name}.weight^T -> language_model.model.layers.$LAYER_ID.mlp.{proj_name}.weight"
-                for proj_name in ["gate_proj", "up_proj", "down_proj"]
-            ]
-        )
-        return {"aoa_statements": aoa_statements}
-
-    _HF_TRANSPOSE_SUFFIXES = (
-        "self_attn.q_proj.weight",
-        "self_attn.k_proj.weight",
-        "self_attn.v_proj.weight",
-        "self_attn.o_proj.weight",
-        "mlp.gate_proj.weight",
-        "mlp.up_proj.weight",
-        "mlp.down_proj.weight",
-        "attention.q_proj.weight",
-        "attention.k_proj.weight",
-        "attention.v_proj.weight",
-        "attention.o_proj.weight",
-        "feed_forward.gate_proj.weight",
-        "feed_forward.up_proj.weight",
-        "feed_forward.down_proj.weight",
-        "merging_layer.weight",
-        "linear_1.weight",
-        "linear_2.weight",
-    )
-
-    _HF_QUANT_SUFFIXES = (
-        "activation_scale",
-        "weight_scale_inv",
-        "qscale_act",
-        "qscale_weight",
-    )
-
-    @classmethod
-    def _load_hf_safetensors_to_paddle(cls, model_path):
-        """FP8 dequantization + HF name mapping + Linear weight transpose -> Paddle state_dict"""
-        import glob
-        import os
-        import re
-
-        import ml_dtypes
-        import numpy as np
-        import paddle
-
-        from ...utils.safetensors import fast_safe_open
-
-        model_path = os.path.expanduser(model_path)
-
-        shard_files = sorted(glob.glob(os.path.join(model_path, "model-*.safetensors")))
-        if not shard_files:
-            single_file = os.path.join(model_path, "model.safetensors")
-            if os.path.exists(single_file):
-                shard_files = [single_file]
-            else:
-                raise FileNotFoundError(f"Safetensors weight file not found: {model_path}")
-
-        scale_inv_map = {}
-        for sf in shard_files:
-            with fast_safe_open(sf) as f:
-                for key in f.keys():
-                    if key.endswith("weight_scale_inv"):
-                        weight_key = key[: -len("_scale_inv")]
-                        scale_inv_map[weight_key] = f.get_tensor(key)
-
-        state_dict = {}
-        for sf in shard_files:
-            with fast_safe_open(sf) as f:
-                for hf_name in f.keys():
-                    if any(hf_name.endswith(suf) for suf in cls._HF_QUANT_SUFFIXES):
-                        continue
-
-                    np_arr = f.get_tensor(hf_name)
-                    if np_arr.dtype == ml_dtypes.float8_e4m3fn:
-                        scale = scale_inv_map.get(hf_name)
-                        if scale is not None:
-                            np_arr = np_arr.astype(np.float32) * scale.astype(np.float32)
-                        else:
-                            np_arr = np_arr.astype(np.float32)
-                    else:
-                        np_arr = np_arr.astype(np.float32)
-
-                    paddle_name = hf_name
-                    for pattern, replacement in cls._checkpoint_conversion_mapping.items():
-                        paddle_name = re.sub(pattern, replacement, paddle_name)
-
-                    if (
-                        np_arr.ndim == 2
-                        and any(hf_name.endswith(suf) for suf in cls._HF_TRANSPOSE_SUFFIXES)
-                        and paddle_name != "lm_head.weight"
-                    ):
-                        np_arr = np.ascontiguousarray(np_arr.T)
-
-                    state_dict[paddle_name] = paddle.to_tensor(np_arr, dtype=paddle.bfloat16)
-
-        return state_dict
-
-    @classmethod
-    def _resolve_local_cache_path(cls, model_path, download_hub=None):
-        """Resolve Hub model_id to local cache path. Returns (path, source)."""
-        import os
-
-        if os.path.isdir(model_path):
-            return model_path, None
-
-        hub_str = str(download_hub) if download_hub is not None else ""
-
-        if hub_str == "aistudio":
-            try:
-                from aistudio_sdk.file_download import get_model_cache_root
-
-                cache_candidate = os.path.join(get_model_cache_root(), model_path)
-                if os.path.isdir(cache_candidate):
-                    return cache_candidate, "aistudio"
-                cache_candidate = cls._ensure_hub_cache(model_path, "aistudio")
-                if cache_candidate is not None:
-                    return cache_candidate, "aistudio"
-            except ImportError:
-                pass
-
-        if hub_str == "modelscope":
-            cache_root = os.path.join(os.path.expanduser("~"), ".cache", "modelscope", "hub", "models")
-            cache_candidate = os.path.join(cache_root, model_path)
-            if os.path.isdir(cache_candidate):
-                return cache_candidate, "modelscope"
-            cache_candidate = cls._ensure_hub_cache(model_path, "modelscope")
-            if cache_candidate is not None:
-                return cache_candidate, "modelscope"
-
-        if hub_str in ("huggingface", ""):
-            try:
-                from huggingface_hub import scan_cache_dir
-
-                cache = scan_cache_dir()
-                for repo in cache.repos:
-                    if repo.repo_id == model_path:
-                        for rev in repo.revisions:
-                            if os.path.isdir(rev.snapshot_path):
-                                return rev.snapshot_path, "huggingface"
-            except Exception:
-                pass
-
-        return model_path, None
-
-    @classmethod
-    def _ensure_hub_cache(cls, model_path, source):
-        """Download config.json and all safetensors shards to build a local Hub cache directory."""
-        import json
-        import os
-
-        def _list_shards(cache_dir):
-            idx = os.path.join(cache_dir, "model.safetensors.index.json")
-            if os.path.exists(idx):
-                try:
-                    with open(idx) as f:
-                        wm = json.load(f).get("weight_map", {})
-                    shards = sorted(set(wm.values()))
-                    if shards:
-                        return shards
-                except Exception:
-                    pass
-            return None
-
-        try:
-            if source == "aistudio":
-                from aistudio_sdk.file_download import (
-                    get_model_cache_root,
-                    model_file_download,
-                )
-
-                model_file_download(model_path, "config.json")
-                cache_candidate = os.path.join(get_model_cache_root(), model_path)
-                if not os.path.isdir(cache_candidate):
-                    return None
-                model_file_download(model_path, "model.safetensors.index.json")
-                shards = _list_shards(cache_candidate)
-                if shards:
-                    for shard in shards:
-                        if not os.path.exists(os.path.join(cache_candidate, shard)):
-                            model_file_download(model_path, shard)
-                else:
-                    try:
-                        model_file_download(model_path, "model.safetensors")
-                    except Exception:
-                        pass
-                return cache_candidate
-            elif source == "modelscope":
-                from modelscope.hub.file_download import (
-                    model_file_download as ms_download,
-                )
-                from modelscope.utils.constant import DEFAULT_MODEL_REVISION
-
-                ms_download(model_path, "config.json", revision=DEFAULT_MODEL_REVISION)
-                cache_root = os.path.join(os.path.expanduser("~"), ".cache", "modelscope", "hub", "models")
-                cache_candidate = os.path.join(cache_root, model_path)
-                if not os.path.isdir(cache_candidate):
-                    return None
-                ms_download(model_path, "model.safetensors.index.json", revision=DEFAULT_MODEL_REVISION)
-                shards = _list_shards(cache_candidate)
-                if shards:
-                    for shard in shards:
-                        if not os.path.exists(os.path.join(cache_candidate, shard)):
-                            ms_download(model_path, shard, revision=DEFAULT_MODEL_REVISION)
-                else:
-                    try:
-                        ms_download(model_path, "model.safetensors", revision=DEFAULT_MODEL_REVISION)
-                    except Exception:
-                        pass
-                return cache_candidate
-        except Exception:
-            pass
-        return None
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        """Load pretrained model, auto-detect three formats:
-        1. Converted .pdparams (AIStudio): convert_from_hf=False, direct load
-        2. Original HF safetensors (with FP8): in-memory dequant + mapping + transpose
-        3. Converted safetensors (no FP8): flex_checkpoint + AOA load
-        """
-        import os
-
-        use_converted_weights = kwargs.pop("use_converted_weights", None)
-        load_checkpoint_format = kwargs.get("load_checkpoint_format", None)
-        use_safetensors = kwargs.get("use_safetensors", None)
-
-        model_path = pretrained_model_name_or_path
-        if isinstance(model_path, str) and model_path.startswith("~"):
-            model_path = os.path.expanduser(model_path)
-
-        check_path, cache_source = cls._resolve_local_cache_path(model_path, kwargs.get("download_hub", None))
-        if cache_source is not None and kwargs.get("download_hub") is None:
-            kwargs["download_hub"] = cache_source
-
-        has_pdparams = False
-        has_safetensors = False
-        if os.path.isdir(check_path):
-            files = os.listdir(check_path)
-            has_pdparams = any(f.endswith(".pdparams") for f in files)
-            has_safetensors = any(f.endswith(".safetensors") for f in files)
-
-        if has_pdparams and not has_safetensors:
-            if load_checkpoint_format is None:
-                kwargs["load_checkpoint_format"] = "legacy"
-            if use_safetensors is None:
-                kwargs["use_safetensors"] = False
-            kwargs["convert_from_hf"] = False
-            kwargs.setdefault("ignore_mismatched_sizes", True)
-
-        elif has_safetensors:
-            resolved_converted = use_converted_weights
-            if resolved_converted is None:
-                resolved_converted = cls._detect_converted_weights(check_path)
-
-            if not resolved_converted:
-                state_dict = cls._load_hf_safetensors_to_paddle(check_path)
-                kwargs["state_dict"] = state_dict
-                kwargs["convert_from_hf"] = False
-                kwargs["load_checkpoint_format"] = "legacy"
-            else:
-                if load_checkpoint_format is None:
-                    kwargs["load_checkpoint_format"] = "flex_checkpoint"
-
-        model = super(Mistral3ForConditionalGeneration, cls).from_pretrained(
-            pretrained_model_name_or_path, *args, **kwargs
-        )
-        # Old AIStudio weights have lm_head.weight shape [hidden, vocab], skipped by
-        # ignore_mismatched_sizes, need tie_weights() to rebind to embed_tokens.weight
-        if hasattr(model, "tie_weights"):
-            model.tie_weights()
-        return model
-
-    def __init__(self, config: Mistral3Config):
+    def __init__(self, config: Ministral3Config):
         super().__init__(config)
-        self.model = Mistral3Model(config)
-        text_cfg_raw = config.text_config
-        vocab_size = (
-            text_cfg_raw.get("vocab_size", 131072) if isinstance(text_cfg_raw, dict) else text_cfg_raw.vocab_size
-        )
-        hidden_size = (
-            text_cfg_raw.get("hidden_size", 4096) if isinstance(text_cfg_raw, dict) else text_cfg_raw.hidden_size
-        )
-
-        self.lm_head = nn.Embedding(vocab_size, hidden_size)
-        self.lm_head.weight.is_persistable = True
+        self.model = Ministral3Model(config)
+        self.lm_head = GeneralLMHead(config)
+        self.criterion = CriterionLayer(config)
         self.tie_weights()
 
-    def _init_weights(self, layer):
-        if layer is self.lm_head:
-            return
-        super()._init_weights(layer)
-
-    def get_input_embeddings(self):
-        return self.model.get_input_embeddings()
-
-    def set_input_embeddings(self, value):
-        self.model.set_input_embeddings(value)
-
-    def get_output_embeddings(self):
-        return self.lm_head
-
-    def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
-
     def forward(
         self,
         input_ids: Optional[Tensor] = None,
-        pixel_values: Optional[Tensor] = None,
         attention_mask: Optional[Tensor] = None,
         position_ids: Optional[Tensor] = None,
         past_key_values: Optional[Cache] = None,
         inputs_embeds: Optional[Tensor] = None,
-        image_sizes: Optional[Tensor] = None,
-        labels: Optional[Tensor] = None,
-        use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-        cache_position: Optional[Tensor] = None,
-        logits_to_keep: Union[int, Tensor] = 0,
         attn_mask_startend_row_indices: Optional[Tensor] = None,
-    ) -> Union[Tuple, Mistral3CausalLMOutputWithPast]:
+        labels: Optional[Tensor] = None,
+        loss_mask: Optional[Tensor] = None,
+        use_cache: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        **kwargs,
+    ) -> Union[Tuple, CausalLMOutputWithPast]:
+        if kwargs.get("attn_mask_start_row_indices", None) is not None and attn_mask_startend_row_indices is None:
+            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if attention_mask is not None and attention_mask.dtype != paddle.bool:
+            attention_mask = attention_mask.astype(paddle.bool)
+
+        if attn_mask_startend_row_indices is not None and attention_mask is not None:
+            logger.warning(
+                "You have provided both attn_mask_startend_row_indices and attention_mask. "
+                "The attn_mask_startend_row_indices will be used."
+            )
+            attention_mask = None
+
         outputs = self.model(
             input_ids=input_ids,
-            pixel_values=pixel_values,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
-            image_sizes=image_sizes,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-            cache_position=cache_position,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            use_cache=use_cache,
+            return_dict=True,
+            output_hidden_states=output_hidden_states,
+            output_attentions=output_attentions,
         )
-        if isinstance(logits_to_keep, int):
-            slice_indices = slice(-logits_to_keep, None) if logits_to_keep > 0 else slice(None)
-        else:
-            slice_indices = logits_to_keep
-        hidden_states = outputs.last_hidden_state[:, slice_indices, :]
-        logits = paddle.matmul(hidden_states, self.lm_head.weight, transpose_y=True)
+
+        logits = self.lm_head(outputs.last_hidden_state)
 
         loss = None
         if labels is not None:
-            loss = F.cross_entropy(
-                logits.reshape([-1, logits.shape[-1]]),
-                labels.reshape([-1]),
-                ignore_index=-100,
-            )
+            loss, _ = self.criterion(logits, labels, loss_mask=loss_mask)
 
-        if return_dict is False:
-            output = (logits,) + (outputs.past_key_values,)
+        if not return_dict:
+            output = (logits,) + outputs[1:]
             return (loss,) + output if loss is not None else output
 
-        return Mistral3CausalLMOutputWithPast(
+        return CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
-            image_hidden_states=outputs.image_hidden_states,
         )
 
-    def prepare_inputs_for_generation(
-        self,
-        input_ids,
-        past_key_values=None,
-        inputs_embeds=None,
-        pixel_values=None,
-        attention_mask=None,
-        cache_position=None,
-        logits_to_keep=None,
-        **kwargs,
-    ):
-        model_inputs = super().prepare_inputs_for_generation(
-            input_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
+
+class Ministral3DecoderLayerPipe(Ministral3DecoderLayer):
+    def forward(self, args):
+        hidden_states, attention_mask, position_ids, position_embeddings, _ = parse_args(args)
+
+        max_seq_len = hidden_states.shape[1]
+        if self.config.sequence_parallel:
+            max_seq_len = hidden_states.shape[0] * self.config.tensor_model_parallel_size
+        if attention_mask is None:
+            tgt_mask = None
+            attn_mask_startend_row_indices = None
+        elif attention_mask.dtype == paddle.int32:
+            tgt_mask = None
+            attn_mask_startend_row_indices = attention_mask
+        else:
+            tgt_mask = attention_mask[:, :, :max_seq_len, :max_seq_len]
+            attn_mask_startend_row_indices = None
+            assert len(tgt_mask.shape) == 4, f"Attention mask should be 4D tensor, but got {tgt_mask.shape}."
+
+        # The Llama-4 attention scaling is applied from the per-token position ids, which the
+        # generic decoder-layer pipe does not forward.
+        position_ids_decoder = position_ids[:, :max_seq_len] if position_ids is not None else None
+
+        if position_embeddings is not None:
+            position_embeddings = position_embeddings[..., :max_seq_len, :]
+            tuple_position_embeddings = (position_embeddings[0], position_embeddings[1])
+        else:
+            tuple_position_embeddings = None
+
+        has_gradient = not hidden_states.stop_gradient
+        if (
+            self.config.recompute_granularity == "full"
+            and self.config.recompute_method == "uniform"
+            and self.config.recompute_num_layers == 1
+            and has_gradient
+        ):
+            hidden_states = recompute(
+                super().forward,
+                hidden_states,
+                attention_mask=tgt_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_ids=position_ids_decoder,
+                position_embeddings=tuple_position_embeddings,
+                use_reentrant=self.config.recompute_use_reentrant,
+            )
+        else:
+            hidden_states = super().forward(
+                hidden_states,
+                attention_mask=tgt_mask,
+                attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                position_ids=position_ids_decoder,
+                position_embeddings=tuple_position_embeddings,
+            )
+
+        if isinstance(hidden_states, paddle.Tensor):
+            ret = (hidden_states,)
+        else:
+            ret = hidden_states
+        if attention_mask is not None:
+            ret += (attention_mask.clone(),)
+        if position_ids is not None:
+            ret += (position_ids.clone(),)
+        if position_embeddings is not None:
+            ret += (position_embeddings.clone(),)
+        if len(ret) == 1:
+            (ret,) = ret
+        return ret
+
+
+class Ministral3EmbeddingPipe(EmbeddingPipe):
+    def forward(self, args):
+        input_ids, mask, _, _, _ = parse_args(args, is_embed=True)
+        outputs = super().forward(args)
+        hidden_states, _, position_ids, position_embeddings, offset = parse_args(outputs)
+        row_indices = mask if mask is not None and mask.ndim >= 3 and mask.dtype == paddle.int32 else None
+        attention_mask = mask.astype("bool") if mask is not None and row_indices is None else None
+        attention_mask, row_indices = create_causal_mask_and_row_indices(
+            config=self.config,
+            inputs_embeds=hidden_states,
+            batch_size=input_ids.shape[0],
+            seq_length=input_ids.shape[1],
+            cache_length=0,
             attention_mask=attention_mask,
-            cache_position=cache_position,
-            logits_to_keep=logits_to_keep,
-            **kwargs,
+            attn_mask_startend_row_indices=row_indices,
+            prepare_decoder_attention_mask=Ministral3PretrainedModel._prepare_decoder_attention_mask,
         )
-        if past_key_values is not None:
-            model_inputs["pixel_values"] = None
-        elif pixel_values is not None:
-            model_inputs["pixel_values"] = pixel_values
-        return model_inputs
+        outputs = (hidden_states,)
+        for value in (
+            row_indices if row_indices is not None else attention_mask,
+            position_ids,
+            position_embeddings,
+            offset,
+        ):
+            if value is not None:
+                outputs += (value,)
+        return outputs[0] if len(outputs) == 1 else outputs
+
+
+class Ministral3CriterionLayerPipe(CriterionLayer):
+    def __init__(self, config):
+        super().__init__(config, return_tuple=False)
+
+    def forward(self, logits, labels):
+        loss_mask = None
+        if isinstance(labels, tuple) and "sft" in self.loss_type:
+            labels, loss_mask = labels
+        return super().forward(logits, labels, loss_mask=loss_mask)
+
+
+class Ministral3ForCausalLMPipe(GeneralModelForCausalLMPipe):
+    config_class = Ministral3Config
+    base_model_class = Ministral3Model
+    base_model_prefix = "model"
+    _decoder_layer_cls = Ministral3DecoderLayer
+    _decoder_layer_pipe_cls = Ministral3DecoderLayerPipe
+    _embedding_pipe_cls = Ministral3EmbeddingPipe
+    _criterion_pipe_cls = Ministral3CriterionLayerPipe
+    _rotary_emb_cls = Ministral3RotaryEmbedding
+    _get_tensor_parallel_mappings = Ministral3PretrainedModel._get_tensor_parallel_mappings
+    _init_weights = Ministral3PretrainedModel._init_weights
+    _keep_in_fp32_modules = Ministral3PretrainedModel._keep_in_fp32_modules
+    _tied_weights_keys = ["lm_head.weight"]
+    transpose_weight_keys = Ministral3PretrainedModel.transpose_weight_keys
+    _gen_aoa_config = Ministral3ForCausalLM._gen_aoa_config
+    _gen_inv_aoa_config = Ministral3ForCausalLM._gen_inv_aoa_config
+
+    def __init__(self, config):
+        _validate_execution_config(config)
+        super().__init__(config)
+
+    def add_sequential_layer(self, layer_desc, name_prefix=""):
+        # The shared-weight path hardcodes EmbeddingPipe instead of using _embedding_pipe_cls.
+        if name_prefix == "model" and layer_desc.layer_func is EmbeddingPipe:
+            layer_desc.layer_func = Ministral3EmbeddingPipe
+        super().add_sequential_layer(layer_desc, name_prefix)
+
+    @paddle.no_grad()
+    def generate(self, input_ids, max_new_tokens=20, eos_token_id=None):
+        """Greedy decoding across pipeline stages.
+
+        Every pipeline rank must call this method with the same ``input_ids``.
+        Each step re-runs the whole prefix because the pipeline pipes do not
+        carry a KV cache across stages, so the cost grows quadratically with the
+        generated length. This is a reference path: it requires a distributed
+        pipeline launch and has not been validated on multi-GPU hardware yet.
+        """
+        from paddle.distributed.fleet import get_hybrid_communicate_group as get_hcg
+        from paddle.distributed.fleet.meta_parallel.pp_utils import (
+            p2p_communication as p2p,
+        )
+
+        if not paddle.distributed.is_initialized():
+            raise RuntimeError("Ministral3ForCausalLMPipe.generate requires a distributed pipeline launch")
+        if getattr(self.config, "virtual_pipeline_model_parallel_size", 1) > 1:
+            raise NotImplementedError("Ministral3ForCausalLMPipe.generate does not support virtual pipeline stages")
+
+        hcg = get_hcg()
+        pp_group = hcg.get_pipe_parallel_group()
+        is_first_stage = hcg.get_stage_id() == 0
+        is_last_stage = hcg.get_stage_id() == hcg.get_pipe_parallel_world_size() - 1
+
+        p2p.initialize_p2p_groups(hcg, enable_partial_send_recv=False, enable_timer=False)
+        p2p_helper = p2p.P2pHelper(use_cache=False)
+        self.eval()
+
+        if isinstance(input_ids, paddle.Tensor):
+            cur_ids = input_ids.astype("int64")
+        else:
+            cur_ids = paddle.to_tensor(input_ids, dtype="int64")
+        paddle.distributed.broadcast(cur_ids, src=pp_group.ranks[0], group=pp_group)
+
+        if eos_token_id is None:
+            eos_ids = []
+        elif isinstance(eos_token_id, (list, tuple)):
+            eos_ids = list(eos_token_id)
+        else:
+            eos_ids = [eos_token_id]
+        for _ in range(max_new_tokens):
+            outputs = self(cur_ids) if is_first_stage else self(p2p_helper.recv_forward(is_first_stage))
+            p2p_helper.send_forward(outputs, is_last_stage)
+            if is_last_stage:
+                next_token = paddle.argmax(outputs[:, -1], axis=-1, keepdim=True)
+            else:
+                next_token = paddle.zeros([cur_ids.shape[0], 1], dtype="int64")
+            paddle.distributed.broadcast(next_token, src=pp_group.ranks[-1], group=pp_group)
+            cur_ids = paddle.concat([cur_ids, next_token], axis=1)
+            if eos_ids:
+                done = paddle.zeros_like(next_token, dtype="bool")
+                for token in eos_ids:
+                    done = done | (next_token == token)
+                if bool(done.all().item()):
+                    break
+        return cur_ids
+
+
+__all__ = [
+    "Ministral3PretrainedModel",
+    "Ministral3Model",
+    "Ministral3ForCausalLM",
+    "Ministral3ForCausalLMPipe",
+    "Ministral3RotaryEmbedding",
+    "Ministral3DecoderLayer",
+    "Ministral3Attention",
+]

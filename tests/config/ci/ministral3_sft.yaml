@@ -16,7 +16,7 @@ model_name_or_path: mistralai/Ministral-3-3B-Instruct-2512
 _attn_implementation: eager
 
 ### finetuning
-stage: VL-SFT
+stage: SFT
 fine_tuning: full
 seed: 23
 do_train: true
@@ -33,7 +33,7 @@ logging_steps: 1
 gradient_accumulation_steps: 1
 disable_tqdm: true
 eval_accumulation_steps: 4
-output_dir: ./tmp/mistral3_3b_sft_ckpts
+output_dir: ./tmp/ministral3_3b_sft_ckpts
 
 # train
 warmup_steps: 2

@@ -15,6 +15,6 @@ import transformers as hf
 
 from ..tokenizer_utils import warp_tokenizer
 
-__all__ = ["Mistral3Tokenizer"]
+__all__ = ["Ministral3Tokenizer"]
 
-Mistral3Tokenizer = warp_tokenizer(hf.PreTrainedTokenizerFast)
+Ministral3Tokenizer = warp_tokenizer(hf.PreTrainedTokenizerFast)

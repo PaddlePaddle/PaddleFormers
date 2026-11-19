@@ -1347,7 +1347,7 @@ register_template(
 )
 
 register_template(
-    name="mistral3",
+    name="ministral3",
     format_user=StringFormatter(slots=["[INST]{{content}}[/INST]"]),
     format_assistant=StringFormatter(slots=["{{content}}"]),
     format_system=StringFormatter(slots=["[SYSTEM_PROMPT]{{content}}[/SYSTEM_PROMPT]"]),

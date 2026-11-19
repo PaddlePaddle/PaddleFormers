@@ -188,8 +188,11 @@ def get_lora_target_modules(model):
             ".*v_proj.*",
             ".*o_proj.*",
             ".*gate.*",
+            ".*w1.*",
+            ".*w2.*",
+            ".*w3.*",
         ]
-    elif model.config.model_type == "mistral3":
+    elif model.config.model_type == "ministral3":
         target_modules = [
             ".*q_proj.*",
             ".*k_proj.*",

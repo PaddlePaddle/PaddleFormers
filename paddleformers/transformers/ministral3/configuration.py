@@ -13,219 +13,125 @@
 # limitations under the License.
 
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
-__all__ = ["Mistral3Config", "Mistral3TextConfig", "Mistral3VisionConfig", "Ministral3TextConfig"]
-
-
-class Ministral3TextConfig:
-    """Attribute-style wrapper around the text_config dict, compatible with the RoPE utilities."""
-
-    def __init__(self, cfg_dict: dict):
-        self.attention_dropout = cfg_dict.get("attention_dropout", 0.0)
-        self.head_dim = cfg_dict.get("head_dim", 128)
-        self.hidden_act = cfg_dict.get("hidden_act", "silu")
-        self.hidden_size = cfg_dict.get("hidden_size", 4096)
-        self.initializer_range = cfg_dict.get("initializer_range", 0.02)
-        self.intermediate_size = cfg_dict.get("intermediate_size", 14336)
-        self.max_position_embeddings = cfg_dict.get("max_position_embeddings", 262144)
-        self.model_type = cfg_dict.get("model_type", "ministral3")
-        self.num_attention_heads = cfg_dict.get("num_attention_heads", 32)
-        self.num_hidden_layers = cfg_dict.get("num_hidden_layers", 34)
-        self.num_key_value_heads = cfg_dict.get("num_key_value_heads", 8)
-        self.rms_norm_eps = cfg_dict.get("rms_norm_eps", 1e-5)
-        self.rope_parameters = cfg_dict.get("rope_parameters", cfg_dict.get("rope_scaling"))
-        rope_theta = cfg_dict.get("rope_theta", 1000000.0)
-        if self.rope_parameters is None:
-            self.rope_parameters = {"rope_type": "default", "rope_theta": rope_theta}
-        else:
-            self.rope_parameters = dict(self.rope_parameters)
-            self.rope_parameters["rope_type"] = self.rope_parameters.get(
-                "rope_type", self.rope_parameters.get("type", "yarn")
-            )
-            self.rope_parameters["rope_theta"] = self.rope_parameters.get("rope_theta", rope_theta)
-        self.sliding_window = cfg_dict.get("sliding_window", None)
-        self.use_cache = cfg_dict.get("use_cache", True)
-        self.vocab_size = cfg_dict.get("vocab_size", 131072)
-        self.pad_token_id = cfg_dict.get("pad_token_id", None)
-
-    @classmethod
-    def from_dict(cls, cfg_dict):
-        if isinstance(cfg_dict, cls):
-            return cfg_dict
-        return cls(cfg_dict)
+__all__ = ["Ministral3Config"]
 
 
-class Mistral3Config(PretrainedConfig):
+def _default_rope_parameters(max_position_embeddings):
+    return {
+        "rope_type": "yarn",
+        "rope_theta": 1000000.0,
+        "factor": 16.0,
+        "original_max_position_embeddings": 16384,
+        "max_position_embeddings": max_position_embeddings,
+        "beta_fast": 32.0,
+        "beta_slow": 1.0,
+        "mscale_all_dim": 1.0,
+        "mscale": 1.0,
+        "llama_4_scaling_beta": 0.1,
+    }
+
+
+class Ministral3Config(PretrainedConfig):
     r"""
-    This is the configuration class to store the configuration of a [`Mistral3ForConditionalGeneration`].
-    It is used to instantiate a Mistral3 model according to the specified arguments, defining the model architecture.
+    Configuration of a [`Ministral3ForCausalLM`] model.
 
     Args:
-        vision_config (`dict`, *optional*):
-            The config dictionary of the vision backbone.
-        text_config (`dict`, *optional*):
-            The config dictionary of the text backbone.
-        image_token_index (`int`, *optional*, defaults to 10):
-            The image token index to encode the image prompt.
-        projector_hidden_act (`str`, *optional*, defaults to `"gelu"`):
-            The activation function used by the multimodal projector.
-        vision_feature_layer (`Union[int, list[int]]`, *optional*, defaults to -1):
-            The index of the layer to select the vision feature.
-        multimodal_projector_bias (`bool`, *optional*, defaults to `False`):
-            Whether to use bias in the multimodal projector.
-        spatial_merge_size (`int`, *optional*, defaults to 2):
-            The downsampling factor for the spatial merge operation.
-        tie_word_embeddings (`bool`, *optional*):
-            Whether to tie the input and output embeddings. If unset, uses the value from `text_config`,
-            falling back to `False` when absent.
+        vocab_size (`int`, *optional*, defaults to 131072):
+            Vocabulary size of the model.
+        hidden_size (`int`, *optional*, defaults to 4096):
+            Dimensionality of the hidden states.
+        intermediate_size (`int`, *optional*, defaults to 14336):
+            Dimensionality of the MLP intermediate states.
+        num_hidden_layers (`int`, *optional*, defaults to 34):
+            Number of decoder layers.
+        num_attention_heads (`int`, *optional*, defaults to 32):
+            Number of attention heads.
+        num_key_value_heads (`int`, *optional*, defaults to 8):
+            Number of key/value heads used for grouped-query attention.
+        head_dim (`int`, *optional*, defaults to 128):
+            Dimensionality of each attention head.
+        hidden_act (`str`, *optional*, defaults to `"silu"`):
+            Activation function of the MLP.
+        max_position_embeddings (`int`, *optional*, defaults to 262144):
+            Maximum sequence length the model may ever attend to.
+        initializer_range (`float`, *optional*, defaults to 0.02):
+            Standard deviation of the truncated normal initializer.
+        rms_norm_eps (`float`, *optional*, defaults to 1e-05):
+            Epsilon of the RMS normalization layers.
+        use_cache (`bool`, *optional*, defaults to `True`):
+            Whether the model should return a key/value cache.
+        rope_parameters (`dict`, *optional*):
+            RoPE parameters. `rope_scaling` from older checkpoints is accepted as an alias.
+        attention_dropout (`float`, *optional*, defaults to 0.0):
+            Dropout probability applied to the attention probabilities.
     """
 
-    model_type = "mistral3"
-    attribute_map = {"image_token_id": "image_token_index"}
-    is_composition = True
+    model_type = "ministral3"
+    keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
         self,
-        vision_config=None,
-        text_config=None,
-        image_token_index=10,
-        projector_hidden_act="gelu",
-        vision_feature_layer=-1,
-        multimodal_projector_bias=False,
-        spatial_merge_size=2,
-        tie_word_embeddings=None,
-        initializer_range=0.02,
-        **kwargs,
-    ):
-        self.image_token_index = image_token_index
-        self.projector_hidden_act = projector_hidden_act
-        self.vision_feature_layer = vision_feature_layer
-        self.initializer_range = initializer_range
-
-        if vision_config is None:
-            vision_config = {
-                "intermediate_size": 4096,
-                "hidden_size": 1024,
-                "patch_size": 14,
-                "image_size": 1540,
-                "num_hidden_layers": 24,
-                "num_attention_heads": 16,
-                "vocab_size": 32000,
-                "head_dim": 64,
-                "hidden_act": "gelu",
-            }
-        if isinstance(vision_config, dict):
-            vision_config = Mistral3VisionConfig(**vision_config)
-        self.vision_config = vision_config
-
-        if text_config is None:
-            text_config = {
-                "attention_dropout": 0.0,
-                "head_dim": 128,
-                "hidden_act": "silu",
-                "hidden_size": 5120,
-                "initializer_range": 0.02,
-                "intermediate_size": 32768,
-                "max_position_embeddings": 131072,
-                "model_type": "mistral",
-                "num_attention_heads": 32,
-                "num_hidden_layers": 40,
-                "num_key_value_heads": 8,
-                "rms_norm_eps": 1e-05,
-                "rope_theta": 1000000000.0,
-                "sliding_window": None,
-                "use_cache": True,
-                "vocab_size": 131072,
-            }
-        if tie_word_embeddings is None:
-            tie_word_embeddings = (
-                text_config.get("tie_word_embeddings", False)
-                if isinstance(text_config, dict)
-                else getattr(text_config, "tie_word_embeddings", False)
-            )
-        if isinstance(text_config, dict):
-            text_config = Mistral3TextConfig(**text_config)
-        self.text_config = text_config
-
-        self.multimodal_projector_bias = multimodal_projector_bias
-        self.spatial_merge_size = spatial_merge_size
-        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
-
-
-class Mistral3VisionConfig(PretrainedConfig):
-    model_type = "mistral3_vision"
-
-    def __init__(
-        self,
-        intermediate_size=4096,
-        hidden_size=1024,
-        patch_size=14,
-        image_size=1540,
-        num_hidden_layers=24,
-        num_attention_heads=16,
-        vocab_size=32000,
-        head_dim=64,
-        hidden_act="gelu",
-        **kwargs,
-    ):
-        self.intermediate_size = intermediate_size
-        self.hidden_size = hidden_size
-        self.patch_size = patch_size
-        self.image_size = image_size
-        self.num_hidden_layers = num_hidden_layers
-        self.num_attention_heads = num_attention_heads
-        self.vocab_size = vocab_size
-        self.head_dim = head_dim
-        self.hidden_act = hidden_act
-
-        super().__init__(**kwargs)
-
-
-class Mistral3TextConfig(PretrainedConfig):
-    model_type = "mistral3_text"
-
-    def __init__(
-        self,
-        attention_dropout=0.0,
+        vocab_size=131072,
+        hidden_size=4096,
+        intermediate_size=14336,
+        num_hidden_layers=34,
+        num_attention_heads=32,
+        num_key_value_heads=8,
         head_dim=128,
         hidden_act="silu",
-        hidden_size=5120,
+        max_position_embeddings=262144,
         initializer_range=0.02,
-        intermediate_size=32768,
-        max_position_embeddings=131072,
-        num_attention_heads=32,
-        num_hidden_layers=40,
-        num_key_value_heads=8,
         rms_norm_eps=1e-05,
-        rope_theta=1000000000.0,
-        rope_scaling=None,
-        sliding_window=None,
         use_cache=True,
-        vocab_size=131072,
+        pad_token_id=11,
+        bos_token_id=1,
+        eos_token_id=2,
+        tie_word_embeddings=False,
+        rope_parameters=None,
+        rope_theta=1000000.0,
+        sliding_window=None,
+        attention_dropout=0.0,
         **kwargs,
     ):
-        self.attention_dropout = attention_dropout
-        self.head_dim = head_dim
-        self.hidden_act = hidden_act
-        self.hidden_size = hidden_size
-        self.initializer_range = initializer_range
-        self.intermediate_size = intermediate_size
-        self.max_position_embeddings = max_position_embeddings
-        self.num_attention_heads = num_attention_heads
-        self.num_hidden_layers = num_hidden_layers
-        self.num_key_value_heads = num_key_value_heads
-        self.rms_norm_eps = rms_norm_eps
-        self.rope_theta = rope_theta
-        self.rope_scaling = rope_scaling
-        if rope_scaling is not None:
-            self.rope_scaling = dict(rope_scaling)
-            self.rope_scaling["rope_type"] = self.rope_scaling.get("rope_type", self.rope_scaling.get("type", "yarn"))
-            self.rope_scaling.pop("type", None)
-            self.rope_parameters = self.rope_scaling
-        else:
-            self.rope_parameters = {"rope_type": "default", "rope_theta": rope_theta}
-        self.sliding_window = sliding_window
-        self.use_cache = use_cache
         self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.intermediate_size = intermediate_size
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_attention_heads if num_key_value_heads is None else num_key_value_heads
+        if self.num_attention_heads % self.num_key_value_heads:
+            raise ValueError("num_attention_heads must be divisible by num_key_value_heads")
+        self.head_dim = head_dim if head_dim is not None else hidden_size // num_attention_heads
+        self.hidden_act = hidden_act
+        self.max_position_embeddings = max_position_embeddings
+        self.initializer_range = initializer_range
+        self.rms_norm_eps = rms_norm_eps
+        self.use_cache = use_cache
+        self.sliding_window = sliding_window
+        self.attention_dropout = attention_dropout
+        self.rope_theta = rope_theta
 
-        super().__init__(**kwargs)
+        if rope_parameters is None:
+            rope_parameters = kwargs.pop("rope_scaling", None)
+        if rope_parameters is None:
+            rope_parameters = _default_rope_parameters(max_position_embeddings)
+        else:
+            rope_parameters = dict(rope_parameters)
+            if "rope_type" not in rope_parameters and "type" in rope_parameters:
+                rope_parameters["rope_type"] = rope_parameters["type"]
+            rope_parameters.pop("type", None)
+        self.rope_parameters = rope_parameters
+
+        super().__init__(
+            pad_token_id=pad_token_id,
+            bos_token_id=bos_token_id,
+            eos_token_id=eos_token_id,
+            tie_word_embeddings=tie_word_embeddings,
+            **kwargs,
+        )
+
+        standardize_rope_params(self, rope_theta=self.rope_theta)
+        self.rope_theta = self.rope_parameters["rope_theta"]
+        rope_config_validation(self, ignore_keys={"llama_4_scaling_beta", "max_position_embeddings"})

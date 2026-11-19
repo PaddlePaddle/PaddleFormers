@@ -18,25 +18,17 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
-    "configuration": [
-        "Mistral3Config",
-        "Mistral3TextConfig",
-        "Mistral3VisionConfig",
-        "Ministral3TextConfig",
-    ],
+    "configuration": ["Ministral3Config"],
     "modeling": [
-        "Mistral3ForConditionalGeneration",
-        "Mistral3Model",
-        "Mistral3MultiModalProjector",
-        "Mistral3PatchMerger",
-        "Mistral3PreTrainedModel",
-        "Mistral3RMSNorm",
-        "Ministral3TextDecoder",
-        "Ministral3DecoderLayer",
         "Ministral3Attention",
-        "Ministral3MLP",
+        "Ministral3DecoderLayer",
+        "Ministral3ForCausalLM",
+        "Ministral3ForCausalLMPipe",
+        "Ministral3Model",
+        "Ministral3PreTrainedModel",
+        "Ministral3RotaryEmbedding",
     ],
-    "tokenizer": ["Mistral3Tokenizer"],
+    "tokenizer": ["Ministral3Tokenizer"],
 }
 
 if TYPE_CHECKING:

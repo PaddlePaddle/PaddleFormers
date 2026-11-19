@@ -11,627 +11,204 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
-
-import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
-import numpy as np
 import paddle
+from parameterized import parameterized
 
-from tests.testing_utils import require_package, slow
+from paddleformers.transformers import (
+    AutoTokenizer,
+    Ministral3Config,
+    Ministral3ForCausalLM,
+    Ministral3ForCausalLMPipe,
+    Ministral3Model,
+)
+from paddleformers.transformers.ministral3.modeling import (
+    Ministral3RotaryEmbedding,
+    get_llama_4_attn_scale,
+)
+from tests.testing_utils import (
+    gpu_device_initializer,
+    require_gpu,
+    require_package,
+    slow,
+)
+from tests.transformers.test_generation_utils import GenerationTesterMixin
+from tests.transformers.test_modeling_common import (
+    ModelTesterMixin,
+    ids_tensor,
+    random_attention_mask,
+)
 
-_MODEL_3B_HF_ID = "mistralai/Ministral-3-3B-Instruct-2512"
-_PROMPT_DIFF = "Hello, how are you today?"
-_PROMPT_INFERENCE = "What is the difference between cats and dogs?"
-_SEED = 42
-_NUM_GEN_TOKENS = 10
-_DIFF_THRESHOLD = 1e-2
-
-
-SMALL_TEXT_CFG = {
-    "attention_dropout": 0.0,
-    "head_dim": 16,
-    "hidden_act": "silu",
-    "hidden_size": 64,
-    "initializer_range": 0.02,
-    "intermediate_size": 128,
-    "max_position_embeddings": 128,
-    "model_type": "ministral3",
-    "num_attention_heads": 4,
-    "num_hidden_layers": 2,
-    "num_key_value_heads": 2,
-    "rms_norm_eps": 1e-5,
-    "rope_parameters": {
-        "rope_type": "default",
-        "rope_theta": 10000.0,
-    },
-    "sliding_window": None,
-    "use_cache": True,
-    "vocab_size": 1000,
-}
-
-SMALL_VISION_CFG = {
-    "intermediate_size": 128,
-    "hidden_size": 64,
-    "patch_size": 14,
-    "image_size": 56,
-    "num_hidden_layers": 1,
-    "num_attention_heads": 4,
-    "vocab_size": 1000,
-    "head_dim": 16,
-    "hidden_act": "gelu",
-}
+_MODEL_HF_ID = "mistralai/Ministral-3-3B-Instruct-2512"
 
 
-class TestMinistral3TextDecoder(unittest.TestCase):
-    BATCH = 2
-    SEQ = 10
-
-    def setUp(self):
-        from paddleformers.transformers import (
-            Ministral3TextConfig,
-            Ministral3TextDecoder,
-        )
-
-        self.text_cfg = Ministral3TextConfig(SMALL_TEXT_CFG)
-        self.model = Ministral3TextDecoder(self.text_cfg)
-        self.model.eval()
-
-    def test_forward_shape(self):
-        input_ids = paddle.randint(0, SMALL_TEXT_CFG["vocab_size"], [self.BATCH, self.SEQ])
-        with paddle.no_grad():
-            output = self.model(input_ids=input_ids)
-        self.assertEqual(
-            list(output.last_hidden_state.shape),
-            [self.BATCH, self.SEQ, SMALL_TEXT_CFG["hidden_size"]],
-        )
-
-    def test_forward_with_attention_mask(self):
-        input_ids = paddle.randint(0, SMALL_TEXT_CFG["vocab_size"], [self.BATCH, self.SEQ])
-        attn_mask = paddle.ones([self.BATCH, self.SEQ], dtype=paddle.int64)
-        with paddle.no_grad():
-            output = self.model(input_ids=input_ids, attention_mask=attn_mask)
-        self.assertEqual(
-            list(output.last_hidden_state.shape),
-            [self.BATCH, self.SEQ, SMALL_TEXT_CFG["hidden_size"]],
-        )
-
-    def test_deterministic_output(self):
-        input_ids = paddle.randint(0, SMALL_TEXT_CFG["vocab_size"], [1, 6])
-        with paddle.no_grad():
-            out1 = self.model(input_ids=input_ids).last_hidden_state
-            out2 = self.model(input_ids=input_ids).last_hidden_state
-        self.assertTrue(paddle.allclose(out1, out2))
-
-
-class TestMistral3Model(unittest.TestCase):
-    BATCH = 2
-    SEQ = 8
-
-    def setUp(self):
-        from paddleformers.transformers import Mistral3Config, Mistral3Model
-
-        self.config = Mistral3Config(
-            text_config=SMALL_TEXT_CFG,
-            vision_config=SMALL_VISION_CFG,
-        )
-        self.model = Mistral3Model(self.config)
-        self.model.eval()
-
-    def test_forward_shape(self):
-        input_ids = paddle.randint(0, SMALL_TEXT_CFG["vocab_size"], [self.BATCH, self.SEQ])
-        with paddle.no_grad():
-            output = self.model(input_ids=input_ids)
-        self.assertEqual(
-            list(output.last_hidden_state.shape),
-            [self.BATCH, self.SEQ, SMALL_TEXT_CFG["hidden_size"]],
-        )
-
-    def test_forward_with_attention_mask(self):
-        input_ids = paddle.randint(0, SMALL_TEXT_CFG["vocab_size"], [self.BATCH, self.SEQ])
-        attn_mask = paddle.ones([self.BATCH, self.SEQ], dtype=paddle.int64)
-        with paddle.no_grad():
-            output = self.model(input_ids=input_ids, attention_mask=attn_mask)
-        self.assertEqual(
-            list(output.last_hidden_state.shape),
-            [self.BATCH, self.SEQ, SMALL_TEXT_CFG["hidden_size"]],
-        )
-
-    def test_output_dtype_consistent(self):
-        input_ids = paddle.randint(0, SMALL_TEXT_CFG["vocab_size"], [1, self.SEQ])
-        with paddle.no_grad():
-            output = self.model(input_ids=input_ids)
-        self.assertTrue(output.last_hidden_state.dtype in [paddle.float32, paddle.float16, paddle.bfloat16])
-
-
-# Small config with GQA (num_attention_heads != num_key_value_heads, groups > 1)
-SMALL_GQA_CFG = dict(SMALL_TEXT_CFG)
-SMALL_GQA_CFG = {
-    "attention_dropout": 0.0,
-    "head_dim": 16,
-    "hidden_act": "silu",
-    "hidden_size": 64,
-    "initializer_range": 0.02,
-    "intermediate_size": 128,
-    "max_position_embeddings": 128,
-    "model_type": "ministral3",
-    "num_attention_heads": 4,
-    "num_hidden_layers": 2,
-    "num_key_value_heads": 2,  # GQA: groups = 4 // 2 = 2
-    "rms_norm_eps": 1e-5,
-    "rope_parameters": {
-        "rope_type": "default",
-        "rope_theta": 10000.0,
-    },
-    "sliding_window": None,
-    "use_cache": True,
-    "vocab_size": 1000,
-}
-
-# Small config with yarn RoPE (the real Ministral-3 scaling type)
-SMALL_YARN_CFG = {
-    "attention_dropout": 0.0,
-    "head_dim": 16,
-    "hidden_act": "silu",
-    "hidden_size": 64,
-    "initializer_range": 0.02,
-    "intermediate_size": 128,
-    "max_position_embeddings": 128,
-    "model_type": "ministral3",
-    "num_attention_heads": 4,
-    "num_hidden_layers": 2,
-    "num_key_value_heads": 2,
-    "rms_norm_eps": 1e-5,
-    "rope_scaling": {
+def _small_rope_parameters(original_max_position_embeddings=16):
+    return {
         "rope_type": "yarn",
         "rope_theta": 10000.0,
-        "factor": 2.0,
-        "original_max_position_embeddings": 64,
+        "factor": 8.0,
+        "original_max_position_embeddings": original_max_position_embeddings,
         "beta_fast": 32.0,
         "beta_slow": 1.0,
-    },
-    "sliding_window": None,
-    "use_cache": True,
-    "vocab_size": 1000,
-}
-
-
-class TestMinistral3KVCache(unittest.TestCase):
-    """use_cache=True must match use_cache=False numerically (KV-cache path)."""
-
-    BATCH = 2
-    SEQ = 12
-
-    def setUp(self):
-        from paddleformers.transformers import (
-            Ministral3TextConfig,
-            Ministral3TextDecoder,
-        )
-
-        self.text_cfg = Ministral3TextConfig(SMALL_GQA_CFG)
-        self.model = Ministral3TextDecoder(self.text_cfg)
-        self.model.eval()
-
-    def test_cache_matches_no_cache(self):
-        """One-shot forward with use_cache=True must equal use_cache=False."""
-        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [self.BATCH, self.SEQ])
-        with paddle.no_grad():
-            out_no_cache = self.model(input_ids=input_ids, use_cache=False).last_hidden_state
-            out_cache = self.model(input_ids=input_ids, use_cache=True).last_hidden_state
-        self.assertEqual(out_cache.shape, out_no_cache.shape)
-        self.assertTrue(
-            paddle.allclose(out_cache, out_no_cache, atol=1e-5),
-            "use_cache=True output diverges from use_cache=False",
-        )
-
-    def test_incremental_cache_stepwise(self):
-        """Step-by-step decode with KV cache must equal full-sequence forward."""
-        from paddleformers.transformers.cache_utils import DynamicCache
-
-        seq_len = self.SEQ
-        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [1, seq_len])
-
-        with paddle.no_grad():
-            full_out = self.model(input_ids=input_ids, use_cache=False).last_hidden_state
-
-            cache = DynamicCache()
-            step_outs = []
-            for i in range(seq_len):
-                token = input_ids[:, i : i + 1]
-                out = self.model(input_ids=token, past_key_values=cache, use_cache=True)
-                step_outs.append(out.last_hidden_state)
-                cache = out.past_key_values
-            step_out = paddle.concat(step_outs, axis=1)
-
-        self.assertEqual(list(step_out.shape), list(full_out.shape))
-        self.assertTrue(
-            paddle.allclose(step_out, full_out, atol=1e-5),
-            "incremental cache decode diverges from full-sequence forward",
-        )
-
-    def test_cache_grows_correctly(self):
-        """past_key_values length must equal the number of tokens processed."""
-        from paddleformers.transformers.cache_utils import DynamicCache
-
-        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [1, 6])
-        with paddle.no_grad():
-            cache = DynamicCache()
-            for i in range(6):
-                out = self.model(
-                    input_ids=input_ids[:, i : i + 1],
-                    past_key_values=cache,
-                    use_cache=True,
-                )
-                cache = out.past_key_values
-                self.assertEqual(cache.get_seq_length(), i + 1)
-
-
-class TestMinistral3YarnRoPE(unittest.TestCase):
-    """yarn RoPE path (the real Ministral-3 scaling) must be covered."""
-
-    def setUp(self):
-        from paddleformers.transformers import (
-            Ministral3TextConfig,
-            Ministral3TextDecoder,
-        )
-
-        self.text_cfg = Ministral3TextConfig(SMALL_YARN_CFG)
-        self.model = Ministral3TextDecoder(self.text_cfg)
-        self.model.eval()
-
-    def test_yarn_rope_type(self):
-        self.assertEqual(self.text_cfg.rope_parameters["rope_type"], "yarn")
-        self.assertEqual(self.model.rotary_emb.rope_type, "yarn")
-
-    def test_yarn_forward_finite(self):
-        input_ids = paddle.randint(0, SMALL_YARN_CFG["vocab_size"], [2, 10])
-        with paddle.no_grad():
-            output = self.model(input_ids=input_ids)
-        self.assertEqual(
-            list(output.last_hidden_state.shape),
-            [2, 10, SMALL_YARN_CFG["hidden_size"]],
-        )
-        self.assertTrue(paddle.isfinite(output.last_hidden_state).all())
-
-    def test_yarn_longer_than_original_max(self):
-        """yarn must handle seq_len > original_max_position_embeddings (scaling)."""
-        seq_len = 80  # > original_max_position_embeddings=64 in SMALL_YARN_CFG
-        input_ids = paddle.randint(0, SMALL_YARN_CFG["vocab_size"], [1, seq_len])
-        with paddle.no_grad():
-            output = self.model(input_ids=input_ids)
-        self.assertEqual(
-            list(output.last_hidden_state.shape),
-            [1, seq_len, SMALL_YARN_CFG["hidden_size"]],
-        )
-        self.assertTrue(paddle.isfinite(output.last_hidden_state).all())
-
-    def test_yarn_cache_matches_no_cache(self):
-        """yarn path must also keep use_cache consistent."""
-        input_ids = paddle.randint(0, SMALL_YARN_CFG["vocab_size"], [1, 8])
-        with paddle.no_grad():
-            out_no_cache = self.model(input_ids=input_ids, use_cache=False).last_hidden_state
-            out_cache = self.model(input_ids=input_ids, use_cache=True).last_hidden_state
-        self.assertTrue(paddle.allclose(out_cache, out_no_cache, atol=1e-5))
-
-
-class TestMinistral3GQAPadding(unittest.TestCase):
-    """GQA (groups > 1) combined with a padding mask must be handled correctly."""
-
-    BATCH = 3
-    SEQ = 10
-
-    def setUp(self):
-        from paddleformers.transformers import (
-            Ministral3TextConfig,
-            Ministral3TextDecoder,
-        )
-
-        self.text_cfg = Ministral3TextConfig(SMALL_GQA_CFG)
-        self.model = Ministral3TextDecoder(self.text_cfg)
-        self.model.eval()
-
-    def test_gqa_groups(self):
-        self.assertEqual(self.text_cfg.num_attention_heads, 4)
-        self.assertEqual(self.text_cfg.num_key_value_heads, 2)
-        self.assertEqual(self.model.layers[0].self_attn.num_kv_groups, 2)
-
-    def test_padding_mask_different_lengths(self):
-        """Batch with different sequence lengths; padded positions masked with 0."""
-        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [self.BATCH, self.SEQ])
-        # row 0: full length, row 1: last 3 padded, row 2: last 6 padded
-        attn_mask = paddle.ones([self.BATCH, self.SEQ], dtype="int64")
-        attn_mask[1, 7:] = 0
-        attn_mask[2, 4:] = 0
-        with paddle.no_grad():
-            output = self.model(input_ids=input_ids, attention_mask=attn_mask)
-        self.assertEqual(
-            list(output.last_hidden_state.shape),
-            [self.BATCH, self.SEQ, SMALL_GQA_CFG["hidden_size"]],
-        )
-        self.assertTrue(paddle.isfinite(output.last_hidden_state).all())
-
-    def test_padding_does_not_affect_valid_positions(self):
-        """Output at non-padded positions must not depend on padded input tokens."""
-        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [1, 8])
-        attn_mask = paddle.ones([1, 8], dtype="int64")
-        attn_mask[0, 5:] = 0  # last 3 are padding
-
-        input_ids_padded = input_ids.clone()
-        input_ids_padded[0, 5:] = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [3])
-
-        with paddle.no_grad():
-            out_clean = self.model(input_ids=input_ids, attention_mask=attn_mask).last_hidden_state
-            out_padded = self.model(input_ids=input_ids_padded, attention_mask=attn_mask).last_hidden_state
-        # valid positions (0..4) must match despite different padding token ids
-        self.assertTrue(
-            paddle.allclose(out_clean[:, :5], out_padded[:, :5], atol=1e-5),
-            "padded token values leaked into valid positions",
-        )
-
-
-class TestMinistral3DefaultRoPEInit(unittest.TestCase):
-    """Default config (no rope_scaling) must initialize and run without crashing."""
-
-    BASE = {
-        "attention_dropout": 0.0,
-        "head_dim": 16,
-        "hidden_act": "silu",
-        "hidden_size": 64,
-        "initializer_range": 0.02,
-        "intermediate_size": 128,
-        "max_position_embeddings": 128,
-        "model_type": "ministral3",
-        "num_attention_heads": 4,
-        "num_hidden_layers": 2,
-        "num_key_value_heads": 2,
-        "rms_norm_eps": 1e-5,
-        "sliding_window": None,
-        "use_cache": True,
-        "vocab_size": 1000,
+        "mscale": 1.0,
+        "mscale_all_dim": 1.0,
+        "llama_4_scaling_beta": 0.1,
     }
 
-    def test_wrapper_no_rope_scaling(self):
-        from paddleformers.transformers import (
-            Ministral3TextConfig,
-            Ministral3TextDecoder,
+
+class Ministral3ModelTester:
+    def __init__(
+        self,
+        parent,
+        vocab_size=99,
+        hidden_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        intermediate_size=128,
+        head_dim=16,
+        max_position_embeddings=128,
+        initializer_range=0.02,
+        rms_norm_eps=1e-5,
+        attention_dropout=0.0,
+        is_training=True,
+        use_cache=False,
+        bos_token_id=1,
+        eos_token_id=98,
+        pad_token_id=0,
+        batch_size=2,
+        seq_length=7,
+        use_input_mask=True,
+        return_dict=False,
+    ):
+        self.parent = parent
+        self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
+        self.intermediate_size = intermediate_size
+        self.head_dim = head_dim
+        self.max_position_embeddings = max_position_embeddings
+        self.initializer_range = initializer_range
+        self.rms_norm_eps = rms_norm_eps
+        self.attention_dropout = attention_dropout
+        self.is_training = is_training
+        self.use_cache = use_cache
+        self.bos_token_id = bos_token_id
+        self.eos_token_id = eos_token_id
+        self.pad_token_id = pad_token_id
+        self.batch_size = batch_size
+        self.seq_length = seq_length
+        self.use_input_mask = use_input_mask
+        self.return_dict = return_dict
+
+    def get_config(self, **kwargs):
+        values = dict(
+            vocab_size=self.vocab_size,
+            hidden_size=self.hidden_size,
+            num_hidden_layers=self.num_hidden_layers,
+            num_attention_heads=self.num_attention_heads,
+            num_key_value_heads=self.num_key_value_heads,
+            intermediate_size=self.intermediate_size,
+            head_dim=self.head_dim,
+            max_position_embeddings=self.max_position_embeddings,
+            rms_norm_eps=self.rms_norm_eps,
+            attention_dropout=self.attention_dropout,
+            bos_token_id=self.bos_token_id,
+            eos_token_id=self.eos_token_id,
+            pad_token_id=self.pad_token_id,
+            initializer_range=self.initializer_range,
+            use_cache=self.use_cache,
+            return_dict=self.return_dict,
+            rope_parameters=_small_rope_parameters(),
+            _attn_implementation="eager",
         )
+        values.update(kwargs)
+        return Ministral3Config(**values)
 
-        cfg = Ministral3TextConfig(self.BASE)  # no rope_scaling/rope_parameters
-        self.assertEqual(cfg.rope_parameters["rope_type"], "default")
-        m = Ministral3TextDecoder(cfg)
-        m.eval()
-        ids = paddle.randint(0, 1000, [1, 8])
-        with paddle.no_grad():
-            out = m(input_ids=ids)
-        self.assertEqual(list(out.last_hidden_state.shape), [1, 8, 64])
-        self.assertTrue(paddle.isfinite(out.last_hidden_state).all())
+    def prepare_config_and_inputs(self):
+        config = self.get_config()
+        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+        attention_mask = random_attention_mask([self.batch_size, self.seq_length]) if self.use_input_mask else None
+        return config, input_ids, attention_mask
 
-    def test_pretrainedconfig_no_rope_scaling(self):
-        from paddleformers.transformers import Mistral3TextConfig
+    def prepare_config_and_inputs_for_common(self):
+        config, input_ids, attention_mask = self.prepare_config_and_inputs()
+        return config, {"input_ids": input_ids, "attention_mask": attention_mask}
 
-        tcfg = Mistral3TextConfig()  # no rope_scaling kwarg
-        self.assertEqual(tcfg.rope_parameters["rope_type"], "default")
+    def create_and_check_model(self, config, input_ids, attention_mask):
+        model = Ministral3Model(config)
+        model.eval()
+        result = model(input_ids, attention_mask=attention_mask, return_dict=True)
+        self.parent.assertEqual(result.last_hidden_state.shape, [self.batch_size, self.seq_length, self.hidden_size])
 
-    def test_default_rope_cache_consistency(self):
-        """Default-RoPE model must also keep use_cache consistent."""
-        from paddleformers.transformers import (
-            Ministral3TextConfig,
-            Ministral3TextDecoder,
-        )
-
-        cfg = Ministral3TextConfig(self.BASE)
-        m = Ministral3TextDecoder(cfg)
-        m.eval()
-        ids = paddle.randint(0, 1000, [1, 8])
-        with paddle.no_grad():
-            out_no = m(input_ids=ids, use_cache=False).last_hidden_state
-            out_cache = m(input_ids=ids, use_cache=True).last_hidden_state
-        self.assertTrue(paddle.allclose(out_no, out_cache, atol=1e-5))
+    def create_and_check_lm_head_model(self, config, input_ids, attention_mask):
+        model = Ministral3ForCausalLM(config)
+        model.eval()
+        result = model(input_ids, attention_mask=attention_mask, return_dict=True)
+        self.parent.assertEqual(result.logits.shape, [self.batch_size, self.seq_length, self.vocab_size])
 
 
-class TestMinistral3OutputFlags(unittest.TestCase):
-    """output_hidden_states / output_attentions must populate the declared outputs."""
+class Ministral3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+    base_model_class = Ministral3Model
+    return_dict = False
+    use_labels = False
+    use_test_model_name_list = False
+    has_attentions = True
+    all_model_classes = (Ministral3Model, Ministral3ForCausalLM)
+    all_generative_model_classes = {Ministral3ForCausalLM: (Ministral3Model, "ministral3")}
 
-    BATCH = 2
-    SEQ = 8
-
+    @gpu_device_initializer(log_prefix="Ministral3ModelTest")
     def setUp(self):
-        from paddleformers.transformers import Mistral3Config, Mistral3Model
+        super().setUp()
+        self.model_tester = Ministral3ModelTester(self)
+        self.config = self.model_tester.get_config()
 
-        self.config = Mistral3Config(
-            text_config=SMALL_GQA_CFG,
-            vision_config=SMALL_VISION_CFG,
-        )
-        self.model = Mistral3Model(self.config)
-        self.model.eval()
+    def test_config(self):
+        config = Ministral3Config()
+        self.assertEqual(config.model_type, "ministral3")
+        self.assertEqual(config.hidden_size, 4096)
+        self.assertEqual(config.num_hidden_layers, 34)
+        self.assertEqual(config.num_key_value_heads, 8)
+        self.assertEqual(config.head_dim, 128)
+        self.assertFalse(config.tie_word_embeddings)
+        self.assertEqual(config.pad_token_id, 11)
+        self.assertIsInstance(config.rope_parameters, dict)
+        self.assertEqual(config.rope_parameters["rope_type"], "yarn")
+        self.assertEqual(config.rope_parameters["llama_4_scaling_beta"], 0.1)
 
-    def _input_ids(self):
-        return paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [self.BATCH, self.SEQ])
+        fallback = Ministral3Config(num_attention_heads=8, num_key_value_heads=None, head_dim=None, hidden_size=512)
+        self.assertEqual(fallback.num_key_value_heads, 8)
+        self.assertEqual(fallback.head_dim, 64)
 
-    def test_defaults_return_none(self):
-        with paddle.no_grad():
-            out = self.model(input_ids=self._input_ids())
-        self.assertIsNone(out.hidden_states)
-        self.assertIsNone(out.attentions)
+    def test_config_rope_scaling_alias_is_not_mutated(self):
+        rope_scaling = {"type": "linear", "rope_theta": 10000.0, "factor": 2.0}
+        config = self.model_tester.get_config(rope_parameters=None, rope_scaling=rope_scaling)
+        self.assertEqual(config.rope_parameters["rope_type"], "linear")
+        self.assertNotIn("rope_type", rope_scaling)
 
-    def test_output_hidden_states(self):
-        n_layers = SMALL_GQA_CFG["num_hidden_layers"]
-        with paddle.no_grad():
-            out = self.model(input_ids=self._input_ids(), output_hidden_states=True)
-        self.assertIsNotNone(out.hidden_states)
-        self.assertEqual(len(out.hidden_states), n_layers + 1)
-        for state in out.hidden_states:
-            self.assertEqual(list(state.shape), [self.BATCH, self.SEQ, SMALL_GQA_CFG["hidden_size"]])
+    def test_model(self):
+        self.model_tester.create_and_check_model(*self.model_tester.prepare_config_and_inputs())
 
-    def test_output_attentions(self):
-        n_layers = SMALL_GQA_CFG["num_hidden_layers"]
-        n_heads = SMALL_GQA_CFG["num_attention_heads"]
-        with paddle.no_grad():
-            out = self.model(input_ids=self._input_ids(), output_attentions=True)
-        self.assertIsNotNone(out.attentions)
-        self.assertEqual(len(out.attentions), n_layers)
-        for attn in out.attentions:
-            self.assertEqual(list(attn.shape), [self.BATCH, n_heads, self.SEQ, self.SEQ])
+    def test_ministral3_lm_head_model(self):
+        self.model_tester.create_and_check_lm_head_model(*self.model_tester.prepare_config_and_inputs())
 
+    def test_gqa_head_split(self):
+        config = self.model_tester.get_config()
+        model = Ministral3ForCausalLM(config)
+        attention = model.model.layers[0].self_attn
+        self.assertEqual(attention.num_key_value_groups, 2)
+        self.assertEqual(attention.head_dim, config.head_dim)
 
-class TestMistral3ConditionalGenerationOutputs(unittest.TestCase):
-    """End-to-end outputs and checkpoints through Mistral3ForConditionalGeneration."""
-
-    def test_word_embedding_tying(self):
-        from paddleformers.transformers import (
-            Mistral3Config,
-            Mistral3ForConditionalGeneration,
-            Mistral3TextConfig,
-        )
-
-        cases = [
-            ({"tie_word_embeddings": False}, False, False),
-            ({"tie_word_embeddings": False}, True, False),
-            ({"tie_word_embeddings": True}, False, True),
-            ({}, True, True),
-            ({}, False, False),
-            ({}, None, False),
-            ({"tie_word_embeddings": None}, True, True),
-            ({"tie_word_embeddings": None}, None, False),
-        ]
-        self.assertFalse(Mistral3Config().tie_word_embeddings)
-        for top_config, text_tie, expected in cases:
-            for as_dict in (True, False):
-                with self.subTest(top_config=top_config, text_tie=text_tie, as_dict=as_dict):
-                    text_config = dict(SMALL_TEXT_CFG)
-                    if text_tie is not None:
-                        text_config["tie_word_embeddings"] = text_tie
-                    if not as_dict:
-                        text_config = Mistral3TextConfig(**text_config)
-                    config = Mistral3Config(text_config=text_config, vision_config=SMALL_VISION_CFG, **top_config)
-                    # A config object already carries its base class's default.
-                    effective_tie = expected
-                    if not as_dict and text_tie is None and top_config.get("tie_word_embeddings") is None:
-                        effective_tie = True
-                    self.assertEqual(config.tie_word_embeddings, effective_tie)
-                    model = Mistral3ForConditionalGeneration(config)
-                    embedding = model.get_input_embeddings().weight
-                    lm_head = model.lm_head.weight
-                    if effective_tie:
-                        self.assertIs(lm_head, embedding)
-                    else:
-                        self.assertIsNot(lm_head, embedding)
-
-                    input_ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
-                    outputs = model(input_ids=input_ids, labels=input_ids, use_cache=False)
-                    self.assertTrue(paddle.isfinite(outputs.logits).all().item())
-                    outputs.loss.backward()
-                    for weight in (embedding, lm_head):
-                        self.assertIsNotNone(weight.grad)
-                        self.assertTrue(paddle.isfinite(weight.grad).all().item())
-
-    def test_word_embedding_tying_checkpoint_round_trip(self):
-        from paddleformers.transformers import (
-            Mistral3Config,
-            Mistral3ForConditionalGeneration,
-        )
-
-        for tie in (False, True):
-            with self.subTest(tie_word_embeddings=tie):
-                config = Mistral3Config(
-                    text_config=dict(SMALL_TEXT_CFG, tie_word_embeddings=not tie),
-                    vision_config=SMALL_VISION_CFG,
-                    tie_word_embeddings=tie,
-                )
-                model = Mistral3ForConditionalGeneration(config)
-                model.eval()
-                if not tie:
-                    model.lm_head.weight.set_value(model.get_input_embeddings().weight + 0.5)
-                input_ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
-                with paddle.no_grad():
-                    expected_logits = model(input_ids=input_ids, use_cache=False).logits
-
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    model.save_pretrained(tmpdir, save_checkpoint_format="legacy", save_safetensors=False)
-                    loaded = Mistral3ForConditionalGeneration.from_pretrained(tmpdir, dtype="float32")
-                loaded.eval()
-                self.assertEqual(loaded.config.tie_word_embeddings, tie)
-                if tie:
-                    self.assertIs(loaded.lm_head.weight, loaded.get_input_embeddings().weight)
-                else:
-                    self.assertIsNot(loaded.lm_head.weight, loaded.get_input_embeddings().weight)
-                for key in ("lm_head.weight", "model.language_model.embed_tokens.weight"):
-                    np.testing.assert_array_equal(loaded.state_dict()[key].numpy(), model.state_dict()[key].numpy())
-                with paddle.no_grad():
-                    actual_logits = loaded(input_ids=input_ids, use_cache=False).logits
-                np.testing.assert_allclose(actual_logits.numpy(), expected_logits.numpy(), atol=1e-5, rtol=1e-5)
-
-    def test_sparse_causal_mask_matches_dense(self):
-        from paddleformers.transformers import (
-            Mistral3Config,
-            Mistral3ForConditionalGeneration,
-        )
-
-        input_ids = paddle.to_tensor([[1, 2, 3, 4, 5, 6], [7, 8, 9, 10, 0, 0]], dtype="int64")
-        attention_mask = paddle.to_tensor([[1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 0, 0]], dtype="int64")
-        labels = paddle.where(attention_mask.astype("bool"), input_ids, paddle.full_like(input_ids, -100))
-        row_indices = paddle.to_tensor([[[6, 6, 6, 6, 6, 6]], [[6, 6, 6, 6, 0, 0]]], dtype="int32")
-        for dtype in ("float32", "bfloat16"):
-            model = Mistral3ForConditionalGeneration(
-                Mistral3Config(text_config=SMALL_GQA_CFG, vision_config=SMALL_VISION_CFG)
-            )
-            model.to(dtype=dtype)
-            model.train()
-            with paddle.amp.auto_cast(enable=dtype == "bfloat16", dtype="bfloat16"):
-                dense = model(input_ids=input_ids, labels=labels, attention_mask=attention_mask, use_cache=False)
-            dense.loss.backward()
-            dense_grads = {
-                name: param.grad.astype("float32").numpy().copy()
-                for name, param in model.named_parameters()
-                if param.grad is not None
-            }
-            self.assertTrue(dense_grads)
-            for indices in (row_indices, row_indices.unsqueeze(-1)):
-                with self.subTest(dtype=dtype, mask_ndim=indices.ndim):
-                    model.clear_gradients()
-                    with paddle.amp.auto_cast(enable=dtype == "bfloat16", dtype="bfloat16"):
-                        sparse = model(
-                            input_ids=input_ids,
-                            labels=labels,
-                            attn_mask_startend_row_indices=indices,
-                            output_attentions=True,
-                            use_cache=False,
-                        )
-                    np.testing.assert_allclose(
-                        sparse.logits.astype("float32").numpy(),
-                        dense.logits.astype("float32").numpy(),
-                        atol=1e-5,
-                        rtol=1e-5,
-                    )
-                    np.testing.assert_allclose(
-                        sparse.loss.astype("float32").numpy(),
-                        dense.loss.astype("float32").numpy(),
-                        atol=1e-5,
-                        rtol=1e-5,
-                    )
-                    for weights in sparse.attentions:
-                        self.assertEqual(paddle.triu(weights, diagonal=1).abs().max().item(), 0.0)
-                        self.assertEqual(weights[1, :, :, 4:].abs().max().item(), 0.0)
-                    sparse.loss.backward()
-                    for name, param in model.named_parameters():
-                        if name in dense_grads:
-                            self.assertIsNotNone(param.grad)
-                            self.assertTrue(paddle.isfinite(param.grad).all().item())
-                            np.testing.assert_allclose(
-                                param.grad.astype("float32").numpy(), dense_grads[name], atol=1e-5, rtol=1e-5
-                            )
-
-    def test_sparse_packed_mask_isolates_sequences(self):
-        from paddleformers.transformers import (
-            Mistral3Config,
-            Mistral3ForConditionalGeneration,
-        )
-
-        model = Mistral3ForConditionalGeneration(
-            Mistral3Config(text_config=SMALL_GQA_CFG, vision_config=SMALL_VISION_CFG)
-        )
+    def test_llama4_attention_scale_uses_position_ids(self):
+        """Packed sequences must reset the Llama-4 q scaling at every document start."""
+        model = Ministral3ForCausalLM(self.model_tester.get_config())
         model.eval()
         input_ids = paddle.to_tensor([[1, 2, 3, 4, 5, 6]], dtype="int64")
         position_ids = paddle.to_tensor([[0, 1, 2, 0, 1, 2]], dtype="int64")
@@ -641,453 +218,413 @@ class TestMistral3ConditionalGenerationOutputs(unittest.TestCase):
                 input_ids=input_ids,
                 position_ids=position_ids,
                 attn_mask_startend_row_indices=row_indices,
-                output_attentions=True,
-                use_cache=False,
-            )
-            first = model(input_ids=input_ids[:, :3], use_cache=False).logits
-            second = model(input_ids=input_ids[:, 3:], use_cache=False).logits
-            np.testing.assert_allclose(
-                packed.logits.numpy(), paddle.concat([first, second], axis=1).numpy(), atol=1e-5, rtol=1e-5
-            )
-            for weights in packed.attentions:
-                self.assertEqual(paddle.triu(weights, diagonal=1).abs().max().item(), 0.0)
-                self.assertEqual(weights[:, :, 3:, :3].abs().max().item(), 0.0)
+                return_dict=True,
+            ).logits
+            first = model(input_ids=input_ids[:, :3], return_dict=True).logits
+            second = model(input_ids=input_ids[:, 3:], return_dict=True).logits
+        paddle.testing.assert_close(packed, paddle.concat([first, second], axis=1), rtol=1e-5, atol=1e-6)
 
-            changed_ids = paddle.to_tensor([[7, 8, 9, 4, 5, 6]], dtype="int64")
-            changed = model(
-                input_ids=changed_ids,
-                position_ids=position_ids,
-                attn_mask_startend_row_indices=row_indices,
-                use_cache=False,
-            )
-            np.testing.assert_allclose(
-                changed.logits[:, 3:].numpy(), packed.logits[:, 3:].numpy(), atol=1e-5, rtol=1e-5
-            )
-            changed_ids = paddle.to_tensor([[1, 2, 7, 4, 5, 8]], dtype="int64")
-            changed = model(
-                input_ids=changed_ids,
-                position_ids=position_ids,
-                attn_mask_startend_row_indices=row_indices,
-                use_cache=False,
-            )
-            np.testing.assert_allclose(
-                changed.logits[:, [0, 1, 3, 4]].numpy(),
-                packed.logits[:, [0, 1, 3, 4]].numpy(),
-                atol=1e-5,
-                rtol=1e-5,
-            )
+    def test_llama4_attention_scale_is_applied(self):
+        config = self.model_tester.get_config(max_position_embeddings=256)
+        config.rope_parameters["original_max_position_embeddings"] = 8
+        config.rope_parameters["factor"] = 32.0
+        model = Ministral3ForCausalLM(config)
+        model.eval()
+        attention = model.model.layers[0].self_attn
+        position_ids = paddle.to_tensor([[0, 7, 8, 100]], dtype="int64")
+        scale = attention.llama_4_scaling_beta
+        self.assertIsNotNone(scale)
+        computed = get_llama_4_attn_scale(position_ids, attention.llama_4_scaling_beta, 8)
+        self.assertEqual(list(computed.shape), [1, 1, 4, 1])
+        self.assertEqual(float(computed[0, 0, 0, 0]), 1.0)
+        self.assertGreater(float(computed[0, 0, 3, 0]), 1.0)
 
-    def test_sparse_mask_with_cache_matches_full_forward(self):
-        from paddleformers.transformers import (
-            Mistral3Config,
-            Mistral3ForConditionalGeneration,
-        )
-        from paddleformers.transformers.cache_utils import DynamicCache
-
-        model = Mistral3ForConditionalGeneration(
-            Mistral3Config(text_config=SMALL_GQA_CFG, vision_config=SMALL_VISION_CFG)
-        )
+    def test_padding_does_not_leak(self):
+        model = Ministral3ForCausalLM(self.model_tester.get_config())
         model.eval()
         input_ids = paddle.to_tensor([[1, 2, 3, 4, 5, 6, 7, 8]], dtype="int64")
+        attention_mask = paddle.to_tensor([[1, 1, 1, 1, 1, 0, 0, 0]], dtype="bool")
+        padded_ids = input_ids.clone()
+        padded_ids[0, 5:] = paddle.to_tensor([97, 66, 55], dtype="int64")
         with paddle.no_grad():
-            expected = model(input_ids=input_ids, use_cache=False).logits
-            for bounds in (1, 2):
-                with self.subTest(bounds=bounds):
-                    cache = DynamicCache()
-                    for start, end in ((0, 3), (3, 4), (4, 6), (6, 8)):
-                        indices = paddle.full([1, 1, end + 2, bounds], end + 2, dtype="int32")
-                        output = model(
-                            input_ids=input_ids[:, start:end],
-                            past_key_values=cache,
-                            attn_mask_startend_row_indices=indices,
-                            use_cache=True,
-                        )
-                        self.assertEqual(cache.get_seq_length(), end)
-                        np.testing.assert_allclose(
-                            output.logits.numpy(), expected[:, start:end].numpy(), atol=1e-5, rtol=1e-5
-                        )
+            clean = model(input_ids=input_ids, attention_mask=attention_mask, return_dict=True).logits
+            padded = model(input_ids=padded_ids, attention_mask=attention_mask, return_dict=True).logits
+        paddle.testing.assert_close(clean[:, :5], padded[:, :5], rtol=0.0, atol=0.0)
+        self.assertTrue(paddle.isfinite(padded).all().item())
+
+    def test_sparse_mask_matches_dense(self):
+        model = Ministral3ForCausalLM(self.model_tester.get_config())
+        model.eval()
+        input_ids = paddle.to_tensor([[1, 2, 3, 4, 5, 6]], dtype="int64")
+        attention_mask = paddle.to_tensor([[1, 1, 1, 1, 0, 0]], dtype="bool")
+        row_indices = paddle.to_tensor([[[6, 6, 6, 6, 0, 0]]], dtype="int32")
+        with paddle.no_grad():
+            dense = model(input_ids=input_ids, attention_mask=attention_mask, output_attentions=True, return_dict=True)
+            for indices in (row_indices, row_indices.unsqueeze(-1)):
+                sparse = model(
+                    input_ids=input_ids,
+                    attn_mask_startend_row_indices=indices,
+                    output_attentions=True,
+                    return_dict=True,
+                )
+                paddle.testing.assert_close(sparse.logits, dense.logits, rtol=1e-5, atol=1e-6)
+                for weights in sparse.attentions:
+                    self.assertEqual(paddle.triu(weights, diagonal=1).abs().max().item(), 0.0)
+                    self.assertEqual(weights[:, :, :, 4:].abs().max().item(), 0.0)
+
+    @parameterized.expand([("eager", "float32"), ("sdpa", "bfloat16")])
+    def test_cache_multi_step_and_append(self, backend, dtype):
+        config = self.model_tester.get_config(_attn_implementation=backend, use_cache=True)
+        model = Ministral3ForCausalLM(config).to(dtype=dtype)
+        model.eval()
+        x = paddle.to_tensor([[1, 2, 3, 4, 5, 6]], dtype="int64")
+        rtol, atol = (1e-3, 1e-3) if dtype == "bfloat16" else (1e-5, 1e-6)
+        with paddle.no_grad():
+            expected = model(x, use_cache=False, return_dict=True).logits
+            cache = model(x[:, :2], use_cache=True, return_dict=True).past_key_values
+            cached = model(x[:, 2:4], past_key_values=cache, use_cache=True, return_dict=True)
+            self.assertEqual(cache.get_seq_length(), 4)
+            paddle.testing.assert_close(cached.logits.float(), expected[:, 2:4].float(), rtol=rtol, atol=atol)
+            for end in (5, 6):
+                cached = model(x[:, end - 1 : end], past_key_values=cache, use_cache=True, return_dict=True)
+                self.assertEqual(cache.get_seq_length(), end)
+                paddle.testing.assert_close(
+                    cached.logits.float(), expected[:, end - 1 : end].float(), rtol=rtol, atol=atol
+                )
 
     def test_output_hidden_states_and_attentions(self):
-        from paddleformers.transformers import (
-            Mistral3Config,
-            Mistral3ForConditionalGeneration,
-        )
-
-        config = Mistral3Config(text_config=SMALL_GQA_CFG, vision_config=SMALL_VISION_CFG)
-        model = Mistral3ForConditionalGeneration(config)
+        model = Ministral3ForCausalLM(self.model_tester.get_config())
         model.eval()
-
-        input_ids = paddle.randint(0, SMALL_GQA_CFG["vocab_size"], [1, 6])
+        input_ids = paddle.randint(0, 99, [1, 6])
         with paddle.no_grad():
-            out = model(input_ids=input_ids, output_hidden_states=True, output_attentions=True)
+            outputs = model(input_ids, output_hidden_states=True, output_attentions=True, return_dict=True)
+        self.assertEqual(len(outputs.hidden_states), self.config.num_hidden_layers + 1)
+        self.assertEqual(len(outputs.attentions), self.config.num_hidden_layers)
+        self.assertTrue(paddle.isfinite(outputs.logits).all().item())
 
-        n_layers = SMALL_GQA_CFG["num_hidden_layers"]
-        self.assertEqual(len(out.hidden_states), n_layers + 1)
-        self.assertEqual(len(out.attentions), n_layers)
-        self.assertTrue(paddle.isfinite(out.logits).all())
+    def test_output_attentions_requires_eager(self):
+        model = Ministral3ForCausalLM(self.model_tester.get_config(_attn_implementation="sdpa"))
+        with self.assertRaises(ValueError):
+            model(paddle.to_tensor([[1, 2, 3]]), output_attentions=True)
 
+    def test_apply_rope_fusion_is_rejected(self):
+        with self.assertRaises(ValueError):
+            Ministral3ForCausalLM(self.model_tester.get_config(apply_rope_fusion=True))
 
-class TestMistral3AoaSymmetry(unittest.TestCase):
-    """_gen_inv_aoa_config must be the exact reverse of _gen_aoa_config."""
-
-    def test_forward_inverse_symmetric(self):
-        from paddleformers.transformers import (
-            Mistral3Config,
-            Mistral3ForConditionalGeneration,
-        )
-
-        config = Mistral3Config(text_config=SMALL_GQA_CFG, vision_config=SMALL_VISION_CFG)
-        forward = Mistral3ForConditionalGeneration._gen_aoa_config(config)["aoa_statements"]
-        inverse = Mistral3ForConditionalGeneration._gen_inv_aoa_config(config)["aoa_statements"]
-
-        def split(statements):
-            sources, targets = set(), set()
-            for stmt in statements:
-                src, tgt = stmt.split(" -> ")
-                sources.add(src.replace("^T", ""))
-                targets.add(tgt.replace("^T", ""))
-            return sources, targets
-
-        f_src, f_tgt = split(forward)
-        i_src, i_tgt = split(inverse)
-        self.assertEqual(len(inverse), len(forward))
-        self.assertEqual(f_src, i_tgt, "inverse targets must match forward sources")
-        self.assertEqual(f_tgt, i_src, "inverse sources must match forward targets")
-
-
-def _load_paddle_model_3b(dtype="float32"):
-    import paddle
-
-    from paddleformers.transformers import Mistral3ForConditionalGeneration
-
-    paddle.set_device("gpu")
-
-    model = Mistral3ForConditionalGeneration.from_pretrained(
-        _MODEL_3B_HF_ID,
-        download_hub="modelscope",
-        convert_from_hf=True,
-        dtype=dtype,
-    )
-    model.eval()
-    return model
-
-
-def _dequant_fp8_torch_model(model, torch_dtype):
-    import torch
-    import torch.nn as nn
-
-    fp8_count = 0
-    for mod in model.modules():
-        if hasattr(mod, "weight") and hasattr(mod, "weight_scale_inv"):
-            if mod.weight.dtype == torch.float8_e4m3fn:
-                w = (mod.weight.data.float() * mod.weight_scale_inv.data.float()).to(torch_dtype)
-                mod.weight = nn.Parameter(w, requires_grad=False)
-                fp8_count += 1
-    return fp8_count
-
-
-def _run_torch_inference(result_path):
-    import torch
-    from transformers import (
-        Mistral3ForConditionalGeneration as TorchMistral3ForConditionalGeneration,
-    )
-
-    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-
-    from paddleformers.transformers import Mistral3Tokenizer
-
-    hf_model_id = _MODEL_3B_HF_ID
-    tokenizer = Mistral3Tokenizer.from_pretrained(hf_model_id, download_hub="modelscope")
-    inputs = tokenizer(_PROMPT_DIFF, return_tensors="pt")
-    input_ids_pt = inputs["input_ids"]
-    input_ids_list = input_ids_pt[0].tolist()
-    print(f"\n[Diff-Torch] prompt: {repr(_PROMPT_DIFF)}")
-    print(f"[Diff-Torch] input_ids: {input_ids_list}, seq_len={len(input_ids_list)}")
-
-    torch.manual_seed(_SEED)
-    print("[Diff-Torch] Loading PyTorch model (bf16 -> fp32, GPU)...")
-    torch_model = TorchMistral3ForConditionalGeneration.from_pretrained(
-        hf_model_id,
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-        attn_implementation="eager",
-    )
-    fp8_n = _dequant_fp8_torch_model(torch_model, torch.bfloat16)
-    print(f"[Diff-Torch] Dequantized {fp8_n} FP8 weights")
-    torch_model = torch_model.to(torch.float32)
-    torch_model.eval()
-
-    device = torch_model.device
-    input_ids_dev = input_ids_pt.to(device)
-
-    with torch.inference_mode():
-        torch_out = torch_model(input_ids=input_ids_dev, use_cache=False)
-    torch_logits = torch_out.logits.float().cpu().numpy()
-
-    with torch.inference_mode():
-        torch_gen = torch_model.generate(
-            input_ids=input_ids_dev,
-            max_new_tokens=_NUM_GEN_TOKENS,
-            do_sample=False,
-            temperature=None,
-            top_p=None,
-            use_cache=True,
-        )
-    torch_gen_ids = torch_gen[0, input_ids_pt.shape[1] :].cpu().tolist()
-    print(f"[Diff-Torch] generated tokens: {torch_gen_ids}")
-    print(f"[Diff-Torch] generated text: {repr(tokenizer.decode(torch_gen_ids, skip_special_tokens=True))}")
-
-    np.savez(
-        result_path,
-        logits=torch_logits,
-        gen_ids=np.array(torch_gen_ids, dtype=np.int64),
-        input_ids=np.array(input_ids_list, dtype=np.int64),
-    )
-    print(f"[Diff-Torch] Results saved to {result_path}")
-
-
-def _run_paddle_inference(result_path):
-    import paddle
-
-    from paddleformers.transformers import Mistral3Tokenizer
-
-    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-
-    hf_model_id = _MODEL_3B_HF_ID
-    tokenizer = Mistral3Tokenizer.from_pretrained(hf_model_id, download_hub="modelscope")
-    inputs = tokenizer(_PROMPT_DIFF, return_tensors=None)
-    input_ids_list = inputs["input_ids"]
-    print(f"\n[Diff-Paddle] prompt: {repr(_PROMPT_DIFF)}")
-    print(f"[Diff-Paddle] input_ids: {input_ids_list}, seq_len={len(input_ids_list)}")
-
-    paddle.seed(_SEED)
-    print("[Diff-Paddle] Loading Paddle model...")
-    paddle_model = _load_paddle_model_3b(dtype="float32")
-
-    input_ids_pd = paddle.to_tensor(np.array([input_ids_list], dtype=np.int64), dtype="int64")
-
-    with paddle.no_grad():
-        paddle_out = paddle_model(input_ids=input_ids_pd, use_cache=False)
-    paddle_logits = paddle_out.logits.astype("float32").numpy()
-
-    cur_ids = np.array([input_ids_list], dtype=np.int64)
-    paddle_gen_ids = []
-    with paddle.no_grad():
-        for step in range(_NUM_GEN_TOKENS):
-            input_tensor = paddle.to_tensor(cur_ids, dtype="int64")
-            out = paddle_model(input_ids=input_tensor, use_cache=False)
-            next_token = int(out.logits[0, -1].argmax().item())
-            paddle_gen_ids.append(next_token)
-            cur_ids = np.concatenate([cur_ids, [[next_token]]], axis=1)
-    print(f"[Diff-Paddle] generated tokens: {paddle_gen_ids}")
-    print(f"[Diff-Paddle] generated text: {repr(tokenizer.decode(paddle_gen_ids, skip_special_tokens=True))}")
-
-    np.savez(
-        result_path,
-        logits=paddle_logits,
-        gen_ids=np.array(paddle_gen_ids, dtype=np.int64),
-        input_ids=np.array(input_ids_list, dtype=np.int64),
-    )
-    print(f"[Diff-Paddle] Results saved to {result_path}")
-
-
-class TestMistral3DiffAlignment(unittest.TestCase):
-    @slow
-    @require_package("transformers", "torch")
-    def test_diff_alignment(self):
-        import subprocess
-
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        tmp_dir = os.path.join(project_root, "tmp")
-        os.makedirs(tmp_dir, exist_ok=True)
-        torch_result = os.path.join(tmp_dir, "torch_result.npz")
-        paddle_result = os.path.join(tmp_dir, "paddle_result.npz")
-
-        this_file = os.path.abspath(__file__)
-        python = os.sys.executable
-
-        # Phase 1: Torch inference in subprocess
-        print("\n[Diff] === Phase 1: PyTorch inference (subprocess) ===")
-        script = (
-            "import sys, os\n"
-            f"sys.path.insert(0, {os.path.abspath(os.path.join(os.path.dirname(this_file), '..', '..', '..'))!r})\n"
-            f"sys.path.insert(0, {os.path.dirname(this_file)!r})\n"
-            f"os.environ['PADDLEFORMERS_TESTING'] = '1'\n"
-            "os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')\n"
-            "import test_modeling as tm\n"
-            f"tm._run_torch_inference({torch_result!r})\n"
-        )
-        result = subprocess.run([python, "-c", script], capture_output=True, text=True, timeout=600)
-        print(result.stdout)
-        if result.returncode != 0:
-            print(result.stderr)
-            self.fail(f"Torch inference subprocess failed (exit {result.returncode})")
-
-        # Phase 2: Paddle inference in subprocess
-        print("\n[Diff] === Phase 2: Paddle inference (subprocess) ===")
-        script = (
-            "import sys, os\n"
-            f"sys.path.insert(0, {os.path.abspath(os.path.join(os.path.dirname(this_file), '..', '..', '..'))!r})\n"
-            f"sys.path.insert(0, {os.path.dirname(this_file)!r})\n"
-            f"os.environ['PADDLEFORMERS_TESTING'] = '1'\n"
-            "os.environ.setdefault('HF_ENDPOINT', 'https://hf-mirror.com')\n"
-            "import test_modeling as tm\n"
-            f"tm._run_paddle_inference({paddle_result!r})\n"
-        )
-        result = subprocess.run([python, "-c", script], capture_output=True, text=True, timeout=600)
-        print(result.stdout)
-        if result.returncode != 0:
-            print(result.stderr)
-            self.fail(f"Paddle inference subprocess failed (exit {result.returncode})")
-
-        # Phase 3: Compare results
-        print("\n[Diff] === Phase 3: Compare results ===")
-        torch_data = np.load(torch_result)
-        paddle_data = np.load(paddle_result)
-
-        torch_logits = torch_data["logits"]
-        paddle_logits = paddle_data["logits"]
-        torch_gen_ids = torch_data["gen_ids"].tolist()
-        paddle_gen_ids = paddle_data["gen_ids"].tolist()
-
-        print(f"[Diff] torch_logits shape: {torch_logits.shape}")
-        print(f"[Diff] paddle_logits shape: {paddle_logits.shape}")
-
-        self.assertEqual(
-            list(torch_logits.shape),
-            list(paddle_logits.shape),
-            f"logits shape mismatch: torch={torch_logits.shape}, paddle={paddle_logits.shape}",
-        )
-
-        diff = np.abs(torch_logits - paddle_logits)
-        max_diff = float(diff.max())
-        mean_diff = float(diff.mean())
-
-        print(f"[Diff] logits max_diff: {max_diff:.6e} (threshold: {_DIFF_THRESHOLD})")
-        print(f"[Diff] logits mean_diff: {mean_diff:.6e}")
-
-        self.assertLess(
-            max_diff,
-            _DIFF_THRESHOLD,
-            f"logits max_diff={max_diff:.6e} >= threshold={_DIFF_THRESHOLD}",
-        )
-
-        n = min(len(torch_gen_ids), len(paddle_gen_ids), _NUM_GEN_TOKENS)
-        print(f"\n[Diff] Token comparison (first {n}):")
-        print(f"  {'Step':>4}  {'Torch':>10}  {'Paddle':>10}  {'Status':>6}")
-        print("  " + "-" * 42)
-        for i in range(n):
-            ok = "OK" if torch_gen_ids[i] == paddle_gen_ids[i] else "FAIL"
-            print(f"  {i+1:4d}  {torch_gen_ids[i]:10d}  {paddle_gen_ids[i]:10d}  {ok:>6}")
-
-        self.assertEqual(
-            torch_gen_ids[:n],
-            paddle_gen_ids[:n],
-            f"First {n} generated tokens mismatch",
-        )
-
-
-class TestMistral3PaddleInference(unittest.TestCase):
-    """Load paddle-format weights and run inference."""
-
-    @slow
-    @require_package("transformers", "torch")
-    def test_paddle_inference(self):
-        import paddle
-
-        from paddleformers.transformers import Mistral3Tokenizer
-
-        os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-
-        paddle.seed(_SEED)
-        tokenizer = Mistral3Tokenizer.from_pretrained(_MODEL_3B_HF_ID, download_hub="modelscope")
-
-        encoded = tokenizer(_PROMPT_INFERENCE, return_tensors=None)
-        input_ids_list = encoded["input_ids"]
-        print(f"[Inference] prompt: {repr(_PROMPT_INFERENCE)}")
-        model = _load_paddle_model_3b()
-
-        cur_ids = np.array([input_ids_list], dtype=np.int64)
-        gen_ids = []
-        max_gen_tokens = 64
+    def test_save_load_roundtrip(self):
+        config = self.model_tester.get_config(vocab_size=128, tie_word_embeddings=False)
+        model = Ministral3ForCausalLM(config)
+        model.eval()
+        input_ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
         with paddle.no_grad():
-            for step in range(max_gen_tokens):
-                input_tensor = paddle.to_tensor(cur_ids, dtype="int64")
-                out = model(input_ids=input_tensor, use_cache=False)
-                next_token = int(out.logits[0, -1].argmax().item())
-                gen_ids.append(next_token)
-                cur_ids = np.concatenate([cur_ids, [[next_token]]], axis=1)
-                if next_token == tokenizer.eos_token_id:
-                    break
+            expected = model(input_ids, return_dict=True).logits
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir)
+            loaded = Ministral3ForCausalLM.from_pretrained(
+                tmpdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
+        loaded.eval()
+        self.assertIsNot(loaded.lm_head.weight, loaded.model.embed_tokens.weight)
+        self.assertEqual(set(model.state_dict()), set(loaded.state_dict()))
+        for name, value in model.state_dict().items():
+            paddle.testing.assert_close(value, loaded.state_dict()[name], rtol=0.0, atol=0.0)
+        with paddle.no_grad():
+            actual = loaded(input_ids, return_dict=True).logits
+        paddle.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
 
-        gen_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
-        full_text = tokenizer.decode(input_ids_list + gen_ids, skip_special_tokens=True)
+    def test_tied_embedding_roundtrip(self):
+        config = self.model_tester.get_config(vocab_size=128, tie_word_embeddings=True)
+        model = Ministral3ForCausalLM(config)
+        self.assertIs(model.lm_head.weight, model.model.embed_tokens.weight)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir)
+            loaded = Ministral3ForCausalLM.from_pretrained(
+                tmpdir, dtype="float32", load_checkpoint_format="flex_checkpoint"
+            )
+        self.assertIs(loaded.lm_head.weight, loaded.model.embed_tokens.weight)
 
-        print("=" * 60)
-        print(f"[Inference] Generated text: {gen_text}")
-        print(f"[Inference] Full text: {full_text}")
-        print("=" * 60)
+    def test_generation_smoke(self):
+        model = Ministral3ForCausalLM(self.model_tester.get_config(use_cache=True))
+        model.eval()
+        with paddle.no_grad():
+            generated = model.generate(
+                paddle.to_tensor([[1, 2, 3]]),
+                min_new_tokens=2,
+                max_new_tokens=2,
+                decode_strategy="greedy_search",
+                eos_token_id=None,
+                pad_token_id=0,
+            )
+        self.assertEqual(list(generated[0].shape), [1, 2])
 
-        self.assertGreater(len(gen_ids), 0, "Model generated no tokens")
-        self.assertGreater(len(gen_text.strip()), 0, "Model generated empty text")
+    @parameterized.expand([(None,), ([],)])
+    def test_auto_entrypoint_and_lora_targets(self, architectures):
+        import re
 
-    @slow
-    @require_package("transformers", "torch")
-    def test_02_load_hf_original_model(self):
-        """Load original HF weights and run inference."""
-        import paddle
+        from paddleformers.cli.utils.llm_utils import get_lora_target_modules
+        from paddleformers.transformers import AutoModelForCausalLM
 
-        from paddleformers.transformers import (
-            Mistral3ForConditionalGeneration,
-            Mistral3Tokenizer,
+        model = AutoModelForCausalLM.from_config(self.model_tester.get_config(architectures=architectures))
+        self.assertIsInstance(model, Ministral3ForCausalLM)
+        targets = get_lora_target_modules(model)
+        names = [name for name, _ in model.named_sublayers()]
+        for pattern in targets:
+            self.assertTrue(any(re.fullmatch(pattern, name) for name in names), pattern)
+
+    @parameterized.expand([("selective", "uniform", 1), ("full", "block", 1), ("full", "uniform", 2)])
+    def test_recompute_fallback_training(self, granularity, method, num_layers):
+        reference = Ministral3ForCausalLM(self.model_tester.get_config())
+        actual = Ministral3ForCausalLM(
+            self.model_tester.get_config(
+                recompute_granularity=granularity,
+                recompute_method=method,
+                recompute_num_layers=num_layers,
+            )
+        )
+        actual.set_state_dict(reference.state_dict())
+        for model in (reference, actual):
+            model.train()
+        x = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
+        paddle.seed(123)
+        expected = reference(x, labels=x, use_cache=False, return_dict=True).loss
+        with patch("paddleformers.transformers.ministral3.modeling.recompute") as recompute:
+            paddle.seed(123)
+            observed = actual(x, labels=x, use_cache=False, return_dict=True).loss
+            observed.backward()
+            recompute.assert_not_called()
+        expected.backward()
+        paddle.testing.assert_close(observed, expected, rtol=1e-5, atol=1e-6)
+        for (name, param), (_, other) in zip(reference.named_parameters(), actual.named_parameters()):
+            if not param.stop_gradient:
+                self.assertIsNotNone(other.grad, name)
+                self.assertTrue(paddle.isfinite(other.grad).all().item(), name)
+                paddle.testing.assert_close(other.grad, param.grad, rtol=1e-5, atol=1e-6)
+
+    @parameterized.expand([(False,), (True,)])
+    def test_recompute_loss_gradients_and_reexecution(self, freeze_embedding):
+        # Paddle's fused_rms_norm backward rejects a frozen input in this environment; the
+        # unfused path is used for the frozen-embedding case so this test still exercises
+        # recompute with an input that does not require gradients.
+        extra = {"fuse_rms_norm": False} if freeze_embedding else {}
+        reference = Ministral3ForCausalLM(self.model_tester.get_config(attention_dropout=0.1, **extra))
+        actual = Ministral3ForCausalLM(
+            self.model_tester.get_config(
+                attention_dropout=0.1,
+                recompute_granularity="full",
+                recompute_method="uniform",
+                recompute_num_layers=1,
+                **extra,
+            )
+        )
+        actual.set_state_dict(reference.state_dict())
+        for model in (reference, actual):
+            model.train()
+            model.model.embed_tokens.weight.stop_gradient = freeze_embedding
+        x = paddle.to_tensor([[1, 2, 3, 4], [4, 3, 2, 1]], dtype="int64")
+        paddle.seed(123)
+        expected = reference(x, labels=x, use_cache=False, return_dict=True).loss
+        expected.backward()
+        layer = actual.model.layers[0]
+        hook_calls = []
+        pre_hook = layer.register_forward_pre_hook(lambda *_: hook_calls.append("pre"))
+        post_hook = layer.register_forward_post_hook(lambda *_: hook_calls.append("post"))
+        with patch.object(layer.self_attn, "forward", wraps=layer.self_attn.forward) as forward:
+            paddle.seed(123)
+            observed = actual(x, labels=x, use_cache=True, return_dict=True).loss
+            self.assertEqual(hook_calls, ["pre", "post"])
+            observed.backward()
+            self.assertGreaterEqual(forward.call_count, 2)
+        pre_hook.remove()
+        post_hook.remove()
+        paddle.testing.assert_close(observed, expected, rtol=1e-5, atol=1e-6)
+        for (name, param), (_, other) in zip(reference.named_parameters(), actual.named_parameters()):
+            if not param.stop_gradient:
+                self.assertIsNotNone(other.grad, name)
+                self.assertTrue(paddle.isfinite(other.grad).all().item(), name)
+                paddle.testing.assert_close(other.grad, param.grad, rtol=1e-5, atol=1e-6)
+
+    def test_recompute_rejects_incompatible_inputs(self):
+        model = Ministral3ForCausalLM(
+            self.model_tester.get_config(
+                recompute_granularity="full",
+                recompute_method="uniform",
+                recompute_num_layers=1,
+            )
+        )
+        model.train()
+        from paddleformers.transformers.cache_utils import DynamicCache
+
+        x = paddle.to_tensor([[1, 2, 3]], dtype="int64")
+        with self.assertRaises(ValueError):
+            model(x, past_key_values=DynamicCache(), return_dict=True)
+
+    def test_pipeline_stages_match_regular_model(self):
+        from paddleformers.nn.pp_model import LMHeadPipe, RMSNormPipe
+        from paddleformers.transformers.ministral3.modeling import (
+            Ministral3CriterionLayerPipe,
+            Ministral3DecoderLayerPipe,
+            Ministral3EmbeddingPipe,
         )
 
-        os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+        config = self.model_tester.get_config()
+        model = Ministral3ForCausalLM(config)
+        model.train()
+        embed = Ministral3EmbeddingPipe(config, rotary_emb_cls=Ministral3RotaryEmbedding)
+        embed.embed_tokens.set_state_dict(model.model.embed_tokens.state_dict())
+        layers = [Ministral3DecoderLayerPipe(config, i) for i in range(config.num_hidden_layers)]
+        for index, layer in enumerate(layers):
+            layer.set_state_dict(model.model.layers[index].state_dict())
+        norm = RMSNormPipe(config)
+        norm.set_state_dict(model.model.norm.state_dict())
+        head = LMHeadPipe(config)
+        head.set_state_dict(model.lm_head.state_dict())
+        criterion = Ministral3CriterionLayerPipe(config)
+        x = paddle.to_tensor([[1, 2, 3, 4], [4, 3, 2, 1]], dtype="int64")
+        mask = paddle.to_tensor([[1, 1, 1, 1], [1, 1, 1, 0]], dtype="bool")
+        loss_mask = mask.astype("float32")
+        expected = model(x, attention_mask=mask, labels=x, loss_mask=loss_mask, return_dict=True)
+        states = embed((x, mask))
+        for layer in layers:
+            states = layer(states)
+        logits = head(norm(states))
+        loss = criterion(logits, (x, loss_mask))
+        paddle.testing.assert_close(logits.float(), expected.logits.float(), rtol=1e-5, atol=1e-6)
+        paddle.testing.assert_close(loss, expected.loss, rtol=1e-5, atol=1e-6)
+        loss.backward()
+        expected.loss.backward()
+        paddle.testing.assert_close(
+            layers[0].self_attn.q_proj.weight.grad.float(),
+            model.model.layers[0].self_attn.q_proj.weight.grad.float(),
+            rtol=1e-5,
+            atol=1e-6,
+        )
 
-        paddle.set_device("gpu")
-        paddle.seed(_SEED)
+    def test_pipeline_pipe_class_is_pipeline_layer(self):
+        self.assertTrue(issubclass(Ministral3ForCausalLMPipe, paddle.distributed.fleet.meta_parallel.PipelineLayer))
 
-        tokenizer = Mistral3Tokenizer.from_pretrained(_MODEL_3B_HF_ID, download_hub="modelscope")
+    @require_gpu(min_gpus=2)
+    def test_pipeline_parallel_from_config(self):
+        world_size = paddle.distributed.get_world_size()
+        if world_size not in (2, 4):
+            self.skipTest("Requires a distributed launch with two or four GPU ranks")
+        from paddle.distributed import fleet
 
-        model = Mistral3ForConditionalGeneration.from_pretrained(
-            _MODEL_3B_HF_ID,
+        from paddleformers.transformers import AutoModelForCausalLMPipe
+
+        paddle.set_device(f"gpu:{paddle.distributed.ParallelEnv().dev_id}")
+        strategy = fleet.DistributedStrategy()
+        strategy.hybrid_configs = dict(dp_degree=1, mp_degree=world_size // 2, pp_degree=2, sharding_degree=1)
+        strategy.pipeline_configs = dict(micro_batch_size=1, accumulate_steps=1)
+        fleet.init(is_collective=True, strategy=strategy)
+        paddle.seed(123)
+        config = self.model_tester.get_config(
+            recompute_granularity="full",
+            recompute_method="uniform",
+            recompute_num_layers=1,
+            tensor_parallel_output=False,
+        )
+        pipe = AutoModelForCausalLMPipe.from_config(Ministral3Config.from_dict(config.to_dict()), dtype="float32")
+        self.assertIsInstance(pipe, Ministral3ForCausalLMPipe)
+        x = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
+        labels = paddle.to_tensor([[2, 3, 4, 5]], dtype="int64")
+        engine = fleet.distributed_model(pipe)
+        engine.train()
+        optimizer = fleet.distributed_optimizer(paddle.optimizer.SGD(learning_rate=0.01, parameters=pipe.parameters()))
+        loss = engine.train_batch([x, (labels, paddle.ones_like(labels, dtype="float32"))], optimizer=optimizer)
+        self.assertTrue(paddle.isfinite(loss).all().item())
+
+    @slow
+    @require_gpu(min_gpus=2)
+    def test_pipeline_parallel_generate(self):
+        # Reference PP greedy-decoding entry; runs only under a multi-rank launch.
+        world_size = paddle.distributed.get_world_size()
+        if world_size not in (2, 4):
+            self.skipTest("Requires a distributed launch with two or four GPU ranks")
+        from paddle.distributed import fleet
+
+        from paddleformers.transformers import AutoModelForCausalLMPipe
+
+        paddle.set_device(f"gpu:{paddle.distributed.ParallelEnv().dev_id}")
+        strategy = fleet.DistributedStrategy()
+        strategy.hybrid_configs = dict(dp_degree=1, mp_degree=world_size // 2, pp_degree=2, sharding_degree=1)
+        strategy.pipeline_configs = dict(micro_batch_size=1, accumulate_steps=1)
+        fleet.init(is_collective=True, strategy=strategy)
+        paddle.seed(123)
+        config = self.model_tester.get_config(vocab_size=32, eos_token_id=31)
+        pipe = AutoModelForCausalLMPipe.from_config(Ministral3Config.from_dict(config.to_dict()), dtype="float32")
+        self.assertIsInstance(pipe, Ministral3ForCausalLMPipe)
+        input_ids = paddle.to_tensor([[1, 2, 3]], dtype="int64")
+        generated = pipe.generate(input_ids, max_new_tokens=2, eos_token_id=None)
+        self.assertEqual(list(generated.shape), [1, 5])
+
+
+class Ministral3IntegrationTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Ministral3IntegrationTest")
+    @require_package("transformers", "torch")
+    @slow
+    def test_generation(self):
+        tokenizer = AutoTokenizer.from_pretrained(_MODEL_HF_ID, trust_remote_code=False, download_hub="modelscope")
+        model = Ministral3ForCausalLM.from_pretrained(
+            _MODEL_HF_ID,
+            load_via_cpu=True,
             download_hub="modelscope",
-            use_converted_weights=False,
+            load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
 
-        prompt = "Hello, how are you today?"
-        encoded = tokenizer(prompt, return_tensors=None)
-        input_ids_list = encoded["input_ids"]
-        print(f"[HF Original] prompt: {repr(prompt)}, model: {_MODEL_3B_HF_ID}")
-
-        cur_ids = np.array([input_ids_list], dtype=np.int64)
-        gen_ids = []
-        max_gen_tokens = 32
+        inputs = tokenizer("Hello, how are you today?", return_tensors="np")
+        input_ids = paddle.to_tensor(inputs["input_ids"])
         with paddle.no_grad():
-            for step in range(max_gen_tokens):
-                input_tensor = paddle.to_tensor(cur_ids, dtype="int64")
-                out = model(input_ids=input_tensor, use_cache=False)
-                next_token = int(out.logits[0, -1].argmax().item())
-                gen_ids.append(next_token)
-                cur_ids = np.concatenate([cur_ids, [[next_token]]], axis=1)
-                if next_token == tokenizer.eos_token_id:
-                    break
+            generated = model.generate(
+                input_ids,
+                max_new_tokens=10,
+                do_sample=False,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        tokens = generated[0][0].tolist()
+        decoded = tokenizer.decode(tokens)
+        self.assertGreater(len(tokens), 3)
+        self.assertGreater(len(decoded.strip()), 0)
 
-        gen_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
-        full_text = tokenizer.decode(input_ids_list + gen_ids, skip_special_tokens=True)
 
-        print("=" * 60)
-        print(f"[HF Original] Generated text: {gen_text}")
-        print(f"[HF Original] Full text: {full_text}")
-        print("=" * 60)
+class Ministral3CompatibilityTest(unittest.TestCase):
+    @gpu_device_initializer(log_prefix="Ministral3CompatibilityTest")
+    @require_package("transformers", "torch")
+    @slow
+    def test_diff_first_token_logits(self):
+        import numpy as np
+        import torch
+        from transformers import Ministral3ForCausalLM as TorchMinistral3ForCausalLM
 
-        self.assertIsNotNone(gen_text)
-        self.assertIsInstance(gen_text, str)
-        self.assertGreater(len(gen_text), 0, "Model generated no text")
-        printable_chars = sum(1 for c in gen_text if c.isprintable() or c.isspace())
-        printable_ratio = printable_chars / len(gen_text) if len(gen_text) > 0 else 0
-        self.assertGreater(printable_ratio, 0.5, "Output contains too many non-printable characters, possibly garbled")
+        tokenizer = AutoTokenizer.from_pretrained(_MODEL_HF_ID, trust_remote_code=False, download_hub="modelscope")
+        inputs = tokenizer("The capital of France is", return_tensors="pt")
+        input_ids_np = inputs["input_ids"].cpu().numpy()
+
+        hf_model = TorchMinistral3ForCausalLM.from_pretrained(
+            _MODEL_HF_ID, dtype=torch.float32, device_map="auto", attn_implementation="eager"
+        )
+        hf_model.eval()
+        with torch.no_grad():
+            hf_logits = hf_model(input_ids=inputs["input_ids"].to(hf_model.device)).logits[0, -1].float().cpu().numpy()
+
+        pd_model = Ministral3ForCausalLM.from_pretrained(
+            _MODEL_HF_ID,
+            dtype="float32",
+            load_via_cpu=True,
+            download_hub="modelscope",
+            load_checkpoint_format="flex_checkpoint",
+        )
+        pd_model.eval()
+        with paddle.no_grad():
+            pd_logits = (
+                pd_model(paddle.to_tensor(input_ids_np), return_dict=True).logits[0, -1].astype("float32").numpy()
+            )
+
+        mean_diff = float(np.mean(np.abs(hf_logits - pd_logits)))
+        self.assertLess(mean_diff, 1e-2, f"Logits mean diff {mean_diff:.8f} exceeds threshold 1e-2")
+        hf_top10 = np.argsort(hf_logits)[-10:][::-1].tolist()
+        pd_top10 = np.argsort(pd_logits)[-10:][::-1].tolist()
+        self.assertEqual(hf_top10, pd_top10, "Top 10 tokens differ between HF and Paddle")
 
 
 if __name__ == "__main__":
