@@ -17,6 +17,7 @@
 Migrated from transformers.models.olmo3.modeling_olmo3
 """
 
+import ast
 from contextlib import nullcontext
 from copy import copy, deepcopy
 from dataclasses import dataclass
@@ -887,8 +888,15 @@ class Olmo3FleetEmbedding(GPTEmbedding):
             has_sliding_layers="sliding_attention" in self.config.olmo3_config.layer_types,
             past_key_values=cache,
         )
-        output["attention_mask"] = _pack_attention_masks(masks, indices, self.config.olmo3_config.layer_types)
-        output.pop("attn_mask_startend_row_indices", None)
+        row_indices = _pack_row_indices(indices)
+        if row_indices is not None:
+            # Row indices ride the channel the PP transformer layer clones before activation
+            # recompute; dense attention_mask is only a fallback for inputs without indices.
+            output["attn_mask_startend_row_indices"] = row_indices
+            output.pop("attention_mask", None)
+        else:
+            output["attention_mask"] = _pack_attention_masks(masks, indices)
+            output.pop("attn_mask_startend_row_indices", None)
         return output
 
 
@@ -907,6 +915,12 @@ class Olmo3FleetSelfAttention(SelfAttention):
         if isinstance(attention_mask, (tuple, list)):
             kind = "sliding_attention" if self.is_swa else "full_attention"
             attention_mask, attn_mask_startend_row_indices = _unpack_attention_masks(attention_mask, kind)
+        elif attn_mask_startend_row_indices is not None and attn_mask_startend_row_indices.shape[-1] == len(
+            _MASK_SLOTS
+        ):
+            # Packed per-type row indices from Olmo3FleetEmbedding; select this layer's type.
+            kind = _MASK_SLOTS.index("sliding_attention" if self.is_swa else "full_attention")
+            attn_mask_startend_row_indices = attn_mask_startend_row_indices[..., kind]
         return super().forward(
             hidden_states,
             attention_mask=attention_mask,
@@ -1235,7 +1249,7 @@ class Olmo3RMSNormPipe(GeneralRMSNorm):
 class Olmo3CriterionLayerPipe(CriterionLayerPipe):
     def forward(self, logits, labels, mtp_logits=None):
         loss_mask = None
-        if isinstance(labels, tuple):
+        if isinstance(labels, tuple) and "sft" in self.loss_type:
             labels, loss_mask = labels
         return CriterionLayer.forward(self, logits, labels, loss_mask=loss_mask, mtp_logits=mtp_logits)
 
@@ -1281,6 +1295,12 @@ class Olmo3ForCausalLMPipeDeprecated(GeneralModelForCausalLMPipe):
         self.add_sequential_layer(LayerDesc(Olmo3RMSNormPipe, config=config), "model.norm")
         self.add_sequential_layer(head, "lm_head")
         seg_method = getattr(config, "pp_seg_method", "layer:DecoderLayer|EmptyLayer")
+        try:
+            parsed_seg_method = ast.literal_eval(seg_method)
+            if isinstance(parsed_seg_method, list):
+                seg_method = parsed_seg_method
+        except Exception:
+            pass
         if (
             seg_method == "layer:DecoderLayer|EmptyLayer"
             and (config.num_hidden_layers + config.num_empty_layers_add_in_tail) % hcg.get_pipe_parallel_world_size()
@@ -1309,7 +1329,7 @@ def _pack_pipeline_args(hidden_states, masks, indices, position_ids, position_em
         position_embeddings[kind] if kind in position_embeddings else paddle.zeros([1], dtype="bool")
         for kind in _MASK_SLOTS
     )
-    return (hidden_states, position_ids) + _pack_attention_masks(masks, indices, masks) + rotary
+    return (hidden_states, position_ids) + _pack_attention_masks(masks, indices) + rotary
 
 
 def _unpack_pipeline_args(args):
@@ -1322,13 +1342,27 @@ def _unpack_pipeline_args(args):
     return hidden_states, masks, indices, position_ids, rotary
 
 
-def _pack_attention_masks(masks, indices, layer_types):
+def _pack_attention_masks(masks, indices):
     """Pack (dense mask, row indices) per type; bool [1] denotes an absent tensor."""
     return tuple(
         paddle.zeros([1], dtype="bool") if value is None else value.detach().clone()
         for kind in _MASK_SLOTS
-        for value in ((masks.get(kind), indices.get(kind)) if kind in layer_types else (None, None))
+        for value in (masks.get(kind), indices.get(kind))
     )
+
+
+def _pack_row_indices(indices):
+    """Stack per-type row indices on the last axis so they travel through the PP
+    ``attn_mask_startend_row_indices`` channel, which the transformer layer clones before
+    activation recompute (``attention_mask`` is not cloned). Returns None for dense-only input.
+    """
+    full = indices.get("full_attention")
+    if full is None:
+        return None
+    sliding = indices.get("sliding_attention")
+    if sliding is None:
+        sliding = full
+    return paddle.stack([full, sliding], axis=-1)
 
 
 def _unpack_attention_masks(packed, kind):
