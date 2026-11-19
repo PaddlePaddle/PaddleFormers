@@ -105,6 +105,13 @@ import_structure = {
     ],
     "diff_transformer.tokenizer": ["DiffTransformerTokenizer"],
     "diff_transformer": [],
+    "aya_vision.configuration": ["AyaVisionConfig"],
+    "aya_vision.modeling": ["AyaVisionPreTrainedModel", "AyaVisionModel", "AyaVisionForConditionalGeneration"],
+    "aya_vision.processor": ["AyaVisionProcessor"],
+    "cohere2.configuration": ["Cohere2Config"],
+    "cohere2.modeling": ["Cohere2PreTrainedModel", "Cohere2Model", "Cohere2ForCausalLM"],
+    "siglip_vision_model.configuration": ["SiglipVisionConfig"],
+    "siglip_vision_model.modeling": ["SiglipVisionPretrainedModel", "SiglipVisionModel"],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v32.configuration": ["DeepseekV32Config"],
     "deepseek_v32.modeling": [
@@ -281,6 +288,15 @@ import_structure = {
         "CosineAnnealingWithWarmupDecay",
         "LinearAnnealingWithWarmupDecay",
     ],
+    "hunyuan.configuration": ["HunYuanDenseV1Config"],
+    "hunyuan.modeling": [
+        "HunYuanDenseV1Model",
+        "HunYuanDenseV1PretrainedModel",
+        "HunYuanDenseV1ForCausalLM",
+        "HunYuanDenseV1ForCausalLMPipe",
+        "HunYuanDenseV1ForCausalLMDeprecated",
+        "HunYuanDenseV1ForCausalLMPipeDeprecated",
+    ],
     "qwen2.configuration": ["Qwen2Config"],
     "qwen2.modeling": [
         "Qwen2Model",
@@ -392,6 +408,7 @@ import_structure = {
     ],
     "molmo.processing": ["MolmoProcessor"],
     "llama": [],
+    "hunyuan": [],
     "llama4": [],
     "qwen2": [],
     "glm_ocr": [],
@@ -485,6 +502,17 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "stablelm": [],
+    "stablelm.configuration": ["StableLmConfig"],
+    "stablelm.modeling": [
+        "StableLmModel",
+        "StableLmForCausalLM",
+        "StableLmForCausalLMPipe",
+        "StableLmPretrainedModel",
+        "StableLmRotaryEmbedding",
+        "StableLmDecoderLayer",
+        "StableLmAttention",
+    ],
     "olmo2.configuration": ["Olmo2Config"],
     "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
     "olmo2": [],
@@ -593,6 +621,7 @@ if TYPE_CHECKING:
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
+    from .hunyuan import *
     from .qwen2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *
@@ -623,6 +652,7 @@ if TYPE_CHECKING:
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .stablelm import *
     from .molmo import *
     from .olmo2 import *
     from .olmo3 import *
