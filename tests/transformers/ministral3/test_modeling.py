@@ -26,6 +26,10 @@ from paddleformers.transformers import (
     Ministral3ForCausalLM,
     Ministral3ForCausalLMPipe,
     Ministral3Model,
+    Ministral3PretrainedModel,
+)
+from paddleformers.transformers.ministral3 import (
+    Ministral3PretrainedModel as PackageMinistral3PretrainedModel,
 )
 from paddleformers.transformers.ministral3.modeling import (
     Ministral3RotaryEmbedding,
@@ -44,7 +48,7 @@ from tests.transformers.test_modeling_common import (
     random_attention_mask,
 )
 
-_MODEL_HF_ID = "mistralai/Ministral-3-3B-Instruct-2512"
+_MODEL_PATH = "./tmp/Ministral-3-3B-Instruct-2512-paddle"
 
 
 def _small_rope_parameters(original_max_position_embeddings=16):
@@ -59,6 +63,63 @@ def _small_rope_parameters(original_max_position_embeddings=16):
         "mscale_all_dim": 1.0,
         "llama_4_scaling_beta": 0.1,
     }
+
+
+@paddle.no_grad()
+def _pipeline_greedy_generate(pipe, input_ids, max_new_tokens=20, eos_token_id=None):
+    """Greedy decoding across pipeline stages.
+
+    Every pipeline rank must call this helper with the same ``input_ids``.
+    Each step re-runs the whole prefix because the pipeline pipes do not
+    carry a KV cache across stages, so the cost grows quadratically with the
+    generated length. This is a reference path: it requires a distributed
+    pipeline launch and has not been validated on multi-GPU hardware yet.
+    """
+    from paddle.distributed.fleet import get_hybrid_communicate_group as get_hcg
+    from paddle.distributed.fleet.meta_parallel.pp_utils import p2p_communication as p2p
+
+    if not paddle.distributed.is_initialized():
+        raise RuntimeError("Pipeline greedy decoding requires a distributed pipeline launch")
+    if getattr(pipe.config, "virtual_pipeline_model_parallel_size", 1) > 1:
+        raise NotImplementedError("Pipeline greedy decoding does not support virtual pipeline stages")
+
+    hcg = get_hcg()
+    pp_group = hcg.get_pipe_parallel_group()
+    is_first_stage = hcg.get_stage_id() == 0
+    is_last_stage = hcg.get_stage_id() == hcg.get_pipe_parallel_world_size() - 1
+
+    p2p.initialize_p2p_groups(hcg, enable_partial_send_recv=False, enable_timer=False)
+    p2p_helper = p2p.P2pHelper(use_cache=False)
+    pipe.eval()
+
+    if isinstance(input_ids, paddle.Tensor):
+        cur_ids = input_ids.astype("int64")
+    else:
+        cur_ids = paddle.to_tensor(input_ids, dtype="int64")
+    paddle.distributed.broadcast(cur_ids, src=pp_group.ranks[0], group=pp_group)
+
+    if eos_token_id is None:
+        eos_ids = []
+    elif isinstance(eos_token_id, (list, tuple)):
+        eos_ids = list(eos_token_id)
+    else:
+        eos_ids = [eos_token_id]
+    for _ in range(max_new_tokens):
+        outputs = pipe(cur_ids) if is_first_stage else pipe(p2p_helper.recv_forward(is_first_stage))
+        p2p_helper.send_forward(outputs, is_last_stage)
+        if is_last_stage:
+            next_token = paddle.argmax(outputs[:, -1], axis=-1, keepdim=True)
+        else:
+            next_token = paddle.zeros([cur_ids.shape[0], 1], dtype="int64")
+        paddle.distributed.broadcast(next_token, src=pp_group.ranks[-1], group=pp_group)
+        cur_ids = paddle.concat([cur_ids, next_token], axis=1)
+        if eos_ids:
+            done = paddle.zeros_like(next_token, dtype="bool")
+            for token in eos_ids:
+                done = done | (next_token == token)
+            if bool(done.all().item()):
+                break
+    return cur_ids
 
 
 class Ministral3ModelTester:
@@ -194,7 +255,25 @@ class Ministral3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
         self.assertNotIn("rope_type", rope_scaling)
 
     def test_model(self):
+        self.assertIs(Ministral3PretrainedModel, PackageMinistral3PretrainedModel)
         self.model_tester.create_and_check_model(*self.model_tester.prepare_config_and_inputs())
+
+    def test_default_rope_model_roundtrip(self):
+        config = self.model_tester.get_config(rope_parameters=None, rope_theta=500000.0)
+        self.assertEqual(config.rope_parameters["rope_theta"], 500000.0)
+        model = Ministral3ForCausalLM(config)
+        model.eval()
+        input_ids = paddle.to_tensor([[1, 2, 3, 4]], dtype="int64")
+        with paddle.no_grad():
+            expected = model(input_ids, return_dict=True).logits
+        with tempfile.TemporaryDirectory() as tmpdir:
+            model.save_pretrained(tmpdir)
+            loaded = Ministral3ForCausalLM.from_pretrained(tmpdir, dtype="float32")
+        self.assertEqual(loaded.config.rope_parameters["rope_theta"], 500000.0)
+        loaded.eval()
+        with paddle.no_grad():
+            actual = loaded(input_ids, return_dict=True).logits
+        paddle.testing.assert_close(actual, expected, rtol=1e-5, atol=1e-6)
 
     def test_ministral3_lm_head_model(self):
         self.model_tester.create_and_check_lm_head_model(*self.model_tester.prepare_config_and_inputs())
@@ -458,7 +537,8 @@ class Ministral3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
         with self.assertRaises(ValueError):
             model(x, past_key_values=DynamicCache(), return_dict=True)
 
-    def test_pipeline_stages_match_regular_model(self):
+    @parameterized.expand([(None, False), (None, True), (2, False), (2, True)])
+    def test_pipeline_stages_match_regular_model(self, sliding_window, tie_word_embeddings):
         from paddleformers.nn.pp_model import LMHeadPipe, RMSNormPipe
         from paddleformers.transformers.ministral3.modeling import (
             Ministral3CriterionLayerPipe,
@@ -466,7 +546,7 @@ class Ministral3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
             Ministral3EmbeddingPipe,
         )
 
-        config = self.model_tester.get_config()
+        config = self.model_tester.get_config(sliding_window=sliding_window, tie_word_embeddings=tie_word_embeddings)
         model = Ministral3ForCausalLM(config)
         model.train()
         embed = Ministral3EmbeddingPipe(config, rotary_emb_cls=Ministral3RotaryEmbedding)
@@ -478,6 +558,8 @@ class Ministral3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
         norm.set_state_dict(model.model.norm.state_dict())
         head = LMHeadPipe(config)
         head.set_state_dict(model.lm_head.state_dict())
+        if tie_word_embeddings:
+            head.weight = embed.embed_tokens.weight
         criterion = Ministral3CriterionLayerPipe(config)
         x = paddle.to_tensor([[1, 2, 3, 4], [4, 3, 2, 1]], dtype="int64")
         mask = paddle.to_tensor([[1, 1, 1, 1], [1, 1, 1, 0]], dtype="bool")
@@ -501,9 +583,11 @@ class Ministral3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
 
     def test_pipeline_pipe_class_is_pipeline_layer(self):
         self.assertTrue(issubclass(Ministral3ForCausalLMPipe, paddle.distributed.fleet.meta_parallel.PipelineLayer))
+        self.assertNotIn("generate", Ministral3ForCausalLMPipe.__dict__)
 
+    @parameterized.expand([(None,), (2,)])
     @require_gpu(min_gpus=2)
-    def test_pipeline_parallel_from_config(self):
+    def test_pipeline_parallel_from_config(self, sliding_window):
         world_size = paddle.distributed.get_world_size()
         if world_size not in (2, 4):
             self.skipTest("Requires a distributed launch with two or four GPU ranks")
@@ -522,6 +606,7 @@ class Ministral3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
             recompute_method="uniform",
             recompute_num_layers=1,
             tensor_parallel_output=False,
+            sliding_window=sliding_window,
         )
         pipe = AutoModelForCausalLMPipe.from_config(Ministral3Config.from_dict(config.to_dict()), dtype="float32")
         self.assertIsInstance(pipe, Ministral3ForCausalLMPipe)
@@ -554,7 +639,7 @@ class Ministral3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.Test
         pipe = AutoModelForCausalLMPipe.from_config(Ministral3Config.from_dict(config.to_dict()), dtype="float32")
         self.assertIsInstance(pipe, Ministral3ForCausalLMPipe)
         input_ids = paddle.to_tensor([[1, 2, 3]], dtype="int64")
-        generated = pipe.generate(input_ids, max_new_tokens=2, eos_token_id=None)
+        generated = _pipeline_greedy_generate(pipe, input_ids, max_new_tokens=2, eos_token_id=None)
         self.assertEqual(list(generated.shape), [1, 5])
 
 
@@ -563,11 +648,10 @@ class Ministral3IntegrationTest(unittest.TestCase):
     @require_package("transformers", "torch")
     @slow
     def test_generation(self):
-        tokenizer = AutoTokenizer.from_pretrained(_MODEL_HF_ID, trust_remote_code=False, download_hub="modelscope")
+        tokenizer = AutoTokenizer.from_pretrained(_MODEL_PATH, trust_remote_code=False)
         model = Ministral3ForCausalLM.from_pretrained(
-            _MODEL_HF_ID,
+            _MODEL_PATH,
             load_via_cpu=True,
-            download_hub="modelscope",
             load_checkpoint_format="flex_checkpoint",
         )
         model.eval()
@@ -596,22 +680,23 @@ class Ministral3CompatibilityTest(unittest.TestCase):
         import torch
         from transformers import Ministral3ForCausalLM as TorchMinistral3ForCausalLM
 
-        tokenizer = AutoTokenizer.from_pretrained(_MODEL_HF_ID, trust_remote_code=False, download_hub="modelscope")
+        tokenizer = AutoTokenizer.from_pretrained(_MODEL_PATH, trust_remote_code=False)
         inputs = tokenizer("The capital of France is", return_tensors="pt")
         input_ids_np = inputs["input_ids"].cpu().numpy()
 
         hf_model = TorchMinistral3ForCausalLM.from_pretrained(
-            _MODEL_HF_ID, dtype=torch.float32, device_map="auto", attn_implementation="eager"
+            _MODEL_PATH, dtype=torch.float32, device_map="auto", attn_implementation="eager"
         )
         hf_model.eval()
         with torch.no_grad():
             hf_logits = hf_model(input_ids=inputs["input_ids"].to(hf_model.device)).logits[0, -1].float().cpu().numpy()
+        del hf_model
+        torch.cuda.empty_cache()
 
         pd_model = Ministral3ForCausalLM.from_pretrained(
-            _MODEL_HF_ID,
+            _MODEL_PATH,
             dtype="float32",
             load_via_cpu=True,
-            download_hub="modelscope",
             load_checkpoint_format="flex_checkpoint",
         )
         pd_model.eval()

@@ -18,10 +18,10 @@ from ..modeling_rope_utils import rope_config_validation, standardize_rope_param
 __all__ = ["Ministral3Config"]
 
 
-def _default_rope_parameters(max_position_embeddings):
+def _default_rope_parameters(max_position_embeddings, rope_theta):
     return {
         "rope_type": "yarn",
-        "rope_theta": 1000000.0,
+        "rope_theta": rope_theta,
         "factor": 16.0,
         "original_max_position_embeddings": 16384,
         "max_position_embeddings": max_position_embeddings,
@@ -116,7 +116,7 @@ class Ministral3Config(PretrainedConfig):
         if rope_parameters is None:
             rope_parameters = kwargs.pop("rope_scaling", None)
         if rope_parameters is None:
-            rope_parameters = _default_rope_parameters(max_position_embeddings)
+            rope_parameters = _default_rope_parameters(max_position_embeddings, rope_theta)
         else:
             rope_parameters = dict(rope_parameters)
             if "rope_type" not in rope_parameters and "type" in rope_parameters:

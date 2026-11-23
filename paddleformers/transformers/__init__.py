@@ -509,7 +509,7 @@ import_structure = {
         "Ministral3ForCausalLM",
         "Ministral3ForCausalLMPipe",
         "Ministral3Model",
-        "Ministral3PreTrainedModel",
+        "Ministral3PretrainedModel",
         "Ministral3RotaryEmbedding",
     ],
     "ministral3.tokenizer": ["Ministral3Tokenizer"],

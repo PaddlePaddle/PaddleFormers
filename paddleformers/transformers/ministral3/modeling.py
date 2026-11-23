@@ -45,6 +45,15 @@ from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
 from .configuration import Ministral3Config
 
 
+def _create_attention_mask(config, **kwargs):
+    mask_fn = (
+        create_sliding_window_causal_mask_and_row_indices
+        if config.sliding_window is not None
+        else create_causal_mask_and_row_indices
+    )
+    return mask_fn(config=config, **kwargs)
+
+
 def rotate_half(x: Tensor) -> Tensor:
     x1 = x[..., : x.shape[-1] // 2]
     x2 = x[..., x.shape[-1] // 2 :]
@@ -485,12 +494,7 @@ class Ministral3Model(Ministral3PretrainedModel):
             "attn_mask_startend_row_indices": attn_mask_startend_row_indices,
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
-        if self.config.sliding_window is not None:
-            causal_mask, attn_mask_startend_row_indices = create_sliding_window_causal_mask_and_row_indices(
-                **mask_kwargs
-            )
-        else:
-            causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
+        causal_mask, attn_mask_startend_row_indices = _create_attention_mask(**mask_kwargs)
         if cache_length > 0 and seq_length > 1 and causal_mask is None and attn_mask_startend_row_indices is None:
             causal_mask = self._prepare_decoder_attention_mask(
                 attention_mask=paddle.ones([bsz, cache_length + seq_length], dtype="bool"),
@@ -699,7 +703,7 @@ class Ministral3EmbeddingPipe(EmbeddingPipe):
         hidden_states, _, position_ids, position_embeddings, offset = parse_args(outputs)
         row_indices = mask if mask is not None and mask.ndim >= 3 and mask.dtype == paddle.int32 else None
         attention_mask = mask.astype("bool") if mask is not None and row_indices is None else None
-        attention_mask, row_indices = create_causal_mask_and_row_indices(
+        attention_mask, row_indices = _create_attention_mask(
             config=self.config,
             inputs_embeds=hidden_states,
             batch_size=input_ids.shape[0],
@@ -758,64 +762,6 @@ class Ministral3ForCausalLMPipe(GeneralModelForCausalLMPipe):
         if name_prefix == "model" and layer_desc.layer_func is EmbeddingPipe:
             layer_desc.layer_func = Ministral3EmbeddingPipe
         super().add_sequential_layer(layer_desc, name_prefix)
-
-    @paddle.no_grad()
-    def generate(self, input_ids, max_new_tokens=20, eos_token_id=None):
-        """Greedy decoding across pipeline stages.
-
-        Every pipeline rank must call this method with the same ``input_ids``.
-        Each step re-runs the whole prefix because the pipeline pipes do not
-        carry a KV cache across stages, so the cost grows quadratically with the
-        generated length. This is a reference path: it requires a distributed
-        pipeline launch and has not been validated on multi-GPU hardware yet.
-        """
-        from paddle.distributed.fleet import get_hybrid_communicate_group as get_hcg
-        from paddle.distributed.fleet.meta_parallel.pp_utils import (
-            p2p_communication as p2p,
-        )
-
-        if not paddle.distributed.is_initialized():
-            raise RuntimeError("Ministral3ForCausalLMPipe.generate requires a distributed pipeline launch")
-        if getattr(self.config, "virtual_pipeline_model_parallel_size", 1) > 1:
-            raise NotImplementedError("Ministral3ForCausalLMPipe.generate does not support virtual pipeline stages")
-
-        hcg = get_hcg()
-        pp_group = hcg.get_pipe_parallel_group()
-        is_first_stage = hcg.get_stage_id() == 0
-        is_last_stage = hcg.get_stage_id() == hcg.get_pipe_parallel_world_size() - 1
-
-        p2p.initialize_p2p_groups(hcg, enable_partial_send_recv=False, enable_timer=False)
-        p2p_helper = p2p.P2pHelper(use_cache=False)
-        self.eval()
-
-        if isinstance(input_ids, paddle.Tensor):
-            cur_ids = input_ids.astype("int64")
-        else:
-            cur_ids = paddle.to_tensor(input_ids, dtype="int64")
-        paddle.distributed.broadcast(cur_ids, src=pp_group.ranks[0], group=pp_group)
-
-        if eos_token_id is None:
-            eos_ids = []
-        elif isinstance(eos_token_id, (list, tuple)):
-            eos_ids = list(eos_token_id)
-        else:
-            eos_ids = [eos_token_id]
-        for _ in range(max_new_tokens):
-            outputs = self(cur_ids) if is_first_stage else self(p2p_helper.recv_forward(is_first_stage))
-            p2p_helper.send_forward(outputs, is_last_stage)
-            if is_last_stage:
-                next_token = paddle.argmax(outputs[:, -1], axis=-1, keepdim=True)
-            else:
-                next_token = paddle.zeros([cur_ids.shape[0], 1], dtype="int64")
-            paddle.distributed.broadcast(next_token, src=pp_group.ranks[-1], group=pp_group)
-            cur_ids = paddle.concat([cur_ids, next_token], axis=1)
-            if eos_ids:
-                done = paddle.zeros_like(next_token, dtype="bool")
-                for token in eos_ids:
-                    done = done | (next_token == token)
-                if bool(done.all().item()):
-                    break
-        return cur_ids
 
 
 __all__ = [
