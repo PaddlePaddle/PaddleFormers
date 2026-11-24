@@ -30,7 +30,9 @@ from paddleformers.datasets.template.tool_utils import (
     GLM4ToolUtils,
     GLM_5ToolUtils,
     Llama3ToolUtils,
+    Llama4ToolUtils,
     QwenToolUtils,
+    SeedOssToolUtils,
     get_tool_utils,
 )
 
@@ -267,6 +269,62 @@ class TestLlama3ToolUtils(unittest.TestCase):
         self.assertEqual(len(parsed), 2)
 
 
+class TestLlama4ToolUtils(unittest.TestCase):
+    """Tests for the official Llama 4 zero-shot tool format."""
+
+    def test_tool_formatter(self):
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_weather",
+                    "description": "Get weather info",
+                    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}},
+                },
+            }
+        ]
+        result = Llama4ToolUtils.tool_formatter(tools)
+        self.assertIn('"name": "get_weather"', result)
+        self.assertIn("[func1(param_name=param_value, ...), func2(...)]", result)
+
+    def test_function_formatter_parallel(self):
+        functions = [
+            FunctionCall(name="get_weather", arguments='{"city": "Paris"}'),
+            FunctionCall(name="set_alarm", arguments='{"hour": 7, "enabled": true}'),
+        ]
+        result = Llama4ToolUtils.function_formatter(functions)
+        self.assertEqual(result, '[get_weather(city="Paris"), set_alarm(hour=7, enabled=true)]')
+
+
+class TestSeedOssToolUtils(unittest.TestCase):
+    """Tests for SeedOssToolUtils."""
+
+    def test_tool_formatter(self):
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "test_func",
+                    "description": "A test function",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+        ]
+        result = SeedOssToolUtils.tool_formatter(tools)
+        self.assertIn("<seed:tool_call>", result)
+        self.assertIn("</seed:tool_call>", result)
+        self.assertIn("test_func", result)
+
+    def test_function_formatter(self):
+        functions = [FunctionCall(name="test_func", arguments='{"key": "val", "count": 2}')]
+        result = SeedOssToolUtils.function_formatter(functions)
+        self.assertIn("<seed:tool_call>", result)
+        self.assertIn("<function=test_func>", result)
+        self.assertIn("<parameter=key>val</parameter>", result)
+        self.assertIn("<parameter=count>2</parameter>", result)
+        self.assertIn("</seed:tool_call>", result)
+
+
 class TestERNIEToolUtils(unittest.TestCase):
     """Tests for ERNIEToolUtils."""
 
@@ -318,7 +376,19 @@ class TestGetToolUtils(unittest.TestCase):
     """Tests for get_tool_utils function."""
 
     def test_get_existing_tool(self):
-        for name in ["default", "ernie", "ernie_vl", "qwen", "qwen3_5", "glm4", "glm4_moe", "glm_moe_dsa", "llama3"]:
+        for name in [
+            "default",
+            "ernie",
+            "ernie_vl",
+            "qwen",
+            "qwen3_5",
+            "glm4",
+            "glm4_moe",
+            "glm_moe_dsa",
+            "llama3",
+            "llama4",
+            "seed_oss",
+        ]:
             result = get_tool_utils(name)
             self.assertIsNotNone(result)
 

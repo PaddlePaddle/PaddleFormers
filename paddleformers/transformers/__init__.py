@@ -105,6 +105,13 @@ import_structure = {
     ],
     "diff_transformer.tokenizer": ["DiffTransformerTokenizer"],
     "diff_transformer": [],
+    "aya_vision.configuration": ["AyaVisionConfig"],
+    "aya_vision.modeling": ["AyaVisionPreTrainedModel", "AyaVisionModel", "AyaVisionForConditionalGeneration"],
+    "aya_vision.processor": ["AyaVisionProcessor"],
+    "cohere2.configuration": ["Cohere2Config"],
+    "cohere2.modeling": ["Cohere2PreTrainedModel", "Cohere2Model", "Cohere2ForCausalLM"],
+    "siglip_vision_model.configuration": ["SiglipVisionConfig"],
+    "siglip_vision_model.modeling": ["SiglipVisionPretrainedModel", "SiglipVisionModel"],
     "deepseek_v3.configuration": ["DeepseekV3Config"],
     "deepseek_v32.configuration": ["DeepseekV32Config"],
     "deepseek_v32.modeling": [
@@ -196,6 +203,28 @@ import_structure = {
         "GraniteForCausalLM",
         "GraniteForCausalLMPipe",
     ],
+    "cohere.configuration": ["CohereConfig"],
+    "cohere.modeling": [
+        "CohereAttention",
+        "CohereDecoderLayer",
+        "CohereForCausalLM",
+        "CohereForCausalLMPipe",
+        "CohereLayerNorm",
+        "CohereModel",
+        "CoherePretrainedModel",
+        "CohereRotaryEmbedding",
+    ],
+    "seed_oss.configuration": ["SeedOssConfig"],
+    "seed_oss.modeling": [
+        "SeedOssModel",
+        "SeedOssPretrainedModel",
+        "SeedOssForCausalLM",
+        "SeedOssForCausalLMPipe",
+        "SeedOssForSequenceClassification",
+        "SeedOssForTokenClassification",
+        "SeedOssForQuestionAnswering",
+    ],
+    "seed_oss": [],
     "kimi_k25.vision_processor": ["KimiK25VisionProcessor"],
     "kimi_k25.processor": ["KimiK25Processor"],
     "kimi_k25.tokenizer": ["TikTokenTokenizer"],
@@ -247,6 +276,17 @@ import_structure = {
     "llama.modeling": ["LlamaForCausalLM", "LlamaModel", "LlamaForCausalLMPipe", "LlamaRotaryEmbedding"],
     "llama.tokenizer": ["LlamaTokenizer", "Llama3Tokenizer"],
     "llama.tokenizer_fast": ["LlamaTokenizerFast"],
+    "llama4.configuration": ["Llama4Config", "Llama4TextConfig", "Llama4VisionConfig"],
+    "llama4.image_processor": ["Llama4ImageProcessor", "Llama4ImageProcessorKwargs"],
+    "llama4.image_processor_fast": ["Llama4ImageProcessorFast"],
+    "llama4.modeling": [
+        "Llama4ForCausalLM",
+        "Llama4TextDecoderLayer",
+        "Llama4TextModel",
+        "Llama4TextPretrainedModel",
+    ],
+    "llama4.multimodal": ["Llama4ForConditionalGeneration", "Llama4VisionEncoderLayer", "Llama4VisionModel"],
+    "llama4.processor": ["Llama4Processor", "Llama4ProcessorKwargs"],
     "optimization": [
         "LinearDecayWithWarmup",
         "ConstScheduleWithWarmup",
@@ -254,6 +294,15 @@ import_structure = {
         "PolyDecayWithWarmup",
         "CosineAnnealingWithWarmupDecay",
         "LinearAnnealingWithWarmupDecay",
+    ],
+    "hunyuan.configuration": ["HunYuanDenseV1Config"],
+    "hunyuan.modeling": [
+        "HunYuanDenseV1Model",
+        "HunYuanDenseV1PretrainedModel",
+        "HunYuanDenseV1ForCausalLM",
+        "HunYuanDenseV1ForCausalLMPipe",
+        "HunYuanDenseV1ForCausalLMDeprecated",
+        "HunYuanDenseV1ForCausalLMPipeDeprecated",
     ],
     "qwen2.configuration": ["Qwen2Config"],
     "qwen2.modeling": [
@@ -357,7 +406,17 @@ import_structure = {
         "Qwen3NextForCausalLMPipe",
         "Qwen3NextPretrainingCriterion",
     ],
+    "molmo.configuration": ["MolmoConfig"],
+    "molmo.image_processing": ["MolmoImageProcessor"],
+    "molmo.modeling": [
+        "MolmoModel",
+        "MolmoPretrainedModel",
+        "MolmoForCausalLM",
+    ],
+    "molmo.processing": ["MolmoProcessor"],
     "llama": [],
+    "hunyuan": [],
+    "llama4": [],
     "qwen2": [],
     "glm_ocr": [],
     "qwen3": [],
@@ -370,17 +429,19 @@ import_structure = {
     "qwen3_vl": [],
     "qwen3_5": [],
     "qwen3_vl_moe": [],
+    "molmo": [],
     "qwen2_moe": [],
     "qwen2_vl": [],
     "qwen3_moe": [],
     "qwen3_next": [],
+    "cohere": [],
     "minicpm3": [],
     "glm4_moe.configuration": ["Glm4MoeConfig"],
     "whisper.processor": ["WhisperFeatureExtractor"],
     "glm4_moe": ["Glm4MoeForCausalLMPipe", "Glm4MoeModel", "Glm4MoeForCausalLM", "Glm4MoeForCausalLMDeprecated"],
     "glm_moe_dsa.configuration": ["GlmMoeDsaConfig"],
     "glm_moe_dsa": ["GlmMoeDsaForCausalLMPipe", "GlmMoeDsaForCausalLM"],
-    "granite": ["GraniteModel", "GranitePretrainedModel", "GraniteForCausalLM"],
+    "granite": [],
     "minimax_m2.configuration": ["MiniMaxM2Config"],
     "minimax_m2": ["MiniMaxM2ForCausalLMPipe", "MiniMaxM2ForCausalLM"],
     "minicpm.configuration": ["MiniCPMConfig"],
@@ -401,6 +462,8 @@ import_structure = {
     "minicpm4_1": [],
     "deepseek_v4.configuration": ["DeepseekV4Config"],
     "deepseek_v4": ["DeepseekV4ForCausalLMPipe", "DeepseekV4ForCausalLM"],
+    "minimax.configuration": ["MiniMaxConfig"],
+    "minimax": ["MiniMaxModel", "MiniMaxForCausalLM"],
     "glm4v_moe.image_processor": ["Glm4vImageProcessor"],
     "glm4v_moe.image_processor_fast": ["Glm4vImageProcessorFast"],
     "auto": ["AutoModelForCausalLM"],
@@ -409,6 +472,24 @@ import_structure = {
     "phi3.configuration": ["Phi3Config"],
     "phi3.tokenizer": ["Phi3Tokenizer"],
     "phi3.modeling": ["Phi3Model", "Phi3ForCausalLM", "Phi3ForCausalLMPipe"],
+    "phi4_multimodal.configuration": [
+        "Phi4MultimodalAudioConfig",
+        "Phi4MultimodalConfig",
+        "Phi4MultimodalVisionConfig",
+    ],
+    "phi4_multimodal.feature_extraction": ["Phi4MultimodalFeatureExtractor"],
+    "phi4_multimodal.image_processor": ["Phi4MultimodalImageProcessor"],
+    "phi4_multimodal.modeling": [
+        "Phi4MMForCausalLM",
+        "Phi4MMForConditionalGeneration",
+        "Phi4MultimodalAudioModel",
+        "Phi4MultimodalForCausalLM",
+        "Phi4MultimodalForConditionalGeneration",
+        "Phi4MultimodalModel",
+        "Phi4MultimodalPreTrainedModel",
+        "Phi4MultimodalVisionModel",
+    ],
+    "phi4_multimodal.processor": ["Phi4MultimodalProcessor"],
     "glm4v_moe.configuration": ["Glm4vMoeConfig", "Glm4vMoeTextConfig", "Glm4vMoeVisionConfig"],
     "glm4v_moe.modeling": [
         "Glm4vMoeForConditionalGeneration",
@@ -428,6 +509,17 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "stablelm": [],
+    "stablelm.configuration": ["StableLmConfig"],
+    "stablelm.modeling": [
+        "StableLmModel",
+        "StableLmForCausalLM",
+        "StableLmForCausalLMPipe",
+        "StableLmPretrainedModel",
+        "StableLmRotaryEmbedding",
+        "StableLmDecoderLayer",
+        "StableLmAttention",
+    ],
     "olmo2.configuration": ["Olmo2Config"],
     "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
     "olmo2": [],
@@ -525,6 +617,7 @@ if TYPE_CHECKING:
     from .paddleocr_vl import *
     from .llama import *
     from .optimization import *
+    from .hunyuan import *
     from .qwen2 import *
     from .qwen2_5_vl import *
     from .qwen2_moe import *
@@ -543,14 +636,20 @@ if TYPE_CHECKING:
     from .minicpm import *
     from .minicpm4_1 import *
     from .deepseek_v4 import *
+    from .minimax import *
     from .gpt_oss import *
     from .minicpm3 import *
+    from .cohere import *
     from .granite import *
+    from .seed_oss import *
     from .phi3 import *
+    from .phi4_multimodal import *
     from .gemma3_text import *
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .stablelm import *
+    from .molmo import *
     from .olmo2 import *
     from .intern_lm3 import *
     from .intern_lm2_5 import *
