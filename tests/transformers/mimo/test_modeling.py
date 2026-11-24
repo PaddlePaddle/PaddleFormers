@@ -187,20 +187,6 @@ class MiMoCompatibilityTest(unittest.TestCase):
         zero = MiMoConfig(num_mtp_layers=0)
         self.assertEqual(MiMoConfig.from_dict(zero.to_dict()).num_mtp_layers, 0)
 
-    def test_base_model_safetensors_flex_roundtrip(self):
-        with tempfile.TemporaryDirectory() as directory:
-            model = MiMoModel(self.config)
-            model.eval()
-            ids = paddle.to_tensor([[1, 2, 3]])
-            expected = model(ids)[0].numpy()
-            model.save_pretrained(directory, safe_serialization=True)
-            restored = MiMoModel.from_pretrained(directory, load_checkpoint_format="flex_checkpoint")
-            restored.eval()
-            self.assertEqual(set(model.state_dict()), set(restored.state_dict()))
-            for name, value in model.state_dict().items():
-                np.testing.assert_array_equal(value.numpy(), restored.state_dict()[name].numpy(), err_msg=name)
-            np.testing.assert_array_equal(expected, restored(ids)[0].numpy())
-
     def test_cached_forward_matches_full_forward(self):
         model = MiMoModel(self.config)
         model.eval()
@@ -241,18 +227,19 @@ class MiMoCompatibilityTest(unittest.TestCase):
         self.assertTrue(all(p.grad is None for p in model.model.mtp_layers.parameters()))
 
     def test_safetensors_flex_roundtrip(self):
-        with tempfile.TemporaryDirectory() as directory:
-            model = MiMoForCausalLM(self.config)
-            model.eval()
-            ids = paddle.to_tensor([[1, 2, 3]])
-            expected = model(ids)[0].numpy()
-            model.save_pretrained(directory, safe_serialization=True)
-            restored = MiMoForCausalLM.from_pretrained(directory, load_checkpoint_format="flex_checkpoint")
-            restored.eval()
-            self.assertEqual(set(model.state_dict()), set(restored.state_dict()))
-            for name, value in model.state_dict().items():
-                np.testing.assert_array_equal(value.numpy(), restored.state_dict()[name].numpy(), err_msg=name)
-            np.testing.assert_array_equal(expected, restored(ids)[0].numpy())
+        for model_class in (MiMoModel, MiMoForCausalLM):
+            with self.subTest(model_class=model_class.__name__), tempfile.TemporaryDirectory() as directory:
+                model = model_class(self.config)
+                model.eval()
+                ids = paddle.to_tensor([[1, 2, 3]])
+                expected = model(ids)[0].numpy()
+                model.save_pretrained(directory, safe_serialization=True)
+                restored = model_class.from_pretrained(directory, load_checkpoint_format="flex_checkpoint")
+                restored.eval()
+                self.assertEqual(set(model.state_dict()), set(restored.state_dict()))
+                for name, value in model.state_dict().items():
+                    np.testing.assert_array_equal(value.numpy(), restored.state_dict()[name].numpy(), err_msg=name)
+                np.testing.assert_array_equal(expected, restored(ids)[0].numpy())
 
     def test_mtp_frozen_and_lm_backward(self):
         model = MiMoForCausalLM(self.config)

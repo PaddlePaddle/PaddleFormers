@@ -429,6 +429,9 @@ class MiMoForCausalLMPipe(GeneralModelForCausalLMPipe):
     _gen_inv_aoa_config = MiMoForCausalLM._gen_inv_aoa_config
 
     def add_sequential_layer(self, layer_desc, name_prefix=""):
+        # GeneralModelForCausalLMPipe registers the final projection as
+        # "lm_head". Insert the frozen MTP checkpoint stage immediately before
+        # it; keep this hook aligned if the parent changes its name or order.
         if name_prefix == "lm_head" and self.config.num_mtp_layers:
             super().add_sequential_layer(LayerDesc(MiMoMTPWeights, config=self.config), "model.mtp_layers")
         super().add_sequential_layer(layer_desc, name_prefix)
