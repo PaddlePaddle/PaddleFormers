@@ -165,6 +165,20 @@ class MiniCPMAttention(nn.Layer):
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
 
+        # Pipeline stages can receive token IDs without an explicit mask.
+        # Unlike fused attention, the eager backend does not infer causality.
+        if (
+            self.config._attn_implementation == "eager"
+            and attention_mask is None
+            and attn_mask_startend_row_indices is None
+        ):
+            attention_mask = PretrainedModel._prepare_decoder_attention_mask(
+                attention_mask=None,
+                input_shape=(query_states.shape[0], query_states.shape[-2]),
+                past_key_values_length=key_states.shape[-2] - query_states.shape[-2],
+                dtype=query_states.dtype,
+            )
+
         attn_output, attn_weights = attention_interface(
             self,
             query=query_states,

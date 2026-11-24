@@ -408,6 +408,12 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
         )
 
     def test_pp_component_chain_matches_forward_and_gradients(self):
+        self._check_pp_component_chain(use_attention_mask=True)
+
+    def test_pp_without_mask_matches_forward_and_gradients(self):
+        self._check_pp_component_chain(use_attention_mask=False)
+
+    def _check_pp_component_chain(self, use_attention_mask):
         model = MiniCPMForCausalLM(self.config)
         model.eval()
         pipe_cls = MiniCPMForCausalLMPipe
@@ -427,7 +433,7 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
         ids = paddle.to_tensor([[1, 2, 3]])
         expected = model(ids)[0]
         mask = paddle.tril(paddle.ones([1, 1, 3, 3], dtype="float32"))
-        actual = embedding((ids, mask))
+        actual = embedding((ids, mask) if use_attention_mask else ids)
         for layer in layers:
             actual = layer(actual)
         actual = head(norm(actual))
