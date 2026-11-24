@@ -14,6 +14,7 @@
 
 import numpy as np
 from PIL import Image
+from transformers.processing_utils import ImagesKwargs
 
 from ..image_processing_utils import BatchFeature
 from ..image_transforms import to_pil_image
@@ -22,39 +23,19 @@ from ..processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 from ..tokenizer_utils_base import PreTokenizedInput, TextInput
 
 
-def concatenate_list(items):
-    if len(items) == 0:
-        return items
-
-    first = items[0]
-
-    if hasattr(first, "ndim") and hasattr(first, "dtype") and first.__class__.__module__.startswith("paddle"):
-        import paddle
-
-        return paddle.concat(items, axis=0)
-
-    if isinstance(first, np.ndarray):
-        return np.concatenate(items, axis=0)
-
-    if isinstance(first, list):
-        out = []
-        for x in items:
-            out.extend(x)
-        return out
-
-    try:
-        return np.concatenate(items, axis=0)
-    except Exception:
-        out = []
-        for x in items:
-            if isinstance(x, (list, tuple)):
-                out.extend(x)
-            else:
-                out.append(x)
-        return out
+class InternVLImagesKwargs(ImagesKwargs, total=False):
+    crop_to_patches: bool
+    dynamic_image_size: bool
+    min_dynamic_patch: int
+    max_dynamic_patch: int
+    use_thumbnail: bool
+    image_size: int
+    input_size: int
 
 
 class InternVLProcessorKwargs(ProcessingKwargs, total=False):
+    images_kwargs: InternVLImagesKwargs
+
     _defaults = {
         "text_kwargs": {
             "padding_side": "left",
@@ -330,18 +311,20 @@ class InternVL3Processor(ProcessorMixin):
         if not isinstance(text, (list, tuple)):
             text = [text]
 
+        image_inputs = {}
         image_num_patches = []
         image_pixel_values = None
         image_num_patches_indices = np.array([0])
         if images is not None:
             images = self.image_processor.fetch_images(images)
             images = make_flat_list_of_images(images)
-            image_inputs = self.image_processor(images=images, **output_kwargs["images_kwargs"])
+            image_inputs = self.image_processor(
+                images=images, **{**output_kwargs["images_kwargs"], "return_tensors": "np"}
+            )
             image_num_patches = image_inputs.pop("num_patches")
             image_pixel_values = image_inputs.pop("pixel_values")
             image_num_patches_indices = np.cumsum(image_num_patches)
 
-        image_inputs = {}
         if images is not None:
             text, image_patches, image_index = self._insert_image_placeholders(
                 text,
@@ -351,7 +334,7 @@ class InternVL3Processor(ProcessorMixin):
             )
             if image_index != len(images):
                 raise ValueError("Number of image placeholders in the prompt does not match the number of images.")
-            image_inputs = {"pixel_values": concatenate_list(image_patches)}
+            image_inputs["pixel_values"] = np.concatenate(image_patches, axis=0)
 
         return_tensors = output_kwargs["text_kwargs"].pop("return_tensors", None)
         return_mm_token_type_ids = output_kwargs["text_kwargs"].pop("return_mm_token_type_ids", None)

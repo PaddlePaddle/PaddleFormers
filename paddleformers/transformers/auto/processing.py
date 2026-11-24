@@ -26,7 +26,6 @@ from transformers.dynamic_module_utils import (
 )
 from transformers.models.auto.configuration_auto import (
     CONFIG_MAPPING_NAMES,
-    model_type_to_module_name,
     replace_list_option_in_docstrings,
 )
 from transformers.utils import (
@@ -42,6 +41,7 @@ from ..image_processing_utils import ImageProcessingMixin
 from ..processing_utils import ProcessorMixin
 from ..tokenizer_utils import TOKENIZER_CONFIG_FILE
 from ..video_processing_utils import BaseVideoProcessor
+from .configuration import model_type_to_module_name
 from .factory import _LazyAutoMapping
 from .image_processing import AutoImageProcessor
 from .tokenizer import AutoTokenizer
@@ -71,10 +71,6 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
 
 PROCESSOR_MAPPING = _LazyAutoMapping(CONFIG_MAPPING_NAMES, PROCESSOR_MAPPING_NAMES)
 
-SPECIAL_PROCESSOR_TYPE_TO_MODULE_NAME = {
-    "internvl_chat": "internvl3",
-}
-
 
 def processor_class_from_name(class_name: str):
     if class_name == "Phi4MMProcessor":
@@ -82,9 +78,7 @@ def processor_class_from_name(class_name: str):
 
     for module_name, extractors in PROCESSOR_MAPPING_NAMES.items():
         if class_name in extractors:
-            module_name = SPECIAL_PROCESSOR_TYPE_TO_MODULE_NAME.get(
-                module_name, model_type_to_module_name(module_name)
-            )
+            module_name = model_type_to_module_name(module_name)
 
             try:
                 module = importlib.import_module(f".{module_name}", "paddleformers.transformers")

@@ -17,9 +17,11 @@ from __future__ import annotations
 import inspect
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import paddle
+import paddle.nn.functional as F
 
 from paddleformers.transformers import (
     InternVLChatConfig,
@@ -161,6 +163,7 @@ class InternVL3ModelTester:
                 "bos_token_id": self.bos_token_id,
                 "eos_token_id": self.eos_token_id,
             },
+            img_context_token_id=self.image_token_id,
             downsample_ratio=1.0,
             force_image_size=self.image_size,
             ps_version="v2",
@@ -400,10 +403,100 @@ class InternVL3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         self.skipTest("InternVLChatModel.generate currently only supports greedy decoding.")
 
     def test_greedy_generate(self):
-        self.skipTest(
-            "InternVLChatForConditionalGeneration.generate takes pixel_values as the first positional argument, "
-            "which is incompatible with GenerationTesterMixin._greedy_generate."
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        model = InternVLChatForConditionalGeneration(config)
+        model.eval()
+        outputs = model.generate(**inputs, max_length=2, do_sample=False, eos_token_id=None)
+        self.assertEqual(list(outputs[0].shape), [self.model_tester.batch_size, 2])
+        positional = model.generate(
+            inputs["input_ids"],
+            {"max_length": 2, "do_sample": False, "eos_token_id": None},
+            pixel_values=inputs["pixel_values"],
         )
+        np.testing.assert_array_equal(outputs[0].numpy(), positional[0].numpy())
+
+    def test_generation_options(self):
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        model = InternVLChatForConditionalGeneration(config)
+        model.eval()
+        with self.assertRaisesRegex(NotImplementedError, "beam search"):
+            model.generate(**inputs, num_beams=2)
+        with patch.object(model.language_model, "generate", return_value=None) as generate:
+            model.generate(**inputs, do_sample=True, max_length=2)
+            self.assertEqual(generate.call_args.kwargs["decode_strategy"], "sampling")
+            self.assertTrue(bool(paddle.all(generate.call_args.kwargs["attention_mask"] == 1)))
+            model.generate(**inputs, do_sample=False, max_length=2)
+            self.assertEqual(generate.call_args.kwargs["decode_strategy"], "greedy_search")
+
+    def test_pre_shifted_labels_loss_and_backward(self):
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        model = InternVLChatForConditionalGeneration(config)
+        model.eval()
+        # Match SFTDataset: pre-shift once and ignore image/padding targets.
+        labels = paddle.concat([inputs["input_ids"][:, 1:], paddle.full([2, 1], -100, dtype="int64")], axis=1)
+        labels[:, : self.model_tester.num_image_token] = -100
+        outputs = model(**inputs, labels=labels, return_dict=True)
+        expected = F.cross_entropy(
+            outputs.logits.astype("float32").reshape([-1, config.llm_config.vocab_size]),
+            labels.flatten(),
+            ignore_index=-100,
+        )
+        np.testing.assert_allclose(outputs.loss.numpy(), expected.numpy(), rtol=1e-6)
+        outputs.loss.backward()
+        self.assertIsNotNone(model.mlp1[1].weight.grad)
+        self.assertTrue(bool(paddle.all(paddle.isfinite(model.mlp1[1].weight.grad))))
+        self.assertGreater(float(paddle.abs(model.mlp1[1].weight.grad).sum()), 0)
+
+    def test_packed_attention_mask_forwarded(self):
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        model = InternVLChatForConditionalGeneration(config)
+        indices = paddle.full([2, 1, self.model_tester.seq_length, 1], self.model_tester.seq_length, dtype="int32")
+        logits = paddle.zeros([2, self.model_tester.seq_length, config.llm_config.vocab_size])
+        with patch.object(model.language_model, "forward", return_value=(logits,)) as forward:
+            model(**inputs, attn_mask_startend_row_indices=indices, return_dict=False)
+            self.assertIs(forward.call_args.kwargs["attn_mask_startend_row_indices"], indices)
+
+    def test_pretrained_image_token_id_from_tokenizer(self):
+        config, _ = self.model_tester.prepare_config_and_inputs_for_common()
+        config.img_context_token_id = None
+        model = InternVLChatForConditionalGeneration(config)
+        with tempfile.TemporaryDirectory() as directory:
+            model.save_pretrained(directory)
+            with patch("paddleformers.transformers.auto.tokenizer.AutoTokenizer.from_pretrained") as load_tokenizer:
+                tokenizer = load_tokenizer.return_value
+                tokenizer.get_vocab.return_value = {"<IMG_CONTEXT>": self.model_tester.image_token_id}
+                tokenizer.convert_tokens_to_ids.return_value = self.model_tester.image_token_id
+                loaded = InternVLChatForConditionalGeneration.from_pretrained(directory, convert_from_hf=False)
+                load_tokenizer.assert_called_once()
+                self.assertEqual(loaded.img_context_token_id, self.model_tester.image_token_id)
+                self.assertEqual(loaded.config.img_context_token_id, self.model_tester.image_token_id)
+            with tempfile.TemporaryDirectory() as saved_directory:
+                loaded.save_pretrained(saved_directory)
+                with patch(
+                    "paddleformers.transformers.auto.tokenizer.AutoTokenizer.from_pretrained"
+                ) as load_tokenizer:
+                    reloaded = InternVLChatForConditionalGeneration.from_pretrained(
+                        saved_directory, convert_from_hf=False
+                    )
+                    load_tokenizer.assert_not_called()
+                    self.assertEqual(reloaded.img_context_token_id, self.model_tester.image_token_id)
+
+    def test_image_token_id_uses_config_with_long_padding(self):
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        config.llm_config.pad_token_id = None
+        model = InternVLChatForConditionalGeneration(config)
+        model.eval()
+        padding = paddle.zeros([2, 12], dtype="int64")
+        inputs["input_ids"] = paddle.concat([padding, inputs["input_ids"]], axis=1)
+        inputs["attention_mask"] = paddle.concat([padding, paddle.ones([2, 10], dtype="int64")], axis=1)
+        outputs = model(**inputs, return_dict=True)
+        self.assertEqual(list(outputs.logits.shape), [2, 22, config.llm_config.vocab_size])
+        self.assertEqual(model.img_context_token_id, self.model_tester.image_token_id)
+        config.img_context_token_id = None
+        uninitialized = InternVLChatForConditionalGeneration(config)
+        with self.assertRaisesRegex(ValueError, "config.img_context_token_id"):
+            uninitialized(**inputs)
+        self.assertIsNone(uninitialized.img_context_token_id)
 
     def test_hidden_states_output(self):
         self.skipTest("InternVLChatModel.forward does not propagate hidden_states from sub-modules.")

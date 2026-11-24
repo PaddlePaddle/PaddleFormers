@@ -40,6 +40,7 @@ class InternVLChatConfig(PretrainedConfig):
         ps_version="v1",
         min_dynamic_patch=1,
         max_dynamic_patch=6,
+        img_context_token_id=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -68,6 +69,7 @@ class InternVLChatConfig(PretrainedConfig):
         self.use_thumbnail = use_thumbnail
         self.ps_version = ps_version
         self.min_dynamic_patch = min_dynamic_patch
+        self.img_context_token_id = img_context_token_id
         self.max_dynamic_patch = max_dynamic_patch
         self.tie_word_embeddings = self.llm_config.tie_word_embeddings
 

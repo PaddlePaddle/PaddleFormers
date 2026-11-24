@@ -61,6 +61,10 @@ class InternVLChatModel(PretrainedModel):
             if architecture == "LlamaForCausalLM":
                 self.language_model = LlamaForCausalLM(config.llm_config)
             elif architecture == "Qwen2ForCausalLM":
+                # Keep the non-Fleet backbone until InternVL's HF AOA mappings
+                # and inputs_embeds/cache generation have parity with Fleet GPTModel.
+                # Switching only this constructor changes parameter names and breaks
+                # existing InternVL checkpoints; migrate the mappings and parity tests together.
                 self.language_model = Qwen2ForCausalLMDeprecated(config.llm_config)
             else:
                 raise NotImplementedError(f"{architecture} is not implemented.")
@@ -75,9 +79,26 @@ class InternVLChatModel(PretrainedModel):
             nn.Linear(llm_hidden_size, llm_hidden_size),
         )
 
-        self.img_context_token_id = None
+        self.img_context_token_id = config.img_context_token_id
         self.conv_template = get_conv_template(self.template)
         self.system_message = self.conv_template.system_message
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
+        model = super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+        if model.img_context_token_id is None:
+            from ..auto.tokenizer import AutoTokenizer
+
+            tokenizer_kwargs = {
+                key: kwargs[key] for key in ("cache_dir", "download_hub", "subfolder") if key in kwargs
+            }
+            tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, **tokenizer_kwargs)
+            image_token = "<IMG_CONTEXT>"
+            if image_token not in tokenizer.get_vocab():
+                raise ValueError(f"The InternVL tokenizer is missing {image_token}.")
+            model.img_context_token_id = tokenizer.convert_tokens_to_ids(image_token)
+            model.config.img_context_token_id = model.img_context_token_id
+        return model
 
     @classmethod
     def _gen_aoa_config(cls, config: InternVLChatConfig):
@@ -209,71 +230,12 @@ class InternVLChatModel(PretrainedModel):
         flat_input_embeds = paddle.scatter(flat_input_embeds, selected_indices, flat_vit_embeds, overwrite=True)
         return flat_input_embeds.reshape([batch_size, seq_len, hidden_size])
 
-    def _build_position_ids(self, attention_mask: paddle.Tensor) -> paddle.Tensor:
-        position_ids = paddle.cumsum(attention_mask.astype("int64"), axis=-1) - 1
-        return paddle.where(attention_mask > 0, position_ids, paddle.zeros_like(position_ids))
-
-    def _apply_repetition_penalty(
-        self, logits: paddle.Tensor, token_ids: paddle.Tensor, penalty: float
-    ) -> paddle.Tensor:
-        if penalty == 1.0:
-            return logits
-
-        updated_logits = logits.clone()
-        batch_size = token_ids.shape[0]
-        for batch_idx in range(batch_size):
-            seen_token_ids = paddle.unique(token_ids[batch_idx].astype("int64"))
-            seen_logits = paddle.gather(updated_logits[batch_idx], seen_token_ids, axis=0)
-            penalized_logits = paddle.where(seen_logits < 0, seen_logits * penalty, seen_logits / penalty)
-            scatter_index = seen_token_ids.unsqueeze(-1)
-            updated_logits[batch_idx] = paddle.scatter(
-                updated_logits[batch_idx], scatter_index, penalized_logits, overwrite=True
-            )
-        return updated_logits
-
-    def _infer_img_context_token_id(self, input_ids: paddle.Tensor) -> Optional[int]:
-        pad_token_id = getattr(self.config.llm_config, "pad_token_id", None)
-        best_token_id = None
-        best_run = 0
-
-        input_ids_list = input_ids.numpy().tolist()
-        for sequence in input_ids_list:
-            prev_token_id = None
-            current_run = 0
-            for token_id in sequence:
-                if token_id == prev_token_id:
-                    current_run += 1
-                else:
-                    prev_token_id = token_id
-                    current_run = 1
-
-                if token_id == pad_token_id:
-                    continue
-
-                if current_run > best_run:
-                    best_run = current_run
-                    best_token_id = token_id
-
-        min_expected_run = max(8, self.num_image_token // 4)
-        if best_token_id is not None and best_run >= min_expected_run:
-            logger.warning(
-                f"img_context_token_id is not initialized, inferred token id {best_token_id} from repeated runs."
-            )
-            return int(best_token_id)
-
-        return None
-
-    def _ensure_img_context_token_id(self, input_ids: paddle.Tensor) -> None:
-        if self.img_context_token_id is not None:
-            return
-
-        inferred_token_id = self._infer_img_context_token_id(input_ids)
-        if inferred_token_id is None:
+    def _ensure_img_context_token_id(self) -> None:
+        if self.img_context_token_id is None:
             raise ValueError(
-                "img_context_token_id is not initialized and could not be inferred from input_ids. "
-                "Please call chat()/batch_chat() or set it manually."
+                "Set config.img_context_token_id from the processor's image_token_id before multimodal forward. "
+                "chat()/batch_chat() initialize it from the tokenizer automatically."
             )
-        self.img_context_token_id = inferred_token_id
 
     def forward(
         self,
@@ -281,6 +243,7 @@ class InternVLChatModel(PretrainedModel):
         input_ids: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         position_ids: Optional[paddle.Tensor] = None,
+        attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         image_grid_thw: Optional[paddle.Tensor] = None,
         pixel_values_videos: Optional[paddle.Tensor] = None,
         video_grid_thw: Optional[paddle.Tensor] = None,
@@ -302,7 +265,7 @@ class InternVLChatModel(PretrainedModel):
 
         input_embeds = self.language_model.get_input_embeddings()(input_ids).clone()
         if pixel_values is not None and past_key_values is None:
-            self._ensure_img_context_token_id(input_ids)
+            self._ensure_img_context_token_id()
             vit_embeds = self.extract_feature(pixel_values)
             if image_flags is not None:
                 image_flags = image_flags.squeeze(-1)
@@ -314,6 +277,7 @@ class InternVLChatModel(PretrainedModel):
             inputs_embeds=input_embeds,
             attention_mask=attention_mask,
             position_ids=position_ids,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             past_key_values=past_key_values,
             use_cache=use_cache,
             output_attentions=output_attentions,
@@ -324,11 +288,11 @@ class InternVLChatModel(PretrainedModel):
 
         loss = None
         if labels is not None:
-            shift_logits = logits[..., :-1, :]
-            shift_labels = labels[..., 1:]
+            # SFTDataset already shifts labels to the next token and masks with -100.
             loss = F.cross_entropy(
-                shift_logits.reshape([-1, shift_logits.shape[-1]]),
-                shift_labels.reshape([-1]),
+                logits.reshape([-1, logits.shape[-1]]).astype("float32"),
+                labels.reshape([-1]),
+                ignore_index=-100,
                 reduction="mean",
             )
 
@@ -420,9 +384,9 @@ class InternVLChatModel(PretrainedModel):
         pixel_values,
         question,
         generation_config,
+        num_patches_list=None,
         history=None,
         return_history=False,
-        num_patches_list=None,
         IMG_START_TOKEN="<img>",
         IMG_END_TOKEN="</img>",
         IMG_CONTEXT_TOKEN="<IMG_CONTEXT>",
@@ -471,11 +435,12 @@ class InternVLChatModel(PretrainedModel):
     @paddle.no_grad()
     def generate(
         self,
-        pixel_values: Optional[paddle.Tensor] = None,
         input_ids: Optional[paddle.Tensor] = None,
+        generation_config=None,
+        *,
+        pixel_values: Optional[paddle.Tensor] = None,
         attention_mask: Optional[paddle.Tensor] = None,
         visual_features: Optional[paddle.Tensor] = None,
-        generation_config=None,
         output_hidden_states: Optional[bool] = None,
         **generate_kwargs,
     ):
@@ -487,8 +452,8 @@ class InternVLChatModel(PretrainedModel):
             generation_config = None
 
         do_sample = generate_kwargs.pop("do_sample", None)
-        if do_sample is True and "decode_strategy" not in generate_kwargs:
-            generate_kwargs["decode_strategy"] = "sampling"
+        if do_sample is not None and "decode_strategy" not in generate_kwargs:
+            generate_kwargs["decode_strategy"] = "sampling" if do_sample else "greedy_search"
         elif (
             do_sample is None
             and getattr(generation_config, "do_sample", False)
@@ -504,7 +469,7 @@ class InternVLChatModel(PretrainedModel):
             )
 
         if pixel_values is not None:
-            self._ensure_img_context_token_id(input_ids)
+            self._ensure_img_context_token_id()
             vit_embeds = visual_features if visual_features is not None else self.extract_feature(pixel_values)
             input_embeds = self.language_model.get_input_embeddings()(input_ids)
             input_embeds = self._merge_input_embeds_with_vision_features(input_ids, input_embeds, vit_embeds)
