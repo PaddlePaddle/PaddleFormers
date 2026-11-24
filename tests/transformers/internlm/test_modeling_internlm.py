@@ -13,15 +13,22 @@
 # limitations under the License.
 from __future__ import annotations
 
+import tempfile
 import unittest
 
+import numpy as np
 import paddle
+from safetensors.numpy import save_file
 
+from paddleformers.nn.pp_model import EmbeddingPipe
 from paddleformers.transformers import (
     InternLMConfig,
     InternLMForCausalLM,
+    InternLMForCausalLMPipe,
     InternLMModel,
 )
+from paddleformers.transformers.internlm.modeling import InternLMRotaryEmbedding
+from paddleformers.transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_generation_utils import GenerationTesterMixin
 from tests.transformers.test_modeling_common import (
@@ -308,6 +315,80 @@ class InternLMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCa
     def test_model_position_ids(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.check_model_position_ids(*config_and_inputs)
+
+    def test_lm_head_loss_return_formats(self):
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        model = InternLMForCausalLM(config)
+        model.eval()
+        input_ids = inputs["input_ids"]
+        outputs = model(input_ids, labels=input_ids, use_cache=False, return_dict=False)
+        structured = model(input_ids, labels=input_ids, use_cache=False, return_dict=True)
+        self.assertEqual(len(outputs), 2)
+        self.assertEqual(outputs[0].ndim, 0)
+        self.assertEqual(outputs[1].shape, [*input_ids.shape, config.vocab_size])
+        np.testing.assert_allclose(outputs[0].numpy(), structured.loss.numpy(), rtol=1e-6)
+        np.testing.assert_allclose(outputs[1].numpy(), structured.logits.numpy(), rtol=1e-6)
+        outputs[0].backward()
+        self.assertIsNotNone(model.model.layers[0].self_attn.q_proj.weight.grad)
+
+    def test_custom_position_ids_cached_generation(self):
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        config.rotary = {"base": 10000, "type": "origin"}
+        config.rope_parameters = {"rope_theta": 10000, "rope_type": "default"}
+        model = InternLMForCausalLM(config)
+        model.eval()
+        input_ids = inputs["input_ids"][:, :6]
+        position_ids = paddle.arange(6).unsqueeze(0) + paddle.to_tensor([[20], [40]])
+        with paddle.no_grad():
+            cached = model(input_ids[:, :3], position_ids=position_ids[:, :3], use_cache=True, return_dict=True)
+            for end in range(4, 7):
+                cached = model(
+                    input_ids[:, end - 1 : end],
+                    position_ids=position_ids[:, end - 1 : end],
+                    past_key_values=cached.past_key_values,
+                    use_cache=True,
+                    return_dict=True,
+                )
+                full = model(input_ids[:, :end], position_ids=position_ids[:, :end], use_cache=False, return_dict=True)
+                np.testing.assert_allclose(cached.logits[:, -1].numpy(), full.logits[:, -1].numpy(), atol=1e-5)
+
+    def test_pipeline_dynamic_rotary_embedding(self):
+        config = self.model_tester.get_config()
+        config.max_position_embeddings = 4
+        config.rope_parameters = {"rope_theta": 10000, "rope_type": "dynamic", "factor": 2.0}
+        pipe = EmbeddingPipe(config, rotary_emb_cls=InternLMForCausalLMPipe._rotary_emb_cls)
+        self.assertIsInstance(pipe.rotary_emb, InternLMRotaryEmbedding)
+        positions = paddle.arange(8).unsqueeze(0)
+        hidden = paddle.zeros([1, 8, config.hidden_size])
+        cos, sin = pipe.rotary_emb(hidden, positions)
+        expected_inv_freq, _ = ROPE_INIT_FUNCTIONS["dynamic"](config, seq_len=8)
+        np.testing.assert_allclose(pipe.rotary_emb.inv_freq.numpy(), expected_inv_freq.numpy())
+        frequencies = positions.astype("float32").unsqueeze(-1) * expected_inv_freq
+        phases = paddle.concat([frequencies, frequencies], axis=-1)
+        np.testing.assert_allclose(cos.numpy(), phases.cos().numpy(), atol=1e-6)
+        np.testing.assert_allclose(sin.numpy(), phases.sin().numpy(), atol=1e-6)
+
+    def test_hf_checkpoint_loading_with_explicit_dtype(self):
+        config = self.model_tester.get_config()
+        model = InternLMForCausalLM(config)
+        original_state = {name: value.numpy() for name, value in model.state_dict().items()}
+        hf_state = {}
+        for name, value in original_state.items():
+            if name.endswith(".weight") and any(f".{proj}." in name for proj in model.transpose_weight_keys):
+                value = value.T
+            hf_state[name] = np.ascontiguousarray(value)
+        with tempfile.TemporaryDirectory() as directory:
+            config.save_pretrained(directory)
+            save_file(hf_state, directory + "/model.safetensors", metadata={"format": "pt"})
+            for dtype in ("float32", "bfloat16"):
+                with self.subTest(dtype=dtype):
+                    loaded = InternLMForCausalLM.from_pretrained(
+                        directory, dtype=dtype, load_checkpoint_format="flex_checkpoint"
+                    )
+                    self.assertEqual(loaded.model.layers[0].self_attn.q_proj.weight.dtype, getattr(paddle, dtype))
+                    for name, value in loaded.state_dict().items():
+                        expected = paddle.to_tensor(original_state[name]).astype(value.dtype).astype("float32")
+                        np.testing.assert_allclose(value.astype("float32").numpy(), expected.numpy(), err_msg=name)
 
     def test_generate_without_input_ids(self):
         pass

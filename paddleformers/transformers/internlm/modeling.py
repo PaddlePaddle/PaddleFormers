@@ -1,4 +1,4 @@
-# Copyright (c) 2025 PaddlePaddle Authors. All Rights Reserved.
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,7 +33,6 @@ from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from ..modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
-from .auto_dist_config import get_dist_config
 from .configuration import InternLMConfig
 
 
@@ -47,50 +46,13 @@ def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
     return paddle.cat((-x2, x1), axis=-1)
 
 
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
-    """
-    Applies rotary positional embedding to query and key tensors.
-
-    Args:
-        q (paddle.Tensor): Query tensor with shape [B, N_q, S, D_h].
-        k (paddle.Tensor): Key tensor with shape [B, N_kv, S, D_h].
-        cos (paddle.Tensor): Cosine values with shape [S, D_h].
-        sin (paddle.Tensor): Sine values with shape [S, D_h].
-    """
+def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
+    """Apply RoPE using cosine and sine values for the current position IDs."""
     original_dtype = q.dtype
-    if cos.ndim == 2:
-        cos = cos.unsqueeze(0)
-        sin = sin.unsqueeze(0)
-
-    position_gather_indices = None
-    if position_ids is None:
-        q_cos = cos[:, -q.shape[-2] :, :]
-        q_sin = sin[:, -q.shape[-2] :, :]
-    else:
-        if cos.shape[0] == 1 and position_ids.shape[0] > 1:
-            cos = cos.expand([position_ids.shape[0], -1, -1])
-            sin = sin.expand([position_ids.shape[0], -1, -1])
-        position_gather_indices = position_ids.unsqueeze(-1).expand(
-            [position_ids.shape[0], position_ids.shape[1], cos.shape[-1]]
-        )
-        q_cos = paddle.take_along_axis(cos, position_gather_indices, axis=1)
-        q_sin = paddle.take_along_axis(sin, position_gather_indices, axis=1)
-
-    if position_gather_indices is not None and position_ids.shape[-1] == k.shape[-2]:
-        k_cos = paddle.take_along_axis(cos, position_gather_indices, axis=1)
-        k_sin = paddle.take_along_axis(sin, position_gather_indices, axis=1)
-    else:
-        k_cos = cos[:, : k.shape[-2], :]
-        k_sin = sin[:, : k.shape[-2], :]
-
-    q_cos = q_cos.unsqueeze(unsqueeze_dim)
-    q_sin = q_sin.unsqueeze(unsqueeze_dim)
-    k_cos = k_cos.unsqueeze(unsqueeze_dim)
-    k_sin = k_sin.unsqueeze(unsqueeze_dim)
-
-    q_embed = (q * q_cos) + (rotate_half(q) * q_sin)
-    k_embed = (k * k_cos) + (rotate_half(k) * k_sin)
-
+    cos = cos.unsqueeze(unsqueeze_dim)
+    sin = sin.unsqueeze(unsqueeze_dim)
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
     return q_embed.astype(original_dtype), k_embed.astype(original_dtype)
 
 
@@ -188,7 +150,7 @@ class InternLMAttention(nn.Layer):
         value_states = self.v_proj(hidden_states).reshape(kv_shape).transpose(1, 2)
 
         cos, sin = position_embeddings
-        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, position_ids)
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
         if past_key_values is not None:
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
@@ -247,7 +209,7 @@ class InternLMDecoderLayer(nn.Layer):
         past_key_values: Cache | None = None,
         output_attentions: bool = False,
         use_cache: bool = False,
-    ) -> (tuple[paddle.Tensor] | tuple[paddle.Tensor, paddle.Tensor]):
+    ) -> tuple[paddle.Tensor] | tuple[paddle.Tensor, paddle.Tensor]:
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
         hidden_states, self_attn_weights = self.self_attn(
@@ -342,10 +304,6 @@ class InternLMRotaryEmbedding(nn.Layer):
 class InternLMPretrainedModel(PretrainedModel):
     config_class = InternLMConfig
     base_model_prefix = "model"
-    # The HF and Paddle parameter names are identical, but Linear weights still
-    # need `^T` conversion. Prevent the generic flex-checkpoint identity dtype
-    # rules from shadowing the transpose rules in `_gen_aoa_config`.
-    is_fleet = True
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
     transpose_weight_keys = [
         "q_proj",
@@ -518,8 +476,7 @@ class InternLMModel(InternLMPretrainedModel):
             "prepare_decoder_attention_mask": self._prepare_decoder_attention_mask,
         }
         causal_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(**mask_kwargs)
-        full_position_ids = paddle.arange(0, kv_seq_len + seq_length, dtype=paddle.int64).unsqueeze(0).tile((bsz, 1))
-        position_embeddings = self.rotary_emb(inputs_embeds, full_position_ids)
+        position_embeddings = self.rotary_emb(inputs_embeds, position_ids)
         all_hidden_states = [] if output_hidden_states else None
         all_self_attns = [] if output_attentions else None
 
@@ -622,8 +579,6 @@ class InternLMModel(InternLMPretrainedModel):
 
 
 class InternLMForCausalLM(InternLMPretrainedModel):
-    _keys_to_ignore_on_load_missing = None
-
     def __init__(self, config: InternLMConfig):
         super().__init__(config)
         self.config = config
@@ -702,15 +657,13 @@ class InternLMForCausalLM(InternLMPretrainedModel):
 
         logits = self.lm_head(hidden_states)
 
-        if not return_dict:
-            if labels is not None:
-                return self.criterion(logits, labels, loss_mask)
-            output = (logits,) + outputs[1:]
-            return output
-
         loss = None
         if labels is not None:
             loss, _ = self.criterion(logits, labels, loss_mask)
+
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            return (loss,) + output if loss is not None else output
 
         return CausalLMOutputWithPast(
             loss=loss,
@@ -762,15 +715,11 @@ class InternLMForCausalLM(InternLMPretrainedModel):
         )
         return model_inputs
 
-    def auto_dist_config(self, prefix=""):
-        assert self.config.use_single_model_implementation, "Use `get_dist_config` only in single card mode."
-        return get_dist_config(self, prefix)
-
 
 class InternLMForCausalLMPipe(GeneralModelForCausalLMPipe):
     config_class = InternLMConfig
     _decoder_layer_cls = InternLMDecoderLayer
-    _get_tensor_parallel_mappings = InternLMModel._get_tensor_parallel_mappings
+    _rotary_emb_cls = InternLMRotaryEmbedding
     _init_weights = InternLMModel._init_weights
     _keep_in_fp32_modules = InternLMModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]
