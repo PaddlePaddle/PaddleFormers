@@ -506,6 +506,13 @@ import_structure = {
     "internvl3.modeling": ["InternVisionModel", "InternVLChatModel", "InternVLChatForConditionalGeneration"],
     "internvl3.processing": ["InternVL3Processor", "InternVLProcessor"],
     "internvl3.processor": ["InternVL3Processor", "InternVLProcessor"],
+    "openelm.configuration": ["OpenELMConfig"],
+    "openelm.modeling": [
+        "OpenELMModel",
+        "OpenELMForCausalLM",
+        "OpenELMForCausalLMPipe",
+    ],
+    "openelm": [],
     "stablelm": [],
     "stablelm.configuration": ["StableLmConfig"],
     "stablelm.modeling": [
@@ -646,6 +653,7 @@ if TYPE_CHECKING:
     from .shieldgemma2 import *
     from .glm_ocr import *
     from .internvl3 import *
+    from .openelm import *
     from .stablelm import *
     from .molmo import *
     from .olmo2 import *
