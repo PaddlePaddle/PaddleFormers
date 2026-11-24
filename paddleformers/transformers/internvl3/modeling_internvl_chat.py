@@ -289,12 +289,16 @@ class InternVLChatModel(PretrainedModel):
         loss = None
         if labels is not None:
             # SFTDataset already shifts labels to the next token and masks with -100.
-            loss = F.cross_entropy(
+            token_loss = F.cross_entropy(
                 logits.reshape([-1, logits.shape[-1]]).astype("float32"),
                 labels.reshape([-1]),
                 ignore_index=-100,
-                reduction="mean",
+                reduction="none",
             )
+            # Normalize by supervised tokens, independent of CE mean-reduction
+            # semantics for ignored labels. All-ignored batches have zero loss.
+            valid_tokens = (labels != -100).astype("float32").sum()
+            loss = token_loss.sum() / valid_tokens.clip(min=1.0)
 
         if not return_dict:
             output = (logits,) + outputs[1:]

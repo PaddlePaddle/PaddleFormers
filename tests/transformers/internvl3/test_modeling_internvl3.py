@@ -436,16 +436,31 @@ class InternVL3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         labels = paddle.concat([inputs["input_ids"][:, 1:], paddle.full([2, 1], -100, dtype="int64")], axis=1)
         labels[:, : self.model_tester.num_image_token] = -100
         outputs = model(**inputs, labels=labels, return_dict=True)
+        # Select only supervised positions so the reference mean cannot count
+        # ignored labels in its denominator.
+        valid = labels.flatten() != -100
         expected = F.cross_entropy(
-            outputs.logits.astype("float32").reshape([-1, config.llm_config.vocab_size]),
-            labels.flatten(),
-            ignore_index=-100,
+            outputs.logits.astype("float32").reshape([-1, config.llm_config.vocab_size])[valid],
+            labels.flatten()[valid],
         )
         np.testing.assert_allclose(outputs.loss.numpy(), expected.numpy(), rtol=1e-6)
         outputs.loss.backward()
         self.assertIsNotNone(model.mlp1[1].weight.grad)
         self.assertTrue(bool(paddle.all(paddle.isfinite(model.mlp1[1].weight.grad))))
         self.assertGreater(float(paddle.abs(model.mlp1[1].weight.grad).sum()), 0)
+
+    def test_all_ignored_labels_have_zero_loss_and_gradient(self):
+        config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
+        model = InternVLChatForConditionalGeneration(config)
+        model.eval()
+        labels = paddle.full_like(inputs["input_ids"], -100)
+        outputs = model(**inputs, labels=labels, return_dict=True)
+        self.assertEqual(float(outputs.loss), 0.0)
+        outputs.loss.backward()
+        gradient = model.get_output_embeddings().weight.grad
+        self.assertIsNotNone(gradient)
+        self.assertTrue(bool(paddle.all(paddle.isfinite(gradient))))
+        self.assertEqual(float(paddle.abs(gradient).sum()), 0.0)
 
     def test_packed_attention_mask_forwarded(self):
         config, inputs = self.model_tester.prepare_config_and_inputs_for_common()
