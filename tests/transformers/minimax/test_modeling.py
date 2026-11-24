@@ -318,19 +318,24 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
     def test_sparse_moe_cinn_matches_dense_reference_with_empty_experts(self):
         self.addCleanup(paddle.set_device, paddle.get_device())
         paddle.set_device("gpu:0")
+        self._check_sparse_moe_with_empty_experts(compile_model=True)
+
+    def _check_sparse_moe_with_empty_experts(self, compile_model):
         config = self.model_tester.get_config()
         config.router_jitter_noise = 0.0
         reference = MiniMaxSparseMoeBlock(config)
         dynamic = MiniMaxSparseMoeBlock(config)
-        compiled = MiniMaxSparseMoeBlock(config)
         # Positive inputs and strictly ordered gate columns route every token
         # to the same two experts, leaving the other experts empty.
         gate_weight = paddle.arange(config.num_local_experts, dtype="float32").unsqueeze(0)
         gate_weight = gate_weight.expand([config.hidden_size, config.num_local_experts]) / config.hidden_size
         reference.gate.weight.set_value(gate_weight)
         dynamic.set_state_dict(reference.state_dict())
-        compiled.set_state_dict(reference.state_dict())
-        compiled = paddle.jit.to_static(compiled, full_graph=True, backend="CINN")
+        models = [dynamic]
+        if compile_model:
+            compiled = MiniMaxSparseMoeBlock(config)
+            compiled.set_state_dict(reference.state_dict())
+            models.append(paddle.jit.to_static(compiled, full_graph=True, backend="CINN"))
         source = paddle.ones([1, 2, config.hidden_size])
         x = source.clone()
         x.stop_gradient = False
@@ -342,7 +347,7 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
         expected = sum(expert(flat) * routing[:, index : index + 1] for index, expert in enumerate(reference.experts))
         expected = expected.reshape(source.shape)
         expected.square().sum().backward()
-        for model in (dynamic, compiled):
+        for model in models:
             actual_x = source.clone()
             actual_x.stop_gradient = False
             actual = model(actual_x)
@@ -622,3 +627,14 @@ class MiniMaxModelTest(ModelTesterMixin, unittest.TestCase):
 
         with self.assertRaisesRegex(NotImplementedError, "does not support output_router_logits"):
             model(input_ids, output_router_logits=True)
+
+
+class MiniMaxSparseMoeCPUTest(unittest.TestCase):
+    # Do not inherit MiniMaxModelTest: its GPU-initializing setUp skips on CPU.
+    _check_sparse_moe_with_empty_experts = MiniMaxModelTest._check_sparse_moe_with_empty_experts
+
+    def test_sparse_moe_matches_dense_reference_with_empty_experts(self):
+        self.addCleanup(paddle.set_device, paddle.get_device())
+        paddle.set_device("cpu")
+        self.model_tester = MiniMaxModelTester(self)
+        self._check_sparse_moe_with_empty_experts(compile_model=False)
