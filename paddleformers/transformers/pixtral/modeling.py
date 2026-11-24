@@ -325,27 +325,29 @@ class PixtralPretrainedModel(PretrainedModel):
     def _gen_aoa_config(cls, config: PixtralVisionConfig):
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
 
+        # HF PixtralVisionModel owns these layers directly. base_model_prefix
+        # is loader metadata, not a prefix in its standalone state_dict keys.
         aoa_statements = [
-            f"vision_encoder.patch_conv.weight -> {model_prefix}patch_conv.weight",
-            f"vision_encoder.ln_pre.weight -> {model_prefix}ln_pre.weight",
+            f"patch_conv.weight -> {model_prefix}patch_conv.weight",
+            f"ln_pre.weight -> {model_prefix}ln_pre.weight",
         ]
 
         # Transformer layers
         for layer_name in ["attention_norm", "ffn_norm"]:
             aoa_statements.append(
-                f"vision_encoder.transformer.layers.$LAYER_ID.{layer_name}.weight -> "
+                f"transformer.layers.$LAYER_ID.{layer_name}.weight -> "
                 f"{model_prefix}transformer.layers.$LAYER_ID.{layer_name}.weight"
             )
 
         for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
             aoa_statements.append(
-                f"vision_encoder.transformer.layers.$LAYER_ID.attention.{proj_name}.weight^T -> "
+                f"transformer.layers.$LAYER_ID.attention.{proj_name}.weight^T -> "
                 f"{model_prefix}transformer.layers.$LAYER_ID.attention.{proj_name}.weight"
             )
 
         for proj_name in ["gate_proj", "up_proj", "down_proj"]:
             aoa_statements.append(
-                f"vision_encoder.transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight^T -> "
+                f"transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight^T -> "
                 f"{model_prefix}transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight"
             )
 
@@ -356,26 +358,26 @@ class PixtralPretrainedModel(PretrainedModel):
         model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
 
         aoa_statements = [
-            f"{model_prefix}patch_conv.weight -> vision_encoder.patch_conv.weight",
-            f"{model_prefix}ln_pre.weight -> vision_encoder.ln_pre.weight",
+            f"{model_prefix}patch_conv.weight -> patch_conv.weight",
+            f"{model_prefix}ln_pre.weight -> ln_pre.weight",
         ]
 
         for layer_name in ["attention_norm", "ffn_norm"]:
             aoa_statements.append(
                 f"{model_prefix}transformer.layers.$LAYER_ID.{layer_name}.weight -> "
-                f"vision_encoder.transformer.layers.$LAYER_ID.{layer_name}.weight"
+                f"transformer.layers.$LAYER_ID.{layer_name}.weight"
             )
 
         for proj_name in ["q_proj", "k_proj", "v_proj", "o_proj"]:
             aoa_statements.append(
                 f"{model_prefix}transformer.layers.$LAYER_ID.attention.{proj_name}.weight^T -> "
-                f"vision_encoder.transformer.layers.$LAYER_ID.attention.{proj_name}.weight"
+                f"transformer.layers.$LAYER_ID.attention.{proj_name}.weight"
             )
 
         for proj_name in ["gate_proj", "up_proj", "down_proj"]:
             aoa_statements.append(
                 f"{model_prefix}transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight^T -> "
-                f"vision_encoder.transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight"
+                f"transformer.layers.$LAYER_ID.feed_forward.{proj_name}.weight"
             )
 
         return {"aoa_statements": aoa_statements}

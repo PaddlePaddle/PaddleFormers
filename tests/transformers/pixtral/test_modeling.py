@@ -15,8 +15,11 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from pathlib import Path
 
+import numpy as np
 import paddle
+from safetensors.numpy import load_file, save_file
 
 from paddleformers.transformers import AutoModel
 from paddleformers.transformers.pixtral import PixtralVisionConfig, PixtralVisionModel
@@ -196,16 +199,16 @@ class PixtralModelTest(unittest.TestCase):
         self.assertIn("aoa_statements", aoa_config)
         self.assertIn("aoa_statements", inv_aoa_config)
         self.assertIn(
-            "vision_encoder.patch_conv.weight -> patch_conv.weight",
+            "patch_conv.weight -> patch_conv.weight",
             aoa_config["aoa_statements"],
         )
         self.assertIn(
-            "patch_conv.weight -> vision_encoder.patch_conv.weight",
+            "patch_conv.weight -> patch_conv.weight",
             inv_aoa_config["aoa_statements"],
         )
         self.assertIn(
             "transformer.layers.$LAYER_ID.attention.q_proj.weight^T -> "
-            "vision_encoder.transformer.layers.$LAYER_ID.attention.q_proj.weight",
+            "transformer.layers.$LAYER_ID.attention.q_proj.weight",
             inv_aoa_config["aoa_statements"],
         )
 
@@ -222,6 +225,54 @@ class PixtralModelTest(unittest.TestCase):
         for name, value in model.state_dict().items():
             self.assertIn(name, loaded_state_dict)
             paddle.testing.assert_close(value, loaded_state_dict[name])
+
+    def test_hf_checkpoint_loading_and_export(self):
+        """Use HF keys/shapes independently of Paddle's inverse AOA mapping."""
+        config = self.model_tester.get_config()
+        config.architectures = ["PixtralVisionModel"]
+        hidden, intermediate = config.hidden_size, config.intermediate_size
+        shapes = {
+            "patch_conv.weight": [hidden, config.num_channels, config.patch_size, config.patch_size],
+            "ln_pre.weight": [hidden],
+        }
+        linear_keys = set()
+        for index in range(config.num_hidden_layers):
+            prefix = f"transformer.layers.{index}."
+            for norm in ("attention_norm", "ffn_norm"):
+                shapes[prefix + norm + ".weight"] = [hidden]
+            for projection in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                key = prefix + "attention." + projection + ".weight"
+                shapes[key] = [hidden, hidden]
+                linear_keys.add(key)
+            for projection, shape in (
+                ("gate_proj", [intermediate, hidden]),
+                ("up_proj", [intermediate, hidden]),
+                ("down_proj", [hidden, intermediate]),
+            ):
+                key = prefix + "feed_forward." + projection + ".weight"
+                shapes[key] = shape
+                linear_keys.add(key)
+        rng = np.random.default_rng(42)
+        hf_state = {key: rng.normal(0, 0.02, shape).astype("float32") for key, shape in shapes.items()}
+        with tempfile.TemporaryDirectory() as directory:
+            source, exported = Path(directory) / "hf", Path(directory) / "exported"
+            config.save_pretrained(source)
+            save_file(hf_state, source / "model.safetensors", metadata={"format": "pt"})
+            model = AutoModel.from_pretrained(
+                str(source), convert_from_hf=True, load_checkpoint_format="flex_checkpoint"
+            ).eval()
+            actual = model.state_dict()
+            self.assertEqual(set(actual), set(hf_state))
+            for key, value in hf_state.items():
+                expected = value.T if key in linear_keys else value
+                np.testing.assert_array_equal(actual[key].numpy(), expected, err_msg=key)
+            model.save_pretrained(exported, save_checkpoint_format="flex_checkpoint")
+            round_trip = {}
+            for shard in exported.glob("*.safetensors"):
+                round_trip.update(load_file(shard))
+            self.assertEqual(set(round_trip), set(hf_state))
+            for key, value in hf_state.items():
+                np.testing.assert_array_equal(round_trip[key], value, err_msg=key)
 
 
 if __name__ == "__main__":
