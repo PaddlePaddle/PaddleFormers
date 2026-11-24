@@ -90,6 +90,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("openelm", "OpenELMConfig"),
         ("stablelm", "StableLmConfig"),
         ("olmo2", "Olmo2Config"),
+        ("olmo3", "Olmo3Config"),
         ("internlm3", "InternLM3Config"),
         ("internlm2", "InternLM2Config"),
         # TODO(VL): When Gemma4 VL is implemented, "gemma4" should point to Gemma4Config (VL wrapper)
@@ -151,6 +152,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("minicpm3", "MiniCPM3Model"),
         ("stablelm", "StableLmForCausalLM"),
         ("olmo2", "Olmo2ForCausalLM"),
+        ("olmo3", "Olmo3ForCausalLM"),
         ("internlm3", "InternLM3ForCausalLM"),
         ("internlm2", "InternLM2"),
         ("gemma4_moe", "Gemma4MoeForCausalLM"),

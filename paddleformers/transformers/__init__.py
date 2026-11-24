@@ -523,6 +523,17 @@ import_structure = {
     "olmo2.configuration": ["Olmo2Config"],
     "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
     "olmo2": [],
+    "olmo3": [],
+    "olmo3.configuration": ["Olmo3Config"],
+    "olmo3.modeling": [
+        "Olmo3ModelProvider",
+        "Olmo3Model",
+        "Olmo3PretrainedModel",
+        "Olmo3ForCausalLM",
+        "Olmo3ForCausalLMPipe",
+        "Olmo3ForCausalLMDeprecated",
+        "Olmo3ForCausalLMPipeDeprecated",
+    ],
     "intern_lm3.configuration": ["InternLM3Config"],
     "intern_lm3.modeling": [
         "InternLM3Model",
@@ -652,6 +663,7 @@ if TYPE_CHECKING:
     from .stablelm import *
     from .molmo import *
     from .olmo2 import *
+    from .olmo3 import *
     from .intern_lm3 import *
     from .intern_lm2_5 import *
     from .intern import *
