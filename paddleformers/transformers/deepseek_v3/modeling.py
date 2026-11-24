@@ -356,9 +356,9 @@ class AddAuxiliaryLoss(paddle.autograd.PyLayer):
 
 def _topk_router_settings(config):
     # V3's non-fused router has always used sigmoid/noaux_tc independently
-    # of the legacy configuration fields used by MoEGate. Only OCR2 opts
-    # into configurable routing; do not rewrite serialized V3 configs.
-    if config.model_type == "deepseek_ocr2":
+    # of the legacy configuration fields used by MoEGate. Derived configs can
+    # explicitly opt in without making this shared module depend on them.
+    if getattr(config, "use_configurable_router", False):
         return config.scoring_func, config.topk_method
     return "sigmoid", "noaux_tc"
 
@@ -436,7 +436,7 @@ class DeepseekV3TopkRouter(nn.Layer):
                 raise ValueError(f"Unsupported scoring_func: {self.scoring_func}")
         topk_indices = self.get_topk_indices(scores)
         topk_weights = scores.gather(1, topk_indices)
-        if self.norm_topk_prob and (self.config.model_type != "deepseek_ocr2" or self.top_k > 1):
+        if self.norm_topk_prob and (not getattr(self.config, "use_configurable_router", False) or self.top_k > 1):
             denominator = topk_weights.sum(dim=-1, keepdim=True) + 1e-20
             topk_weights /= denominator
         topk_weights = topk_weights * self.routed_scaling_factor

@@ -36,6 +36,27 @@ from tests.transformers.test_modeling_common import (
 
 
 class DeepseekV3RoutingDefaultsTest(unittest.TestCase):
+    def test_configurable_router_does_not_depend_on_model_type(self):
+        from paddleformers.transformers.deepseek_v3.modeling import DeepseekV3TopkRouter
+
+        config = DeepseekV3Config(
+            hidden_size=8,
+            n_routed_experts=4,
+            num_experts_per_tok=1,
+            scoring_func="softmax",
+            topk_method="greedy",
+            use_configurable_router=True,
+            norm_topk_prob=True,
+            routed_scaling_factor=1.0,
+        )
+        router = DeepseekV3TopkRouter(config)
+        self.assertEqual((router.scoring_func, router.topk_method), ("softmax", "greedy"))
+        self.assertNotIn("e_score_correction_bias", router.state_dict())
+        router.weight.set_value(paddle.zeros_like(router.weight))
+        _, weights = router(paddle.ones([1, 8]))
+        # Top-1 configurable routing keeps the probability, not a forced 1.
+        np.testing.assert_allclose(weights.numpy(), [[0.25]])
+
     def test_router_scores_and_bias_round_trip(self):
         from paddleformers.transformers.deepseek_ocr2.configuration import (
             DeepseekOCR2Config,

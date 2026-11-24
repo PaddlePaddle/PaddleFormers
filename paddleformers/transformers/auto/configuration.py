@@ -34,6 +34,8 @@ __all__ = [
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
         ("deepseek_ocr2", "DeepseekOCR2Config"),
+        ("aya_vision", "AyaVisionConfig"),
+        ("cohere2", "Cohere2Config"),
         ("deepseek_v3", "DeepseekV3Config"),
         ("deepseek_v32", "DeepseekV32Config"),
         ("paligemma", "PaliGemma2Config"),
@@ -44,6 +46,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
+        ("hunyuan_v1_dense", "HunYuanDenseV1Config"),
         ("llama", "LlamaConfig"),
         ("llama4", "Llama4Config"),
         ("llama4_text", "Llama4TextConfig"),
@@ -80,11 +83,13 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gemma3", "Gemma3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
         ("shieldgemma2", "ShieldGemma2Config"),
+        ("siglip_vision_model", "SiglipVisionConfig"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
         ("molmo", "MolmoConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("stablelm", "StableLmConfig"),
         ("olmo2", "Olmo2Config"),
         ("internlm3", "InternLM3Config"),
         ("internlm2", "InternLM2Config"),
@@ -101,6 +106,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
 MODEL_NAMES_MAPPING = OrderedDict(
     # Base model mapping
     [
+        ("aya_vision", "AyaVision"),
+        ("cohere2", "Cohere2"),
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
         ("deepseek_ocr2", "DeepseekOCR2Model"),
@@ -111,6 +118,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
+        ("hunyuan_v1_dense", "HunYuanDenseV1"),
         ("llama", "Llama"),
         ("llama4", "Llama4ForConditionalGeneration"),
         ("llama4_text", "Llama4TextModel"),
@@ -142,6 +150,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
         ("minicpm3", "MiniCPM3Model"),
+        ("stablelm", "StableLmForCausalLM"),
         ("olmo2", "Olmo2ForCausalLM"),
         ("internlm3", "InternLM3ForCausalLM"),
         ("internlm2", "InternLM2"),
@@ -150,6 +159,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("gemma4", "Gemma4MoeForCausalLM"),
         ("phi4", "Phi4ForCausalLM"),
         ("phi4flash", "Phi4ForCausalLM"),
+        ("siglip_vision_model", "SiglipVision"),
     ]
 )
 
@@ -160,6 +170,7 @@ MULTI_MODELS_MAPPING = OrderedDict(
 
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
+        ("hunyuan_v1_dense", "hunyuan"),
         ("llama4_text", "llama4"),
         ("paligemma", "paligemma2"),
         ("gemma3", "gemma3"),

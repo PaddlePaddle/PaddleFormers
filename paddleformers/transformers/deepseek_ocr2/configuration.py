@@ -98,9 +98,11 @@ class DeepseekOCR2Config(DeepseekV3Config):
         vision_config=None,
         scoring_func="softmax",
         topk_method="greedy",
+        use_configurable_router=True,
         **kwargs,
     ):
         super().__init__(scoring_func=scoring_func, topk_method=topk_method, **kwargs)
+        self.use_configurable_router = use_configurable_router
         self.aux_loss_alpha = aux_loss_alpha
         self.use_mla = use_mla
         # DeepseekOCR2 requires rms_norm_eps to be strictly float
