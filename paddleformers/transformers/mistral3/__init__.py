@@ -21,7 +21,6 @@ from ..pixtral import PixtralImageProcessor, PixtralProcessor
 _import_structure = {
     "configuration": ["Mistral3Config"],
     "modeling": [
-        "Mistral3ForCausalLM",
         "Mistral3ForConditionalGeneration",
         "Mistral3Model",
         "Mistral3PretrainedModel",

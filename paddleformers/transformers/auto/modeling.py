@@ -54,6 +54,8 @@ __all__ = [
 
 MAPPING_NAMES = OrderedDict(
     [
+        ("AyaVision", "aya_vision"),
+        ("Cohere2", "cohere2"),
         ("DeepseekV3", "deepseek_v3"),
         ("DeepseekV32", "deepseek_v32"),
         ("PaliGemma2", "paligemma2"),
@@ -62,6 +64,7 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
+        ("HunYuanDenseV1", "hunyuan"),
         ("Llama", "llama"),
         ("Llama4", "llama4"),
         ("KimiK2", "kimi_k2"),
@@ -98,9 +101,11 @@ MAPPING_NAMES = OrderedDict(
         ("Phi4", "phi4"),
         ("Gemma3", "gemma3"),
         ("Gemma3Text", "gemma3_text"),
+        ("SiglipVision", "siglip_vision_model"),
         ("Gemma4Moe", "gemma4_moe"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
+        ("StableLm", "stablelm"),
         ("Molmo", "molmo"),
         ("Olmo2", "olmo2"),
         ("InternLM3", "intern_lm3"),

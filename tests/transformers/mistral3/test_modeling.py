@@ -26,10 +26,8 @@ from paddleformers.cli.utils import (
 from paddleformers.transformers import (
     AutoConfig,
     AutoModel,
-    AutoModelForCausalLM,
     AutoModelForConditionalGeneration,
     Mistral3Config,
-    Mistral3ForCausalLM,
     Mistral3ForConditionalGeneration,
     Mistral3Model,
 )
@@ -65,6 +63,7 @@ class Mistral3ModelTester:
     def get_config(self):
         return Mistral3Config(
             text_config={
+                "fuse_rms_norm": False,
                 "model_type": "mistral",
                 "vocab_size": self.vocab_size,
                 "hidden_size": self.hidden_size,
@@ -159,19 +158,6 @@ class Mistral3ModelTest(unittest.TestCase):
             [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.vocab_size],
         )
         self.assertIsNotNone(outputs.loss)
-
-    def test_for_causal_lm_alias_forward(self):
-        config = self.model_tester.get_config()
-        model = Mistral3ForCausalLM(config).eval()
-        inputs = self.model_tester.prepare_inputs()
-
-        with paddle.no_grad():
-            outputs = model(**inputs)
-
-        self.assertEqual(
-            outputs.logits.shape,
-            [self.model_tester.batch_size, self.model_tester.seq_length, self.model_tester.vocab_size],
-        )
 
     def test_loss_uses_pre_shifted_labels(self):
         config = self.model_tester.get_config()
@@ -303,7 +289,6 @@ class Mistral3ModelTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdirname:
             model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
             auto_model = AutoModel.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
-            auto_causal_lm = AutoModelForCausalLM.from_pretrained(tmpdirname, load_checkpoint_format="flex_checkpoint")
             auto_conditional_generation = AutoModelForConditionalGeneration.from_pretrained(
                 tmpdirname,
                 load_checkpoint_format="flex_checkpoint",
@@ -311,7 +296,6 @@ class Mistral3ModelTest(unittest.TestCase):
 
         self.assertIsInstance(auto_model_from_config, Mistral3Model)
         self.assertIsInstance(auto_model, Mistral3Model)
-        self.assertIsInstance(auto_causal_lm, Mistral3ForConditionalGeneration)
         self.assertIsInstance(auto_conditional_generation, Mistral3ForConditionalGeneration)
 
 

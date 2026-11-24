@@ -24,7 +24,7 @@ class Mistral3Config(PretrainedConfig):
 
     model_type = "mistral3"
     attribute_map = {"image_token_id": "image_token_index"}
-    sub_configs = {"vision_config": PixtralVisionConfig, "text_config": LlamaConfig}
+    sub_configs = {"vision_config": PixtralVisionConfig, "text_config": PretrainedConfig}
     is_composition = True
 
     def __init__(
@@ -67,9 +67,14 @@ class Mistral3Config(PretrainedConfig):
             self.vision_config = vision_config
 
         if isinstance(text_config, dict):
+            from ..auto.configuration import CONFIG_MAPPING
+
             text_config = dict(text_config)
-            text_config.pop("model_type", None)
-            self.text_config = LlamaConfig(**text_config)
+            text_model_type = text_config.pop("model_type", "llama")
+            # Mistral Small currently uses the Llama-compatible decoder with
+            # independent head_dim below. Do not discard other model types.
+            config_class = LlamaConfig if text_model_type == "mistral" else CONFIG_MAPPING[text_model_type]
+            self.text_config = config_class(**text_config)
         elif text_config is None:
             self.text_config = LlamaConfig(
                 attention_dropout=0.0,
@@ -90,3 +95,8 @@ class Mistral3Config(PretrainedConfig):
             )
         else:
             self.text_config = text_config
+
+        self.text_config.tie_word_embeddings = tie_word_embeddings
+        if "_attn_implementation" in kwargs:
+            self.text_config._attn_implementation = kwargs["_attn_implementation"]
+            self.vision_config._attn_implementation = kwargs["_attn_implementation"]

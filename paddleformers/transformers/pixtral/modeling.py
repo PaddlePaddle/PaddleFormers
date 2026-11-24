@@ -18,6 +18,8 @@ import paddle
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ..model_outputs import BaseModelOutput
 from ..model_utils import PretrainedModel, register_base_model
@@ -115,28 +117,6 @@ class PixtralRotaryEmbedding(nn.Layer):
         return cos.astype(x.dtype), sin.astype(x.dtype)
 
 
-class PixtralMLP(nn.Layer):
-    """MLP for Pixtral (gate + up + down projections)."""
-
-    def __init__(self, config: PixtralVisionConfig):
-        super().__init__()
-        self.hidden_size = config.hidden_size
-        self.intermediate_size = config.intermediate_size
-        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
-        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias_attr=False)
-        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias_attr=False)
-
-        if config.hidden_act == "gelu":
-            self.act_fn = nn.GELU()
-        elif config.hidden_act == "silu":
-            self.act_fn = nn.Silu()
-        else:
-            raise ValueError(f"Unsupported activation: {config.hidden_act}")
-
-    def forward(self, x):
-        return self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
-
-
 class PixtralAttention(nn.Layer):
     """Multi-headed attention for Pixtral vision encoder."""
 
@@ -148,6 +128,7 @@ class PixtralAttention(nn.Layer):
         self.head_dim = self.embed_dim // self.num_heads
         self.scaling = self.head_dim**-0.5
         self.dropout = config.attention_dropout
+        self.is_causal = False
 
         self.q_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=False)
         self.k_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=False)
@@ -178,21 +159,17 @@ class PixtralAttention(nn.Layer):
         cos, sin = position_embeddings
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, unsqueeze_dim=0)
 
-        # Scaled dot-product attention
-        attn_weights = paddle.matmul(query_states, key_states.transpose([0, 1, 3, 2])) * self.scaling
-
-        if attention_mask is not None:
-            attn_weights = attn_weights + attention_mask
-
-        attn_weights = paddle.nn.functional.softmax(attn_weights, axis=-1, dtype=paddle.float32).astype(
-            query_states.dtype
+        attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
+        attn_output, attn_weights = attention_interface(
+            self,
+            query=query_states,
+            key=key_states,
+            value=value_states,
+            attention_mask=attention_mask,
+            dropout=self.dropout if self.training else 0.0,
+            scaling=self.scaling,
+            is_causal=False,
         )
-        if self.training and self.dropout > 0:
-            attn_weights = paddle.nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
-
-        attn_output = paddle.matmul(attn_weights, value_states)
-        attn_output = attn_output.transpose([0, 2, 1, 3])
-        attn_output = attn_output.reshape([batch_size, patches, -1])
         attn_output = self.o_proj(attn_output)
 
         return attn_output, attn_weights
@@ -210,7 +187,7 @@ class PixtralAttentionLayer(nn.Layer):
             has_bias=False,
             norm_eps=1e-5,
         )
-        self.feed_forward = PixtralMLP(config)
+        self.feed_forward = MLP(config, has_bias=False, fuse_up_gate=False)
         self.attention = PixtralAttention(config)
         self.ffn_norm = GeneralNorm.create(
             config=config,

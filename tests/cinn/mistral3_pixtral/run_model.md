@@ -53,13 +53,14 @@ substitutes random images. Tested with NumPy 1.26.4, Pillow 12.3.0 and SciPy 1.1
 
 ```bash
 # Use a new output directory. Obtain these three archives through authorized access.
+pip install scipy
 export CINN_RESOURCE_DIR=/path/to/new-mistral3_pixtral-resources
-python tests/cinn/mistral3_pixtral/prepare_data.py \\
-  --train-archive /path/to/imagenet100.zip \\
-  --val-archive /path/to/ILSVRC2012_img_val.tar \\
-  --devkit /path/to/ILSVRC2012_devkit_t12.tar.gz \\
-  --selection tests/cinn/mistral3_pixtral/image_selection.json \\
-  --asset-manifest tests/cinn/mistral3_pixtral/asset_manifest.json \\
+python tests/cinn/mistral3_pixtral/prepare_data.py \
+  --train-archive /path/to/imagenet100.zip \
+  --val-archive /path/to/ILSVRC2012_img_val.tar \
+  --devkit /path/to/ILSVRC2012_devkit_t12.tar.gz \
+  --selection tests/cinn/mistral3_pixtral/image_selection.json \
+  --asset-manifest tests/cinn/mistral3_pixtral/asset_manifest.json \
   --layout multimodal --output "$CINN_RESOURCE_DIR"
 # CHECKPOINT_DIR contains the public initial.pdparams and inference.pdparams.
 python tests/cinn/mistral3_pixtral/verify_assets.py "$CHECKPOINT_DIR"

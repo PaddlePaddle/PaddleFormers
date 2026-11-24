@@ -12,6 +12,7 @@ minversion = "6.0"
 addopts = "-ra -q "
 pythonpath = ["."]
 testpaths = [
+    "tests/cinn",
     "tests/data",
     "tests/dataset",
     "tests/generation",

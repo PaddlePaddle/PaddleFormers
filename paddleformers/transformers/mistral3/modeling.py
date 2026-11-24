@@ -14,6 +14,8 @@
 
 """Paddle Mistral3 multimodal model."""
 
+import inspect
+import re
 from dataclasses import dataclass
 from typing import Callable
 
@@ -48,6 +50,40 @@ def _normalize_image_sizes(image_sizes):
     if isinstance(image_sizes, paddle.Tensor):
         image_sizes = image_sizes.numpy().tolist()
     return [(int(size[0]), int(size[1])) for size in image_sizes]
+
+
+def _get_text_model_class(config):
+    if config.model_type == "llama":
+        # Keep Mistral Small's independent attention head dimension support.
+        return Mistral3TextModel
+    from ..auto.configuration import MODEL_NAMES_MAPPING
+    from ..auto.modeling import AutoModel
+
+    # Nested HF configs often omit architectures. Supply the registry name to
+    # AutoModel's architecture-based dispatcher without mutating the config.
+    model_config = config.to_dict()
+    model_config["architectures"] = [MODEL_NAMES_MAPPING[config.model_type]]
+    return AutoModel._get_model_class_from_config(None, None, model_config)
+
+
+def _text_checkpoint_statements(config, model_prefix, inverse=False):
+    model_class = _get_text_model_class(config)
+    generator = model_class._gen_inv_aoa_config if inverse else model_class._gen_aoa_config
+    statements = generator(config)["aoa_statements"]
+    source_prefix, target_prefix = "language_model.", model_prefix + "language_model."
+    if inverse:
+        source_prefix, target_prefix = target_prefix, source_prefix
+    result = []
+    for statement in statements:
+        # The multimodal wrapper owns the output head, not the base decoder.
+        if "lm_head." in statement:
+            continue
+        source, target = statement.split(" -> ")
+        pattern = r"[\w.$]+\.(?:weight|bias)(?:\^T)?"
+        source = re.sub(pattern, lambda match: source_prefix + match.group(), source)
+        target = re.sub(pattern, lambda match: target_prefix + match.group(), target)
+        result.append(source + " -> " + target)
+    return result
 
 
 def apply_mistral3_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
@@ -409,8 +445,18 @@ class Mistral3PretrainedModel(PretrainedModel):
             )
 
         if cls != cls.base_model_class:
-            if not config.tie_word_embeddings:
+            if config.tie_word_embeddings:
+                aoa_statements.append("language_model.model.embed_tokens.weight -> lm_head.weight")
+            else:
                 aoa_statements.append("language_model.lm_head.weight -> lm_head.weight")
+
+        if config.text_config.model_type != "llama":
+            aoa_statements = [
+                statement
+                for statement in aoa_statements
+                if not statement.startswith("language_model.model.") or statement.endswith(" -> lm_head.weight")
+            ]
+            aoa_statements.extend(_text_checkpoint_statements(config.text_config, model_prefix))
 
         return {"aoa_statements": aoa_statements}
 
@@ -420,10 +466,20 @@ class Mistral3PretrainedModel(PretrainedModel):
         inv_statements = []
         for statement in aoa_config["aoa_statements"]:
             src, dst = statement.split(" -> ")
+            if config.text_config.model_type != "llama" and dst.startswith(
+                (cls.base_model_prefix + "." if cls != cls.base_model_class else "") + "language_model."
+            ):
+                continue
+            if config.tie_word_embeddings and dst == "lm_head.weight":
+                # Export the shared embedding once, not two sources for one key.
+                continue
             if src.endswith("^T"):
                 inv_statements.append(f"{dst}^T -> {src[:-2]}")
             else:
                 inv_statements.append(f"{dst} -> {src}")
+        if config.text_config.model_type != "llama":
+            model_prefix = cls.base_model_prefix + "." if cls != cls.base_model_class else ""
+            inv_statements.extend(_text_checkpoint_statements(config.text_config, model_prefix, inverse=True))
         return {"aoa_statements": inv_statements}
 
 
@@ -436,7 +492,10 @@ class Mistral3Model(Mistral3PretrainedModel):
         self.config = config
         self.vision_tower = PixtralVisionModel(config.vision_config)
         self.multi_modal_projector = Mistral3MultiModalProjector(config)
-        self.language_model = Mistral3TextModel(config.text_config)
+        self.language_model = _get_text_model_class(config.text_config)(config.text_config)
+        self._text_supports_hidden_states = (
+            "output_hidden_states" in inspect.signature(self.language_model.forward).parameters
+        )
 
     def get_input_embeddings(self):
         return self.language_model.get_input_embeddings()
@@ -546,6 +605,11 @@ class Mistral3Model(Mistral3PretrainedModel):
             )
             inputs_embeds = inputs_embeds.masked_scatter(special_image_mask, image_features)
 
+        text_kwargs = {}
+        if self._text_supports_hidden_states:
+            text_kwargs["output_hidden_states"] = output_hidden_states
+        elif output_hidden_states:
+            raise ValueError(f"{type(self.language_model).__name__} does not support output_hidden_states")
         outputs = self.language_model(
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -553,8 +617,8 @@ class Mistral3Model(Mistral3PretrainedModel):
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             use_cache=use_cache,
-            output_hidden_states=output_hidden_states,
             return_dict=True,
+            **text_kwargs,
         )
 
         if not return_dict:
@@ -571,7 +635,7 @@ class Mistral3Model(Mistral3PretrainedModel):
 
 
 class Mistral3ForConditionalGeneration(Mistral3PretrainedModel):
-    _keys_to_ignore_on_load_missing = [r"lm_head.weight"]
+    _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config: Mistral3Config):
         super().__init__(config)
@@ -579,6 +643,7 @@ class Mistral3ForConditionalGeneration(Mistral3PretrainedModel):
         self.model = Mistral3Model(config)
         self.lm_head = GeneralLMHead(config.text_config)
         self.criterion = CriterionLayer(config.text_config)
+        self.tie_weights()
 
     def get_input_embeddings(self):
         return self.model.get_input_embeddings()
@@ -636,10 +701,7 @@ class Mistral3ForConditionalGeneration(Mistral3PretrainedModel):
             hidden_states = hidden_states[:, -logits_to_keep:, :] if logits_to_keep > 0 else hidden_states
         else:
             hidden_states = hidden_states[:, logits_to_keep, :]
-        if self.config.tie_word_embeddings:
-            logits = paddle.matmul(hidden_states, self.model.get_input_embeddings().weight, transpose_y=True)
-        else:
-            logits = self.lm_head(hidden_states)
+        logits = self.lm_head(hidden_states)
 
         loss = None
         if labels is not None:
@@ -694,11 +756,7 @@ class Mistral3ForConditionalGeneration(Mistral3PretrainedModel):
         return model_inputs
 
 
-Mistral3ForCausalLM = Mistral3ForConditionalGeneration
-
-
 __all__ = [
-    "Mistral3ForCausalLM",
     "Mistral3ForConditionalGeneration",
     "Mistral3Model",
     "Mistral3PretrainedModel",
