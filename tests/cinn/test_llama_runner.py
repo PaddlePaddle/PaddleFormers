@@ -1,6 +1,16 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import json
 import runpy
@@ -12,7 +22,12 @@ from unittest import mock
 import numpy as np
 import paddle
 
-from tests.cinn.llama_runner import parse_args, run_inference, run_training
+from tests.cinn.llama_runner import (
+    load_guard_config,
+    parse_args,
+    run_inference,
+    run_training,
+)
 
 
 class TinyNet(paddle.nn.Layer):
@@ -26,6 +41,21 @@ class TinyNet(paddle.nn.Layer):
 
 
 class LlamaRunnerTest(unittest.TestCase):
+    def test_real_guard_uses_serialized_config_values(self):
+        source = Path(__file__).parent / "llama_guard4" / "tiny_config.json"
+        data = json.loads(source.read_text())
+        data["text_config"]["vocab_size"] = 257
+        data["image_token_index"] = 256
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps(data))
+            real = load_guard_config(path, real=True)
+            self.assertEqual(real.text_config.vocab_size, 257)
+            self.assertEqual(real.image_token_index, 256)
+            tiny = load_guard_config(path, real=False)
+            self.assertEqual(tiny.text_config.vocab_size, 128)
+            self.assertEqual(tiny.image_token_index, 100)
+
     def setUp(self):
         self.addCleanup(paddle.set_device, paddle.get_device())
         paddle.set_device("cpu")

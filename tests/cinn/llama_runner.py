@@ -83,6 +83,18 @@ def run_inference(options, net, args):
     return
 
 
+def load_guard_config(path, real):
+    from paddleformers.transformers import Llama4Config
+
+    config = Llama4Config.from_pretrained(str(path))
+    config.text_config._attn_implementation = "eager"
+    config.text_config.use_cache = False
+    if not real:
+        config.text_config.vocab_size = 128
+        config.image_token_index = 100
+    return config
+
+
 def run_training(options, model, net, args, samples, source_commit, initial_hash):
     net.train()
     opt = paddle.optimizer.AdamW(learning_rate=2e-5, parameters=model.parameters())
@@ -185,7 +197,6 @@ def main(kind, argv=None):
     # Loading model classes imports Fleet GPU operators. Keep CLI inspection
     # and the CPU runner unit tests independent of CUDA device discovery.
     from paddleformers.transformers import (
-        Llama4Config,
         Llama4ForCausalLM,
         Llama4ForConditionalGeneration,
         Llama4TextConfig,
@@ -201,15 +212,7 @@ def main(kind, argv=None):
         c.use_cache = False
         model = Llama4ForCausalLM(c)
     else:
-        c = Llama4Config.from_pretrained(str(Path(__file__).parent / "llama_guard4" / "tiny_config.json"))
-        c.text_config._attn_implementation = "eager"
-        c.text_config.use_cache = False
-        if options.real:
-            c.text_config.vocab_size = 202048
-            c.image_token_index = 200092
-        else:
-            c.text_config.vocab_size = 128
-            c.image_token_index = 100
+        c = load_guard_config(Path(__file__).parent / "llama_guard4" / "tiny_config.json", options.real)
         model = Llama4ForConditionalGeneration(c)
     if options.checkpoint:
         if options.checkpoint.exists():
