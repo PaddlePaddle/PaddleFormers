@@ -17,6 +17,7 @@
 
 import json
 import os
+import warnings
 from collections import defaultdict
 from functools import partial
 from typing import Optional, Tuple, Union
@@ -68,6 +69,7 @@ def _resolve_hf_checkpoint_dir(pretrained_model_name_or_path, **kwargs):
         token=kwargs.get("token"),
         local_files_only=kwargs.get("local_files_only", False),
         download_hub=kwargs.get("download_hub"),
+        force_return=True,
     )
     if resolved_file is None:
         return None
@@ -299,62 +301,28 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
         self.tie_weights()
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        if not isinstance(pretrained_model_name_or_path, (str, os.PathLike)):
-            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-
-        native_path = os.path.join(
-            pretrained_model_name_or_path, kwargs.get("subfolder") or "", "model_state.pdparams"
-        )
-        if os.path.isfile(native_path):
-            dtype = kwargs.pop("dtype", None)
-            config = kwargs.pop("config", None)
-            if not isinstance(config, PretrainedConfig):
-                config_path = config if config is not None else pretrained_model_name_or_path
-                config, model_kwargs = cls.config_class.from_pretrained(
-                    config_path, return_unused_kwargs=True, **kwargs
-                )
-            else:
-                model_kwargs = kwargs
-            for key in (
-                "cache_dir",
-                "subfolder",
-                "revision",
-                "token",
-                "force_download",
-                "local_files_only",
-                "download_hub",
-            ):
-                model_kwargs.pop(key, None)
-            if dtype is not None:
-                config.dtype = dtype
-            with dtype_guard(dtype or paddle.get_default_dtype()):
-                model = cls(config, *args, **model_kwargs)
-            state_dict = paddle.load(native_path)
-            missing_keys, unexpected_keys = model.set_state_dict(state_dict)
-            if missing_keys or unexpected_keys:
-                raise ValueError(
-                    f"Native FastVLM checkpoint is incomplete; missing={missing_keys}, unexpected={unexpected_keys}"
-                )
-            return model
-
-        checkpoint_dir = _resolve_hf_checkpoint_dir(str(pretrained_model_name_or_path), **kwargs)
-        if checkpoint_dir is None:
-            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-        if not _is_hf_fastvlm_checkpoint(checkpoint_dir):
-            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-
-        if not kwargs.pop("convert_from_hf", True):
-            raise ValueError("Original FastVLM safetensors require convert_from_hf=True")
+    def _build_pretrained_model(cls, path, args, kwargs):
+        """Separate loader options from constructor kwargs for both formats."""
+        kwargs = dict(kwargs)
         dtype = kwargs.pop("dtype", None)
         config = kwargs.pop("config", None)
+        kwargs.pop("convert_from_hf", None)
+        # This converter strictly loads a complete local state dict. These
+        # options belong to the loader, never to the model constructor.
+        kwargs.pop("load_checkpoint_format", None)
+        for key in ("load_via_cpu", "low_cpu_mem_usage"):
+            if kwargs.pop(key, False):
+                warnings.warn(f"{cls.__name__}'s direct checkpoint converter does not implement {key}.")
+        if kwargs.pop("ignore_mismatched_sizes", False):
+            raise ValueError("ignore_mismatched_sizes=True is not supported by the strict checkpoint converter")
+        if kwargs.pop("variant", None) is not None:
+            raise ValueError("Named checkpoint variants are not supported by the direct checkpoint converter")
+        kwargs.pop("use_safetensors", None)
         if not isinstance(config, PretrainedConfig):
-            config_path = config if config is not None else pretrained_model_name_or_path
+            config_path = config if config is not None else path
             config, model_kwargs = cls.config_class.from_pretrained(config_path, return_unused_kwargs=True, **kwargs)
         else:
             model_kwargs = kwargs
-        # Constructors only accept config. Do not silently discard unknown
-        # arguments; resolution options have already been used above.
         for key in (
             "cache_dir",
             "subfolder",
@@ -369,6 +337,38 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
             config.dtype = dtype
         with dtype_guard(dtype or paddle.get_default_dtype()):
             model = cls(config, *args, **model_kwargs)
+        return model, dtype
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
+        if not isinstance(pretrained_model_name_or_path, (str, os.PathLike)):
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+        native_path = os.path.join(
+            pretrained_model_name_or_path, kwargs.get("subfolder") or "", "model_state.pdparams"
+        )
+        if os.path.isfile(native_path):
+            model, dtype = cls._build_pretrained_model(pretrained_model_name_or_path, args, kwargs)
+            state_dict = paddle.load(native_path)
+            missing_keys, unexpected_keys = model.set_state_dict(state_dict)
+            if missing_keys or unexpected_keys:
+                raise ValueError(
+                    f"Native FastVLM checkpoint is incomplete; missing={missing_keys}, unexpected={unexpected_keys}"
+                )
+            return model
+
+        if kwargs.get("use_safetensors") is False:
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+        checkpoint_dir = _resolve_hf_checkpoint_dir(str(pretrained_model_name_or_path), **kwargs)
+        if checkpoint_dir is None:
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+        if not _is_hf_fastvlm_checkpoint(checkpoint_dir):
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+        if not kwargs.pop("convert_from_hf", True):
+            raise ValueError("Original FastVLM safetensors require convert_from_hf=True")
+        model, dtype = cls._build_pretrained_model(pretrained_model_name_or_path, args, kwargs)
+        config = model.config
         # Paddle's BatchNorm kernels keep parameters and running statistics in
         # FP32 even when convolution inputs use BF16/FP16.
         if dtype in {"bfloat16", "float16"}:
