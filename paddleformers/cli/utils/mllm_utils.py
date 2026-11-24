@@ -25,6 +25,7 @@ _ALL_MODULES = ["vision", "aligner", "llm"]
 
 
 class MLLMModelMapping:
+    aya_vision = "aya_vision"
     qwen2_5_vl = "qwen2_5_vl"
     qwen3_vl = "qwen3_vl"
     qwen3_vl_moe = "qwen3_vl_moe"
@@ -33,6 +34,7 @@ class MLLMModelMapping:
     paddleocr_vl = "paddleocr_vl"
     ernie4_5_moe_vl = "ernie4_5_moe_vl"
     glm4v_moe = "glm4v_moe"
+    molmo = "molmo"
 
 
 @dataclass
@@ -189,6 +191,22 @@ def freeze_model_parameters(model, freeze_config):
         logger.info("\n".join(log_info))
 
 
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.aya_vision,
+        aligner="model.multi_modal_projector",
+        llm=["model.language_model", "lm_head"],
+        vision="model.vision_tower",
+    )
+)
+register_multimodel_keys(
+    MultiModelKeys(
+        model_dtype=MLLMModelMapping.molmo,
+        aligner="model.vision_backbone.image_projector",
+        llm=["model.embed_tokens", "model.layers", "model.norm", "lm_head"],
+        vision="model.vision_backbone",
+    )
+)
 register_multimodel_keys(
     MultiModelKeys(
         model_dtype=MLLMModelMapping.qwen2_5_vl,
