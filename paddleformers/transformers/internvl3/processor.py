@@ -312,9 +312,6 @@ class InternVL3Processor(ProcessorMixin):
             text = [text]
 
         image_inputs = {}
-        image_num_patches = []
-        image_pixel_values = None
-        image_num_patches_indices = np.array([0])
         if images is not None:
             images = self.image_processor.fetch_images(images)
             images = make_flat_list_of_images(images)
@@ -324,8 +321,6 @@ class InternVL3Processor(ProcessorMixin):
             image_num_patches = image_inputs.pop("num_patches")
             image_pixel_values = image_inputs.pop("pixel_values")
             image_num_patches_indices = np.cumsum(image_num_patches)
-
-        if images is not None:
             text, image_patches, image_index = self._insert_image_placeholders(
                 text,
                 image_pixel_values,

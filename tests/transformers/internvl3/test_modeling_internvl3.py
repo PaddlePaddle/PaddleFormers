@@ -17,7 +17,7 @@ from __future__ import annotations
 import inspect
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import paddle
@@ -495,6 +495,70 @@ class InternVL3ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
                     )
                     load_tokenizer.assert_not_called()
                     self.assertEqual(reloaded.img_context_token_id, self.model_tester.image_token_id)
+
+    def test_pretrained_tokenizer_fallback_preserves_loading_options(self):
+        config, _ = self.model_tester.prepare_config_and_inputs_for_common()
+        config.img_context_token_id = None
+        model = InternVLChatForConditionalGeneration(config)
+        for auth in [{"token": "test-token"}, {"use_auth_token": "test-token"}]:
+            options = {
+                **auth,
+                "local_files_only": True,
+                "trust_remote_code": False,
+                "cache_dir": "test-cache",
+                "subfolder": "model-subfolder",
+                "download_hub": "huggingface",
+            }
+            model.config.img_context_token_id = None
+            with self.subTest(auth=list(auth)), patch(
+                "paddleformers.transformers.model_utils.PretrainedModel.from_pretrained", return_value=model
+            ), patch("paddleformers.transformers.auto.tokenizer.AutoTokenizer.from_pretrained") as load_tokenizer:
+                tokenizer = load_tokenizer.return_value
+                tokenizer.get_vocab.return_value = {"<IMG_CONTEXT>": self.model_tester.image_token_id}
+                tokenizer.convert_tokens_to_ids.return_value = self.model_tester.image_token_id
+                loaded = InternVLChatForConditionalGeneration.from_pretrained("private/model", **options)
+                load_tokenizer.assert_called_once_with("private/model", **options)
+                self.assertEqual(loaded.config.img_context_token_id, self.model_tester.image_token_id)
+
+    def test_image_token_id_uses_config_as_single_source(self):
+        config, _ = self.model_tester.prepare_config_and_inputs_for_common()
+        model = InternVLChatForConditionalGeneration(config)
+        config.img_context_token_id = 42
+        self.assertEqual(model.img_context_token_id, 42)
+        model.img_context_token_id = self.model_tester.image_token_id
+        self.assertEqual(config.img_context_token_id, self.model_tester.image_token_id)
+        tokenizer = Mock()
+        model._initialize_img_context_token_id(tokenizer)
+        tokenizer.get_vocab.assert_not_called()
+        tokenizer.convert_tokens_to_ids.assert_not_called()
+        config.img_context_token_id = None
+        tokenizer.get_vocab.return_value = {}
+        with self.assertRaisesRegex(ValueError, "missing <IMG_CONTEXT>"):
+            model._initialize_img_context_token_id(tokenizer)
+        self.assertIsNone(config.img_context_token_id)
+        tokenizer.get_vocab.return_value = {"<IMG_CONTEXT>": self.model_tester.image_token_id}
+        tokenizer.convert_tokens_to_ids.return_value = self.model_tester.image_token_id
+        model._initialize_img_context_token_id(tokenizer)
+        self.assertEqual(model.img_context_token_id, self.model_tester.image_token_id)
+
+    def test_chat_preserves_configured_image_token_id(self):
+        config, _ = self.model_tester.prepare_config_and_inputs_for_common()
+        model = InternVLChatForConditionalGeneration(config)
+        tokenizer = Mock()
+        tokenizer.return_value = {
+            "input_ids": paddle.ones([1, 2], dtype="int64"),
+            "attention_mask": paddle.ones([1, 2], dtype="int64"),
+        }
+        tokenizer.convert_tokens_to_ids.return_value = 99
+        tokenizer.batch_decode.return_value = ["answer"]
+        with patch.object(model, "generate", return_value=paddle.ones([1, 1], dtype="int64")):
+            self.assertEqual(model.chat(tokenizer, None, "question", {}), "answer")
+            self.assertEqual(model.batch_chat(tokenizer, None, ["question"], {}), ["answer"])
+        self.assertEqual(model.config.img_context_token_id, self.model_tester.image_token_id)
+        tokenizer.get_vocab.assert_not_called()
+        self.assertTrue(
+            all(call.args[0] != "<IMG_CONTEXT>" for call in tokenizer.convert_tokens_to_ids.call_args_list)
+        )
 
     def test_image_token_id_uses_config_with_long_padding(self):
         config, inputs = self.model_tester.prepare_config_and_inputs_for_common()

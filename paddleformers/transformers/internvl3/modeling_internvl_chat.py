@@ -79,7 +79,6 @@ class InternVLChatModel(PretrainedModel):
             nn.Linear(llm_hidden_size, llm_hidden_size),
         )
 
-        self.img_context_token_id = config.img_context_token_id
         self.conv_template = get_conv_template(self.template)
         self.system_message = self.conv_template.system_message
 
@@ -89,16 +88,23 @@ class InternVLChatModel(PretrainedModel):
         if model.img_context_token_id is None:
             from ..auto.tokenizer import AutoTokenizer
 
-            tokenizer_kwargs = {
-                key: kwargs[key] for key in ("cache_dir", "download_hub", "subfolder") if key in kwargs
-            }
-            tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, **tokenizer_kwargs)
-            image_token = "<IMG_CONTEXT>"
+            tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path, **kwargs)
+            model._initialize_img_context_token_id(tokenizer)
+        return model
+
+    @property
+    def img_context_token_id(self):
+        return self.config.img_context_token_id
+
+    @img_context_token_id.setter
+    def img_context_token_id(self, value):
+        self.config.img_context_token_id = value
+
+    def _initialize_img_context_token_id(self, tokenizer, image_token="<IMG_CONTEXT>"):
+        if self.config.img_context_token_id is None:
             if image_token not in tokenizer.get_vocab():
                 raise ValueError(f"The InternVL tokenizer is missing {image_token}.")
-            model.img_context_token_id = tokenizer.convert_tokens_to_ids(image_token)
-            model.config.img_context_token_id = model.img_context_token_id
-        return model
+            self.config.img_context_token_id = tokenizer.convert_tokens_to_ids(image_token)
 
     @classmethod
     def _gen_aoa_config(cls, config: InternVLChatConfig):
@@ -350,7 +356,7 @@ class InternVLChatModel(PretrainedModel):
                 raise ValueError(
                     "batch_chat requires `num_patches_list` when `pixel_values` contains multiple samples."
                 )
-        self.img_context_token_id = tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
+        self._initialize_img_context_token_id(tokenizer, IMG_CONTEXT_TOKEN)
 
         queries = []
         template = None
@@ -402,7 +408,7 @@ class InternVLChatModel(PretrainedModel):
         if num_patches_list is None:
             num_patches_list = [pixel_values.shape[0]] if pixel_values is not None else []
 
-        self.img_context_token_id = tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
+        self._initialize_img_context_token_id(tokenizer, IMG_CONTEXT_TOKEN)
         template = get_conv_template(self.template)
         template.system_message = self.system_message
         history = [] if history is None else history
