@@ -509,6 +509,13 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "openelm.configuration": ["OpenELMConfig"],
+    "openelm.modeling": [
+        "OpenELMModel",
+        "OpenELMForCausalLM",
+        "OpenELMForCausalLMPipe",
+    ],
+    "openelm": [],
     "stablelm": [],
     "stablelm.configuration": ["StableLmConfig"],
     "stablelm.modeling": [
@@ -648,6 +655,7 @@ if TYPE_CHECKING:
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .openelm import *
     from .stablelm import *
     from .molmo import *
     from .olmo2 import *
