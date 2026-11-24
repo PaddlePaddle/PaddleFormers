@@ -1,4 +1,16 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 import json
 import os
@@ -249,6 +261,47 @@ class Lfm2VlModelTest(unittest.TestCase):
                     with self.assertRaises(error):
                         Lfm2VlForConditionalGeneration.from_pretrained(directory, config=get_config())
 
+    def test_native_loader_accepts_workflow_kwargs(self):
+        reference = Lfm2VlForConditionalGeneration(get_config()).eval()
+        with tempfile.TemporaryDirectory() as directory:
+            reference.save_pretrained(directory)
+            for config in (None, reference.config):
+                with self.subTest(config=config):
+                    loaded = AutoModelForConditionalGeneration.from_pretrained(
+                        directory,
+                        config=config,
+                        convert_from_hf=False,
+                        load_via_cpu=False,
+                        load_checkpoint_format="flex_checkpoint",
+                        low_cpu_mem_usage=False,
+                        ignore_mismatched_sizes=False,
+                        use_safetensors=False,
+                        variant=None,
+                    )
+                    for key, value in reference.state_dict().items():
+                        np.testing.assert_array_equal(loaded.state_dict()[key].numpy(), value.numpy())
+
+    def test_text_and_vision_lfm2_lora_targets(self):
+        from types import SimpleNamespace
+
+        from paddleformers.cli.utils import get_lora_target_modules
+
+        targets = [
+            get_lora_target_modules(SimpleNamespace(config=SimpleNamespace(model_type=kind)))
+            for kind in ("lfm2", "lfm2_vl")
+        ]
+        self.assertEqual(targets[0], targets[1])
+        self.assertIn(".*in_proj.*", targets[0])
+
+    def test_missing_remote_safetensors_allows_native_fallback(self):
+        from paddleformers.transformers.lfm2_vl.modeling import (
+            _resolve_hf_checkpoint_dir,
+        )
+
+        with mock.patch("paddleformers.transformers.lfm2_vl.modeling.resolve_file_path", return_value=None) as resolve:
+            self.assertIsNone(_resolve_hf_checkpoint_dir("test/native", download_hub="modelscope"))
+            self.assertTrue(resolve.call_args.kwargs["force_return"])
+
     def test_native_loader_rejects_unused_kwargs(self):
         model = Lfm2VlForConditionalGeneration(get_config())
         with tempfile.TemporaryDirectory() as directory:
@@ -269,10 +322,21 @@ class Lfm2VlModelTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             subdir = os.path.join(directory, "weights")
             os.makedirs(subdir)
+            reference.config.architectures = [type(reference).__name__]
             reference.config.save_pretrained(subdir)
             save_file(hf_weights, os.path.join(subdir, "model.safetensors"), metadata={"format": "pt"})
-            loaded = Lfm2VlForConditionalGeneration.from_pretrained(
-                directory, subfolder="weights", convert_from_hf=True, local_files_only=True
+            loaded = AutoModelForConditionalGeneration.from_pretrained(
+                directory,
+                config=reference.config,
+                subfolder="weights",
+                convert_from_hf=True,
+                local_files_only=True,
+                load_via_cpu=False,
+                load_checkpoint_format="flex_checkpoint",
+                ignore_mismatched_sizes=False,
+                low_cpu_mem_usage=False,
+                use_safetensors=True,
+                variant=None,
             ).eval()
             for options in ({}, {"config": get_config()}):
                 with self.subTest(options=options), self.assertRaisesRegex(TypeError, "unexpected_option"):

@@ -55,7 +55,7 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   <tbody>
     <!-- LLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="18" style="vertical-align: top;">LLM</td>
+      <td rowspan="21" style="vertical-align: top;">LLM</td>
       <td>DeepSeekv3</td>
       <td>deepseek-ai/DeepSeek-V3-Base、deepseek-ai/DeepSeek-V3、deepseek-ai/DeepSeek-V3-0324</td>
       <td>deepseek3</td>
@@ -64,6 +64,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>Cohere</td>
       <td>CohereForAI/aya-expanse-8b、CohereForAI/aya-expanse-32b</td>
       <td>aya</td>
+    </tr>
+    <tr>
+      <td>StableLM</td>
+      <td>stabilityai/stable-code-3b</td>
+      <td>-（基础代码补全模型）</td>
     </tr>
     <tr>
       <td>DeepSeekv3.2</td>
@@ -104,6 +109,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>Granite</td>
       <td>ibm-granite/granite-3.2-2b-base、ibm-granite/granite-3.2-2b-instruct、ibm-granite/granite-3.2-8b-base、ibm-granite/granite-3.2-8b-instruct</td>
       <td>granite</td>
+    </tr>
+    <tr>
+      <td>Hunyuan Dense V1</td>
+      <td>tencent/Hunyuan-0.5B-Pretrain、tencent/Hunyuan-0.5B-Instruct</td>
+      <td>hunyuan</td>
     </tr>
     <tr>
       <td>Llama-3</td>
@@ -166,6 +176,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>🏛️ERNIE-4.5-VL</td>
       <td>baidu/ERNIE-4.5-VL-28B-A3B-Base-PT、baidu/ERNIE-4.5-VL-28B-A3B-PT、baidu/ERNIE-4.5-VL-424B-A47B-Base-PT、baidu/ERNIE-4.5-VL-424B-A47B-PT、baidu/ERNIE-4.5-VL-28B-A3B-Thinking</td>
       <td>ernie_vl、ernie_vl_nothink</td>
+    </tr>
+    <tr>
+      <td>AyaVision</td>
+      <td>CohereLabs/aya-vision-8b</td>
+      <td>aya_vision</td>
     </tr>
     <tr>
       <td>Phi-4-multimodal</td>

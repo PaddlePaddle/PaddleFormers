@@ -1,12 +1,22 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Copyright 2025 The HuggingFace Inc. team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Paddle implementation of LFM2-VL and its SigLIP2 NaFlex vision tower."""
 
 import json
 import os
+import warnings
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -53,6 +63,7 @@ def _resolve_hf_checkpoint_dir(pretrained_model_name_or_path, **kwargs):
         token=kwargs.get("token"),
         local_files_only=kwargs.get("local_files_only", False),
         download_hub=kwargs.get("download_hub"),
+        force_return=True,
     )
     if resolved_file is None:
         return None
@@ -358,61 +369,28 @@ class Lfm2VlForConditionalGeneration(Lfm2VlPreTrainedModel):
         self.tie_weights()
 
     @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        if not isinstance(pretrained_model_name_or_path, (str, os.PathLike)):
-            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-
-        native_path = os.path.join(
-            pretrained_model_name_or_path, kwargs.get("subfolder") or "", "model_state.pdparams"
-        )
-        if os.path.isfile(native_path):
-            dtype = kwargs.pop("dtype", None)
-            config = kwargs.pop("config", None)
-            if not isinstance(config, PretrainedConfig):
-                config_path = config if config is not None else pretrained_model_name_or_path
-                config, model_kwargs = cls.config_class.from_pretrained(
-                    config_path, return_unused_kwargs=True, **kwargs
-                )
-            else:
-                model_kwargs = kwargs
-            for key in (
-                "cache_dir",
-                "subfolder",
-                "revision",
-                "token",
-                "force_download",
-                "local_files_only",
-                "download_hub",
-            ):
-                model_kwargs.pop(key, None)
-            if dtype is not None:
-                config.dtype = dtype
-                config.text_config.dtype = dtype
-                config.vision_config.dtype = dtype
-            with dtype_guard(dtype or paddle.get_default_dtype()):
-                model = cls(config, *args, **model_kwargs)
-            missing_keys, unexpected_keys = model.set_state_dict(paddle.load(native_path))
-            if missing_keys or unexpected_keys:
-                raise ValueError(
-                    f"Native LFM2-VL checkpoint is incomplete; missing={missing_keys}, unexpected={unexpected_keys}"
-                )
-            return model
-
-        checkpoint_dir = _resolve_hf_checkpoint_dir(str(pretrained_model_name_or_path), **kwargs)
-        if checkpoint_dir is None:
-            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-
-        if not kwargs.pop("convert_from_hf", True):
-            raise ValueError("Original LFM2-VL safetensors require convert_from_hf=True")
+    def _build_pretrained_model(cls, path, args, kwargs):
+        """Separate loader options from constructor kwargs for both formats."""
+        kwargs = dict(kwargs)
         dtype = kwargs.pop("dtype", None)
         config = kwargs.pop("config", None)
+        kwargs.pop("convert_from_hf", None)
+        # This converter strictly loads a complete local state dict. These
+        # options belong to the loader, never to the model constructor.
+        kwargs.pop("load_checkpoint_format", None)
+        for key in ("load_via_cpu", "low_cpu_mem_usage"):
+            if kwargs.pop(key, False):
+                warnings.warn(f"{cls.__name__}'s direct checkpoint converter does not implement {key}.")
+        if kwargs.pop("ignore_mismatched_sizes", False):
+            raise ValueError("ignore_mismatched_sizes=True is not supported by the strict checkpoint converter")
+        if kwargs.pop("variant", None) is not None:
+            raise ValueError("Named checkpoint variants are not supported by the direct checkpoint converter")
+        kwargs.pop("use_safetensors", None)
         if not isinstance(config, PretrainedConfig):
-            config_path = config if config is not None else pretrained_model_name_or_path
+            config_path = config if config is not None else path
             config, model_kwargs = cls.config_class.from_pretrained(config_path, return_unused_kwargs=True, **kwargs)
         else:
             model_kwargs = kwargs
-        # Constructors only accept config. Do not silently discard unknown
-        # arguments; resolution options have already been used above.
         for key in (
             "cache_dir",
             "subfolder",
@@ -429,6 +407,35 @@ class Lfm2VlForConditionalGeneration(Lfm2VlPreTrainedModel):
             config.vision_config.dtype = dtype
         with dtype_guard(dtype or paddle.get_default_dtype()):
             model = cls(config, *args, **model_kwargs)
+        return model, dtype
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
+        if not isinstance(pretrained_model_name_or_path, (str, os.PathLike)):
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+        native_path = os.path.join(
+            pretrained_model_name_or_path, kwargs.get("subfolder") or "", "model_state.pdparams"
+        )
+        if os.path.isfile(native_path):
+            model, dtype = cls._build_pretrained_model(pretrained_model_name_or_path, args, kwargs)
+            missing_keys, unexpected_keys = model.set_state_dict(paddle.load(native_path))
+            if missing_keys or unexpected_keys:
+                raise ValueError(
+                    f"Native LFM2-VL checkpoint is incomplete; missing={missing_keys}, unexpected={unexpected_keys}"
+                )
+            return model
+
+        if kwargs.get("use_safetensors") is False:
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+        checkpoint_dir = _resolve_hf_checkpoint_dir(str(pretrained_model_name_or_path), **kwargs)
+        if checkpoint_dir is None:
+            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
+
+        if not kwargs.pop("convert_from_hf", True):
+            raise ValueError("Original LFM2-VL safetensors require convert_from_hf=True")
+        model, dtype = cls._build_pretrained_model(pretrained_model_name_or_path, args, kwargs)
+        config = model.config
 
         linear_weight_suffixes = (
             ".in_proj.weight",
