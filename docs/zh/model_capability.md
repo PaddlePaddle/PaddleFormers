@@ -11,6 +11,7 @@
 |Granite|✓|✓|✓|✓|✓|
 |LLaMA3|✓|✓|✓|✓|✓|
 |LLaMA4-Text|✓|✓|✓|x|x|
+|MiniCPM|—|✓|—|—|—|
 |MiniMax-Text-01|✓|✓|✓|x|x|
 |OLMo2|✓|✓|✓|✓|✓|
 |Phi4|✓|✓|✓|✓|✓|
@@ -24,6 +25,8 @@
 |Molmo|x|✓|✓|x|x|
 |Qwen2.5-VL|x|✓|✓|x|x|
 |Qwen3-VL|x|✓|✓|x|x|
+
+MiniCPM 的 `✓` 表示已完成训练验证，`—` 表示尚未验证。
 
 # 分布式能力支持
 |模型|TP + SP|PP|EP|CP|DP|FSDP|

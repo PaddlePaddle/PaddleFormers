@@ -78,7 +78,11 @@ class MiniCPMAttention(nn.Layer):
 
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
-        assert config.num_attention_heads // config.num_key_value_heads
+        if config.num_attention_heads % config.num_key_value_heads != 0:
+            raise ValueError(
+                f"num_attention_heads ({config.num_attention_heads}) must be divisible by "
+                f"num_key_value_heads ({config.num_key_value_heads})"
+            )
 
         self.sequence_parallel = config.sequence_parallel
         self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
@@ -123,7 +127,7 @@ class MiniCPMAttention(nn.Layer):
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
-    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor], Optional[Tuple[paddle.Tensor]]]:
+    ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor]]:
         """Input shape: Batch x Time x Channel"""
         mix_layer = self.qkv_proj(hidden_states)
         if self.sequence_parallel:
@@ -221,7 +225,7 @@ class MiniCPMDecoderLayer(nn.Layer):
         attn_mask_startend_row_indices: Optional[paddle.Tensor] = None,
         batch_size: Optional[int] = None,
         **kwargs,
-    ) -> Tuple[paddle.Tensor, Optional[Tuple[paddle.Tensor, paddle.Tensor]]]:
+    ) -> paddle.Tensor:
         # [bs * seq_len, embed_dim] -> [seq_len * bs / n, embed_dim] (sequence_parallel)
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -505,13 +509,13 @@ class MiniCPMModel(MiniCPMPretrainedModel):
 
         # retrieve input_ids and inputs_embeds
         if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
+            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
         elif input_ids is not None:
             batch_size, seq_length = input_ids.shape
         elif inputs_embeds is not None:
             batch_size, seq_length, _ = inputs_embeds.shape
         else:
-            raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
 
         if inputs_embeds is None:
             # [bs, seq_len, dim]
@@ -682,7 +686,7 @@ class MiniCPMForCausalLM(MiniCPMPretrainedModel):
 
         loss = None
         if labels is not None:
-            loss, _ = self.criterion(logits, labels)
+            loss, _ = self.criterion(logits, labels, loss_mask=loss_mask)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
@@ -742,18 +746,13 @@ class MiniCPMForSequenceClassification(MiniCPMPretrainedModel):
 
         if self.config.pad_token_id is None and batch_size != 1:
             raise ValueError("Cannot handle batch sizes > 1 if no padding token is defined.")
-        if self.config.pad_token_id is None:
-            sequence_lengths = -1
+        if self.config.pad_token_id is None or input_ids is None:
+            sequence_lengths = paddle.full([batch_size], logits.shape[1] - 1, dtype="int64")
         else:
-            if input_ids is not None:
-                # if no pad token found, use modulo instead of reverse indexing for ONNX compatibility
-                sequence_lengths = paddle.eq(input_ids, self.config.pad_token_id).astype("int32").argmax(-1) - 1
-                sequence_lengths = sequence_lengths % input_ids.shape[-1]
-                sequence_lengths = sequence_lengths
-            else:
-                sequence_lengths = -1
+            # If no pad token is found, select the last token using modulo.
+            sequence_lengths = paddle.eq(input_ids, self.config.pad_token_id).astype("int32").argmax(-1) - 1
+            sequence_lengths = sequence_lengths % input_ids.shape[-1]
 
-        # pooled_logits = logits[paddle.arange(batch_size), sequence_lengths]
         pooled_logits = logits.gather_nd(paddle.stack([paddle.arange(logits.shape[0]), sequence_lengths], axis=-1))
 
         loss = None
@@ -804,8 +803,8 @@ def _create_scaled_embedding(config):
 
 class MiniCPMLMHeadPipe(LMHeadPipe):
     def forward(self, args):
-        hidden_states, _, _, _, _ = parse_args(args)
-        return GeneralLMHead.forward(self, hidden_states / (self.config.hidden_size / self.config.dim_model_base))
+        hidden_states = parse_args(args)[0]
+        return super().forward(hidden_states / (self.config.hidden_size / self.config.dim_model_base))
 
 
 class MiniCPMForCausalLMPipe(GeneralModelForCausalLMPipe):

@@ -480,3 +480,49 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
         self.assertEqual(list(result.logits.shape), [1, 3, 32])
         result.loss.backward()
         self.assertIsNotNone(model.model.embed_tokens.weight.grad)
+
+    def test_loss_mask_excludes_unselected_tokens(self):
+        model = MiniCPMForCausalLM(self.config)
+        model.eval()
+        ids = paddle.to_tensor([[1, 2, 3]])
+        labels = paddle.to_tensor([[4, 5, 6]])
+        mask = paddle.to_tensor([[0.0, 1.0, 0.0]])
+        result = model(ids, labels=labels, loss_mask=mask, return_dict=True)
+        expected = paddle.nn.functional.cross_entropy(result.logits[:, 1], labels[:, 1])
+        np.testing.assert_allclose(result.loss.numpy(), expected.numpy(), rtol=1e-6)
+        result.loss.backward()
+        self.assertIsNotNone(model.model.embed_tokens.weight.grad)
+
+    def test_classification_pools_last_token_without_padding_information(self):
+        ids = paddle.to_tensor([[1, 2, 3]])
+        for pad_token_id in (None, 0):
+            self.config.pad_token_id = pad_token_id
+            model = MiniCPMForSequenceClassification(self.config)
+            model.eval()
+            expected = model.score(model.model(ids)[0])[:, -1]
+            with self.subTest(pad_token_id=pad_token_id, input="ids"):
+                actual = model(input_ids=ids, return_dict=True).logits
+                np.testing.assert_allclose(actual.numpy(), expected.numpy(), rtol=1e-6)
+            with self.subTest(pad_token_id=pad_token_id, input="embeddings"):
+                embeddings = model.model.embed_tokens(ids) * self.config.scale_emb
+                actual = model(inputs_embeds=embeddings, return_dict=True).logits
+                np.testing.assert_allclose(actual.numpy(), expected.numpy(), rtol=1e-6)
+        self.config.pad_token_id = None
+        model = MiniCPMForSequenceClassification(self.config)
+        with self.assertRaisesRegex(ValueError, "batch sizes > 1"):
+            model(ids.tile([2, 1]))
+
+    def test_classification_pools_before_padding(self):
+        self.config.pad_token_id = 0
+        model = MiniCPMForSequenceClassification(self.config)
+        model.eval()
+        ids = paddle.to_tensor([[1, 2, 0], [1, 2, 3]])
+        logits = model.score(model.model(ids)[0])
+        expected = paddle.stack([logits[0, 1], logits[1, 2]])
+        np.testing.assert_allclose(model(ids)[0].numpy(), expected.numpy(), rtol=1e-6)
+
+    def test_invalid_attention_head_ratio_is_rejected(self):
+        self.config.num_attention_heads = 4
+        self.config.num_key_value_heads = 3
+        with self.assertRaisesRegex(ValueError, "num_attention_heads.*divisible"):
+            MiniCPMModel(self.config)
