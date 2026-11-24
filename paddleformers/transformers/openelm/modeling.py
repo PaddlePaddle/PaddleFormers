@@ -235,7 +235,11 @@ class OpenELMRotaryEmbedding(nn.Layer):
 
     def forward(self, x: Tensor, position_ids: Tensor) -> Tuple[Tensor, Tensor]:
         with paddle.amp.auto_cast(enable=False):
-            object.__setattr__(self, "original_inv_freq", self.original_inv_freq.to(device=x.place))
+            # original_inv_freq is kept as a plain FP32 attribute (not a buffer) so dtype casts never
+            # degrade its precision; it therefore does not follow module device moves and must be synced
+            # to the input device on demand rather than re-materialized on every forward.
+            if self.original_inv_freq.place != x.place:
+                object.__setattr__(self, "original_inv_freq", self.original_inv_freq.to(device=x.place))
             freqs = position_ids.astype("float32").unsqueeze(-1) * self.original_inv_freq
             emb = paddle.concat([freqs, freqs], axis=-1)
             return emb.cos(), emb.sin()
