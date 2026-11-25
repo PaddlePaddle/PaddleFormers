@@ -20,7 +20,7 @@ from pathlib import Path
 import paddle
 
 import paddleformers.transformers as transformers
-from paddleformers.transformers import AutoConfig, AutoModelForCausalLM
+from paddleformers.transformers import AutoConfig, AutoModel, AutoModelForCausalLM
 from paddleformers.transformers.auto.modeling import MODEL_MAPPING
 from paddleformers.transformers.minicpm4 import (
     MiniCPM4Config,
@@ -296,6 +296,67 @@ class MiniCPM4ModelTester:
             self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
         else:
             self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+
+
+class MiniCPMAutoRoutingTest(unittest.TestCase):
+    def check_routing(self, model_type, name, expected_version, override=None):
+        config_dict = {"architectures": ["MiniCPMForCausalLM"]}
+        if model_type is not None:
+            config_dict["model_type"] = model_type
+        if name is not None:
+            config_dict["_name_or_path"] = name
+        prefix = {"minicpm": "MiniCPM", "minicpm4": "MiniCPM4", "minicpm4_1": "MiniCPM4_1"}[expected_version]
+        kwargs = {} if override is None else {"model_type_override": override}
+        with tempfile.TemporaryDirectory(prefix="renamed-model-") as temp_dir:
+            config_file = Path(temp_dir) / "config.json"
+            config_file.write_text(json.dumps(config_dict), encoding="utf-8")
+            config = AutoConfig.from_pretrained(temp_dir, **kwargs)
+            self.assertIsInstance(config, getattr(transformers, prefix + "Config"))
+            for auto_class, suffix in ((AutoModel, "Model"), (AutoModelForCausalLM, "ForCausalLM")):
+                model_class = auto_class._get_model_class_from_config(temp_dir, config_file, **kwargs)
+                self.assertIs(model_class, getattr(transformers, prefix + suffix))
+            self.assertEqual(json.loads(config_file.read_text()), config_dict)
+
+    def test_shared_upstream_config_names(self):
+        for model_type in (None, "minicpm"):
+            for name, expected_version in (
+                ("openbmb/MiniCPM4-0.5B", "minicpm4"),
+                ("openbmb/MiniCPM4-8B", "minicpm4"),
+                ("openbmb/MiniCPM4.1-8B", "minicpm4_1"),
+                ("openbmb/MiniCPM4_1-8B", "minicpm4_1"),
+            ):
+                with self.subTest(model_type=model_type, name=name):
+                    self.check_routing(model_type, name, expected_version)
+
+    def test_explicit_registered_model_types(self):
+        for model_type in ("minicpm4", "minicpm4_1"):
+            with self.subTest(model_type=model_type):
+                self.check_routing(model_type, None, model_type)
+
+    def test_explicit_override_without_original_name(self):
+        for model_type in (None, "minicpm"):
+            for override in ("minicpm4", "minicpm4_1"):
+                with self.subTest(model_type=model_type, override=override):
+                    self.check_routing(model_type, None, override, override)
+
+    def test_original_minicpm_is_preserved(self):
+        self.check_routing("minicpm", "openbmb/MiniCPM-2B", "minicpm")
+        self.check_routing("minicpm", None, "minicpm")
+
+    def test_invalid_override_is_rejected(self):
+        from paddleformers.transformers.auto.configuration import (
+            resolve_minicpm_model_type,
+        )
+
+        with self.assertRaises(ValueError):
+            resolve_minicpm_model_type({}, "unknown")
+
+    def test_other_model_types_are_preserved(self):
+        from paddleformers.transformers.auto.configuration import (
+            resolve_minicpm_model_type,
+        )
+
+        self.assertIsNone(resolve_minicpm_model_type({"model_type": "llama", "_name_or_path": "MiniCPM4-8B"}))
 
 
 class MiniCPM4ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):

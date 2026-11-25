@@ -33,6 +33,8 @@ __all__ = [
 
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
+        ("aya_vision", "AyaVisionConfig"),
+        ("cohere2", "Cohere2Config"),
         ("deepseek_v3", "DeepseekV3Config"),
         ("deepseek_v32", "DeepseekV32Config"),
         ("paligemma", "PaliGemma2Config"),
@@ -42,9 +44,11 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
         ("paddleocr_vl", "PaddleOCRVLConfig"),
+        ("hunyuan_v1_dense", "HunYuanDenseV1Config"),
         ("llama", "LlamaConfig"),
+        ("llama4", "Llama4Config"),
+        ("llama4_text", "Llama4TextConfig"),
         ("kimi_k2", "KimiK2Config"),
-        ("minicpm", "MiniCPMConfig"),
         ("kimi_k3", "KimiK3Config"),
         ("qwen2", "Qwen2Config"),
         ("qwen2_5_vl", "Qwen2_5_VLConfig"),
@@ -59,20 +63,35 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("qwen3_vl_moe_text", "Qwen3VLMoeTextConfig"),
         ("glm4_moe", "Glm4MoeConfig"),
         ("glm_moe_dsa", "GlmMoeDsaConfig"),
+        ("minimax", "MiniMaxConfig"),
         ("minimax_m2", "MiniMaxM2Config"),
+        ("minicpm", "MiniCPMConfig"),
         ("minicpm4", "MiniCPM4Config"),
+        ("minicpm4_1", "MiniCPM4_1Config"),
         ("deepseek_v4", "DeepseekV4Config"),
         ("gpt_oss", "GptOssConfig"),
+        ("minicpm3", "MiniCPM3Config"),
+        ("cohere", "CohereConfig"),
+        ("seed_oss", "SeedOssConfig"),
         ("phi3", "Phi3Config"),
+        ("phi4mm", "Phi4MultimodalConfig"),
+        ("phi4_multimodal", "Phi4MultimodalConfig"),
+        ("phi4_multimodal_audio", "Phi4MultimodalAudioConfig"),
+        ("phi4_multimodal_vision", "Phi4MultimodalVisionConfig"),
         ("granite", "GraniteConfig"),
         ("gemma3", "Gemma3Config"),
         ("gemma3_text", "Gemma3TextConfig"),
         ("shieldgemma2", "ShieldGemma2Config"),
+        ("siglip_vision_model", "SiglipVisionConfig"),
         ("glm4v_moe", "Glm4vMoeConfig"),
         ("glm_ocr", "GlmOcrConfig"),
+        ("molmo", "MolmoConfig"),
         ("qwen3_5", "Qwen3_5Config"),
         ("qwen3_5_moe", "Qwen3_5MoEConfig"),
+        ("openelm", "OpenELMConfig"),
+        ("stablelm", "StableLmConfig"),
         ("olmo2", "Olmo2Config"),
+        ("olmo3", "Olmo3Config"),
         ("internlm3", "InternLM3Config"),
         ("internlm2", "InternLM2Config"),
         # TODO(VL): When Gemma4 VL is implemented, "gemma4" should point to Gemma4Config (VL wrapper)
@@ -80,6 +99,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("gemma4", "Gemma4MoeConfig"),  # Temporary: no standalone text ckpt, extract text_config in from_dict
         ("phi4", "Phi4Config"),
         ("phi4flash", "Phi4Config"),
+        ("hyperencoder", "HyperEncoderConfig"),
     ]
 )
 
@@ -87,6 +107,8 @@ CONFIG_MAPPING_NAMES = OrderedDict(
 MODEL_NAMES_MAPPING = OrderedDict(
     # Base model mapping
     [
+        ("aya_vision", "AyaVision"),
+        ("cohere2", "Cohere2"),
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
         ("paligemma", "PaliGemma2"),
@@ -96,8 +118,10 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("ernie4_5_moe", "Ernie4_5_Moe"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLMoeForConditionalGeneration"),
         ("paddleocr_vl", "PaddleOCRVLForConditionalGeneration"),
+        ("hunyuan_v1_dense", "HunYuanDenseV1"),
         ("llama", "Llama"),
-        ("minicpm", "MiniCPMModel"),
+        ("llama4", "Llama4ForConditionalGeneration"),
+        ("llama4_text", "Llama4TextModel"),
         ("kimi_k3", "KimiK3"),
         ("qwen2", "Qwen2"),
         ("qwen2_5_vl", "Qwen2_5_VL"),
@@ -110,15 +134,27 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("qwen3_vl_text", "Qwen3VL"),
         ("qwen3_vl_moe", "Qwen3VLMoe"),
         ("qwen3_vl_moe_text", "Qwen3VLMoeText"),
+        ("hyperencoder", "HyperEncoderModelFleet"),
+        ("seed_oss", "SeedOssForCausalLM"),
         ("glm_ocr", "GlmOcrForConditionalGeneration"),
+        ("molmo", "MolmoModel"),
+        ("minimax", "MiniMaxForCausalLM"),
+        ("phi4_multimodal", "Phi4MultimodalModel"),
+        ("minicpm", "MiniCPMModel"),
         ("minicpm4", "MiniCPM4Model"),
+        ("minicpm4_1", "MiniCPM4_1"),
+        ("cohere", "Cohere"),
         ("granite", "Granite"),
         ("gemma3", "Gemma3ForConditionalGeneration"),
         ("gemma3_text", "Gemma3TextModel"),
         ("shieldgemma2", "ShieldGemma2ForImageClassification"),
         ("qwen3_5_moe", "Qwen3_5MoEForConditionalGeneration"),
         ("qwen3_5", "Qwen3_5ForConditionalGeneration"),
+        ("openelm", "OpenELMForCausalLM"),
+        ("minicpm3", "MiniCPM3Model"),
+        ("stablelm", "StableLmForCausalLM"),
         ("olmo2", "Olmo2ForCausalLM"),
+        ("olmo3", "Olmo3ForCausalLM"),
         ("internlm3", "InternLM3ForCausalLM"),
         ("internlm2", "InternLM2"),
         ("gemma4_moe", "Gemma4MoeForCausalLM"),
@@ -126,6 +162,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("gemma4", "Gemma4MoeForCausalLM"),
         ("phi4", "Phi4ForCausalLM"),
         ("phi4flash", "Phi4ForCausalLM"),
+        ("siglip_vision_model", "SiglipVision"),
     ]
 )
 
@@ -136,9 +173,14 @@ MULTI_MODELS_MAPPING = OrderedDict(
 
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
+        ("hunyuan_v1_dense", "hunyuan"),
+        ("llama4_text", "llama4"),
         ("paligemma", "paligemma2"),
         ("gemma3", "gemma3"),
         ("qwen2_5_vl_text", "qwen2_5_vl"),
+        ("phi4_multimodal_audio", "phi4_multimodal"),
+        ("phi4_multimodal_vision", "phi4_multimodal"),
+        ("phi4mm", "phi4_multimodal"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
         ("internlm3", "intern_lm3"),
@@ -223,21 +265,29 @@ class _LazyConfigMapping(OrderedDict):
 CONFIG_MAPPING = _LazyConfigMapping(CONFIG_MAPPING_NAMES)
 
 
-def resolve_minicpm4_model_type(config_dict, model_type_override=None):
-    """Resolve upstream MiniCPM4 configs to the PaddleFormers registration key."""
+def resolve_minicpm_model_type(config_dict, model_type_override=None):
+    """Resolve upstream MiniCPM4 and MiniCPM4.1 configs to their registration keys."""
     if model_type_override is not None:
-        if model_type_override != "minicpm4":
+        if model_type_override not in {"minicpm4", "minicpm4_1"}:
             raise ValueError(
-                f"Unsupported model_type_override={model_type_override!r}. " "Only 'minicpm4' is supported."
+                f"Unsupported model_type_override={model_type_override!r}. "
+                "Only 'minicpm4' and 'minicpm4_1' are supported."
             )
         return model_type_override
 
-    if not isinstance(config_dict, dict) or config_dict.get("model_type") not in {None, "minicpm"}:
+    if not isinstance(config_dict, dict):
+        return None
+    model_type = config_dict.get("model_type")
+    if model_type in {"minicpm4", "minicpm4_1"}:
+        return model_type
+    if model_type not in {None, "minicpm"}:
         return None
 
     original_name = str(config_dict.get("_name_or_path", ""))
     normalized_name = original_name.lower().replace(".", "_").replace("-", "_")
-    if "minicpm4" in normalized_name and "minicpm4_1" not in normalized_name:
+    if "minicpm4_1" in normalized_name:
+        return "minicpm4_1"
+    if "minicpm4" in normalized_name:
         return "minicpm4"
 
     return None
@@ -414,7 +464,7 @@ class AutoConfig(PretrainedConfig):
         )
         model_type_override = kwargs.pop("model_type_override", None)
         config_dict, unused_kwargs = PretrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
-        resolved_model_type = resolve_minicpm4_model_type(config_dict, model_type_override)
+        resolved_model_type = resolve_minicpm_model_type(config_dict, model_type_override)
         if resolved_model_type is not None:
             config_dict["model_type"] = resolved_model_type
         if "model_type" in config_dict:

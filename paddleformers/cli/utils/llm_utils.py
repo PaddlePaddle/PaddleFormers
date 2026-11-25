@@ -77,7 +77,7 @@ def get_lora_target_modules(model):
         ]
     elif model.config.model_type == "bloom":
         target_modules = [".*query_key_value.*", ".*dense.*", ".*dense_h_to_4h.*", ".*dense_4h_to_h.*"]
-    elif model.config.model_type in ["llama", "jamba", "olmo2"]:
+    elif model.config.model_type in ["llama", "llama4_text", "llama4", "jamba", "olmo2", "cohere"]:
         target_modules = [
             ".*q_proj.*",
             ".*v_proj.*",
@@ -88,6 +88,25 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
             ".*up_proj.*",
             ".*gate_up_fused_proj.*",
+        ]
+    elif model.config.model_type == "molmo":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*ff_proj.*",
+            ".*ff_out.*",
+        ]
+    elif model.config.model_type == "olmo3":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
         ]
     elif model.config.model_type == "opt":
         target_modules = [
@@ -133,6 +152,18 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
             ".*up_proj.*",
         ]
+    elif model.config.model_type == "hunyuan_v1_dense":
+        target_modules = [
+            ".*qkv_proj.*",
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*up_gate_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "mixtral":
         target_modules = [
             ".*q_proj.*",
@@ -143,6 +174,22 @@ def get_lora_target_modules(model):
             ".*w1.*",
             ".*w2.*",
             ".*w3.*",
+        ]
+    elif model.config.model_type == "minimax":
+        target_modules = [
+            # Full attention
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            # Lightning attention
+            ".*qkv_proj.*",
+            ".*out_proj.*",
+            ".*output_gate.*",
+            # Sparse MoE experts; keep the router excluded from the default LoRA targets.
+            ".*block_sparse_moe.experts.*w1.*",
+            ".*block_sparse_moe.experts.*w2.*",
+            ".*block_sparse_moe.experts.*w3.*",
         ]
     elif model.config.model_type == "mistral":
         target_modules = [
@@ -174,7 +221,7 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
             # Projector
-            ".*merger.mlp\.[02].*",
+            r".*merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "qwen3_vl":
         target_modules = [
@@ -298,6 +345,16 @@ def get_lora_target_modules(model):
             ".*up_proj.*",
             ".*down_proj.*",
         ]
+    elif model.config.model_type == "seed_oss":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "gemma3_text":
         target_modules = [
             ".*q_proj.*",
@@ -309,6 +366,18 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
         ]
     elif model.config.model_type == "minicpm":
+        target_modules = [
+            ".*qkv_proj.*",
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*up_gate_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
+    elif model.config.model_type == "minicpm4_1":
         target_modules = [
             ".*qkv_proj.*",
             ".*q_proj.*",
@@ -375,6 +444,27 @@ def get_lora_target_modules(model):
             ".*resampler_model.*temporal_linear.0.*",
             ".*resampler_model.*temporal_linear.2.*",
         ]
+    elif model.config.model_type == "aya_vision":
+        target_modules = [
+            # Language Model
+            "model.language_model.*q_proj.*",
+            "model.language_model.*k_proj.*",
+            "model.language_model.*v_proj.*",
+            "model.language_model.*o_proj.*",
+            "model.language_model.*gate_proj.*",
+            "model.language_model.*up_proj.*",
+            "model.language_model.*down_proj.*",
+            # Vision Encoder
+            "model.vision_tower.*q_proj.*",
+            "model.vision_tower.*k_proj.*",
+            "model.vision_tower.*v_proj.*",
+            "model.vision_tower.*out_proj.*",
+            "model.vision_tower.*fc1.*",
+            "model.vision_tower.*fc2.*",
+            # Projector
+            "model.multi_modal_projector.*linear_1.*",
+            "model.multi_modal_projector.*linear_2.*",
+        ]
     elif model.config.model_type == "paddleocr_vl":
         target_modules = [
             # Language Model
@@ -402,6 +492,17 @@ def get_lora_target_modules(model):
             ".*o_proj.*",
             ".*gate_up_proj.*",
             ".*down_proj.*",
+        ]
+    elif model.config.model_type == "phi4_multimodal":
+        # Keep the outer PEFT adapter on the language backbone. Phi-4
+        # Multimodal already has its own vision/speech adapters, so broad
+        # patterns would either wrap the modality encoders or match those
+        # native adapter sublayers a second time.
+        target_modules = [
+            "model.layers.*.self_attn.qkv_proj",
+            "model.layers.*.self_attn.o_proj",
+            "model.layers.*.mlp.gate_up_proj",
+            "model.layers.*.mlp.down_proj",
         ]
     elif model.config.model_type in ("phi4", "phi4flash"):
         # phi4flash: hybrid decoder (Mamba SSM + Attention), only attention layers have Wqkv/out_proj
@@ -433,7 +534,7 @@ def get_lora_target_modules(model):
             "model.visual.*up_proj.*",
             "model.visual.*down_proj.*",
             # alinger
-            "model.visual.merger.mlp\.[02].*",
+            r"model.visual.merger.mlp\.[02].*",
         ]
     elif model.config.model_type == "glm_ocr":
         target_modules = [
@@ -449,6 +550,26 @@ def get_lora_target_modules(model):
             "model.visual.blocks.*mlp.gate_proj.*",
             "model.visual.blocks.*mlp.up_proj.*",
             "model.visual.blocks.*mlp.down_proj.*",
+        ]
+    elif model.config.model_type == "stablelm":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
+    elif model.config.model_type == "openelm":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
         ]
     elif model.config.model_type == "internlm2":
         # Covers both InternLM2 2.0 and 2.5: both route through the unified

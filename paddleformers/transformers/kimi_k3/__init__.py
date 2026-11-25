@@ -28,6 +28,7 @@ import_structure = {
         "KimiK3ForCausalLM",
         "KimiK3ForCausalLMPipe",
         "KimiK3ForConditionalGeneration",
+        "KimiK3ForConditionalGenerationPipe",
         "KimiK3ModelProvider",
     ],
     "tokenizer": [

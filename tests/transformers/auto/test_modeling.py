@@ -30,6 +30,8 @@ from paddleformers.transformers import (
     AutoModelForTokenClassification,
     LlamaConfig,
     LlamaModel,
+    Phi4MultimodalConfig,
+    Phi4MultimodalModel,
 )
 from paddleformers.transformers.auto.configuration import CONFIG_MAPPING
 from paddleformers.transformers.auto.modeling import MODEL_MAPPING
@@ -68,6 +70,14 @@ class AutoModelTest(unittest.TestCase):
                 model_save_path, convert_from_hf=False, load_checkpoint_format=""
             )
             self.assertIsInstance(reloaded_model, LlamaModel)
+
+    def test_architecture_takes_priority_over_directory_name(self):
+        model_class = AutoModel._get_model_class_from_config(
+            "/tmp/qwen2-export",
+            "unused-config.json",
+            LlamaConfig(architectures=["LlamaModel"]),
+        )
+        self.assertIs(model_class, LlamaModel)
 
     @slow
     def test_model_from_pretrained_cache_dir(self):
@@ -151,3 +161,6 @@ class AutoModelTest(unittest.TestCase):
             for mapping in (MODEL_MAPPING,):
                 if CustomConfig in mapping._extra_content:
                     del mapping._extra_content[CustomConfig]
+
+    def test_phi4_multimodal_model_mapping(self):
+        self.assertIs(MODEL_MAPPING[Phi4MultimodalConfig], Phi4MultimodalModel)

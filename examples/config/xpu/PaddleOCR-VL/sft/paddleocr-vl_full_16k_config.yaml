@@ -71,3 +71,9 @@ load_checkpoint_format: "flex_checkpoint"
 
 # device
 device: xpu
+
+moe_token_dispatcher_type: "deepep"
+moe_router_bias_update_rate: 0.0
+save_safetensors: false
+overlap_p2p_comm: false
+batch_p2p_comm: true

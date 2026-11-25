@@ -29,7 +29,7 @@ from .configuration import (
     MODEL_NAMES_MAPPING,
     AutoConfig,
     PretrainedConfig,
-    resolve_minicpm4_model_type,
+    resolve_minicpm_model_type,
 )
 from .factory import _LazyAutoMapping
 
@@ -54,6 +54,8 @@ __all__ = [
 
 MAPPING_NAMES = OrderedDict(
     [
+        ("AyaVision", "aya_vision"),
+        ("Cohere2", "cohere2"),
         ("DeepseekV3", "deepseek_v3"),
         ("DeepseekV32", "deepseek_v32"),
         ("PaliGemma2", "paligemma2"),
@@ -62,9 +64,10 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
+        ("HunYuanDenseV1", "hunyuan"),
         ("Llama", "llama"),
+        ("Llama4", "llama4"),
         ("KimiK2", "kimi_k2"),
-        ("MiniCPM4", "minicpm4"),
         ("KimiK3", "kimi_k3"),
         ("Qwen2", "qwen2"),
         ("Qwen2_5_VL", "qwen2_5_vl"),
@@ -78,25 +81,47 @@ MAPPING_NAMES = OrderedDict(
         ("Qwen3_5", "qwen3_5"),
         ("Glm4Moe", "glm4_moe"),
         ("GlmMoeDsa", "glm_moe_dsa"),
+        ("MiniMax", "minimax"),
         ("MiniMaxM2", "minimax_m2"),
         ("MiniCPM", "minicpm"),
+        ("MiniCPM4", "minicpm4"),
+        ("MiniCPM4_1", "minicpm4_1"),
         ("DeepseekV4", "deepseek_v4"),
         ("GptOss", "gpt_oss"),
+        ("MiniCPM3", "minicpm3"),
+        ("SeedOss", "seed_oss"),
+        ("Cohere", "cohere"),
         ("Granite", "granite"),
         ("Phi3", "phi3"),
+        ("Phi4MM", "phi4_multimodal"),
+        ("Phi4Multimodal", "phi4_multimodal"),
+        ("Phi4MultimodalAudio", "phi4_multimodal"),
+        ("Phi4MultimodalVision", "phi4_multimodal"),
         ("Phi4", "phi4"),
         ("Gemma3", "gemma3"),
         ("Gemma3Text", "gemma3_text"),
+        ("SiglipVision", "siglip_vision_model"),
         ("Gemma4Moe", "gemma4_moe"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
+        ("OpenELM", "openelm"),
+        ("StableLm", "stablelm"),
+        ("Molmo", "molmo"),
         ("Olmo2", "olmo2"),
+        ("Olmo3", "olmo3"),
         ("InternLM3", "intern_lm3"),
         ("InternLM2", "intern"),
     ]
 )
 
-MAPPING_SPACIAL_KEY = OrderedDict([("Gemma3", "Gemma3"), ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration")])
+MAPPING_SPACIAL_KEY = OrderedDict(
+    [
+        ("Gemma3", "Gemma3"),
+        ("Ernie4_5_VLMoe", "Ernie4_5_VLMoeForConditionalGeneration"),
+        ("Llama4", "Llama4Text"),
+        ("Phi4MM", "Phi4Multimodal"),
+    ]
+)
 CONFIGURATION_MODEL_MAPPING = OrderedDict([((), "Gemma3ForConditionalGeneration")])
 
 MAPPING_TASKS = OrderedDict(
@@ -182,7 +207,7 @@ class _BaseAutoModelClass:
             with io.open(config_file_path, encoding="utf-8") as f:
                 config = json.load(f)
 
-        resolved_model_type = resolve_minicpm4_model_type(config, model_type_override)
+        resolved_model_type = resolve_minicpm_model_type(config, model_type_override)
 
         # Get class name corresponds to this configuration
         if is_standard_config(config):
@@ -195,16 +220,16 @@ class _BaseAutoModelClass:
         # Sort the MAPPING_NAMES to reorder the model class names with longest-first rule
         # thus the names with same prefix can be correctly inferred
         # such as QWen and QWen2MOE, QWen2MOE is the longest prefix of QWen2MOEModel
-        model_name = "MiniCPM4Model" if resolved_model_type == "minicpm4" else None
+        model_name = {"minicpm4": "MiniCPM4Model", "minicpm4_1": "MiniCPM4_1Model"}.get(resolved_model_type)
         SORTED_MAPPING_NAMES = dict(sorted(MAPPING_NAMES.items(), key=lambda x: len(x[0]), reverse=True))
         if model_name is None and init_class:
             for model_flag, name in SORTED_MAPPING_NAMES.items():
                 if model_flag in init_class:
                     model_name = model_flag + "Model"
                     break
-            if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
-                model_name = "PaliGemma2ForConditionalGenerationModel"
-        elif model_name is None:
+        if model_name is None and init_class == "PaliGemmaForConditionalGeneration":
+            model_name = "PaliGemma2ForConditionalGenerationModel"
+        if model_name is None and init_class is None:
             # From pretrained_model_name_or_path
             for model_flag, name in SORTED_MAPPING_NAMES.items():
                 if type(pretrained_model_name_or_path) is str and name in pretrained_model_name_or_path.lower():
@@ -213,6 +238,9 @@ class _BaseAutoModelClass:
         if init_class == "PaliGemmaForConditionalGeneration":
             import_class = importlib.import_module("paddleformers.transformers.paligemma2.modeling")
             return getattr(import_class, "PaliGemma2ForConditionalGeneration")
+        if init_class == "Llama4ForConditionalGeneration":
+            import_class = importlib.import_module("paddleformers.transformers.llama4.multimodal")
+            return getattr(import_class, "Llama4ForConditionalGeneration")
         if model_name is None:
             # Try to get model class from config class
             if not isinstance(config, PretrainedConfig) and pretrained_model_name_or_path is not None:

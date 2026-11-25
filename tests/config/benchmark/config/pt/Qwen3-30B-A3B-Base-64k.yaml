@@ -82,6 +82,7 @@ moe_expert_fusion: true
 moe_router_fusion: true
 moe_router_force_load_balancing: false
 router_aux_loss_coef: 1e-3
+moe_token_dispatcher_type: deepep
 
 # pp
 overlap_p2p_comm: true
