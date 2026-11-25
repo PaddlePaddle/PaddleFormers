@@ -52,13 +52,10 @@ jobs:
     outputs:
       is_md_only: ${{ steps.check_files.outputs.is_md_only }}
     steps:
-      - name: Cleanup
-        run: |
-          rm -rf * .[^.]*
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
@@ -67,7 +64,7 @@ jobs:
         if: |
           github.event_name != 'pull_request' || !contains(github.event.pull_request.labels.*.name, 'fleet-models-ci')
         run: |
-          changed_files=$(git diff origin/${{ github.event.pull_request.base.ref }}...HEAD --name-only)
+          changed_files=$(git diff HEAD^1 HEAD --name-only)
           echo "Changed files: $changed_files"
           all_count=0
           md_count=0
