@@ -1517,8 +1517,12 @@ class ErniePretrainedModel(PretrainedModel):
             emb = np.concatenate([freqs, freqs], axis=-1)
             cos_cached = np.cos(emb)[:, :]
             sin_cached = np.sin(emb)[:, :]
-            layer.cos_cached.set_value(cos_cached)
-            layer.sin_cached.set_value(sin_cached)
+            # np.cos/np.sin return float64; the cached buffers are float32, so
+            # set_value would assert on a dtype mismatch. Cast to float32 to
+            # match the buffer dtype (not the model default, which may be bf16
+            # and is not a valid numpy dtype).
+            layer.cos_cached.set_value(cos_cached.astype("float32"))
+            layer.sin_cached.set_value(sin_cached.astype("float32"))
 
 
 @register_base_model
@@ -1625,10 +1629,15 @@ class ErnieModel(ErniePretrainedModel):
         past_key_value,
         use_cache,
         inbatch_pack_offset,
+        attn_mask_startend_row_indices=None,
     ):
         def create_custom_forward(module):
             def custom_forward(*inputs):
-                return module(*inputs, output_gate_logits=False)
+                return module(
+                    *inputs,
+                    output_gate_logits=False,
+                    attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+                )
 
             return custom_forward
 
