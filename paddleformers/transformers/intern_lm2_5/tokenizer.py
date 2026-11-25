@@ -23,15 +23,12 @@ except ImportError:
     spm = None
 
 from paddleformers.transformers.tokenizer_utils import PretrainedTokenizer
-from paddleformers.utils.log import logger
 
 VOCAB_FILES_NAMES = {"vocab_file": "tokenizer.model"}
 
 
-class InternLM25Tokenizer(PretrainedTokenizer):
-    resource_files_names = VOCAB_FILES_NAMES
-    vocab_files_names = VOCAB_FILES_NAMES
-    model_input_names = ["input_ids", "attention_mask"]
+class InternLMSentencePieceTokenizerMixin:
+    """Shared SentencePiece operations for the InternLM tokenizer interfaces."""
 
     def __init__(
         self,
@@ -49,7 +46,7 @@ class InternLM25Tokenizer(PretrainedTokenizer):
     ):
         if spm is None:
             raise ImportError(
-                "You need to install sentencepiece to use InternLM25Tokenizer. "
+                f"You need to install sentencepiece to use {type(self).__name__}. "
                 "See https://github.com/google/sentencepiece for installation."
             )
         self.sp_model_kwargs = {} if sp_model_kwargs is None else sp_model_kwargs
@@ -61,11 +58,15 @@ class InternLM25Tokenizer(PretrainedTokenizer):
         self.sp_model.Load(vocab_file)
         self._no_prefix_space_tokens = None
         super().__init__(
+            vocab_file=vocab_file,
             bos_token=bos_token,
             eos_token=eos_token,
             unk_token=unk_token,
             pad_token=pad_token,
             clean_up_tokenization_spaces=clean_up_tokenization_spaces,
+            add_bos_token=add_bos_token,
+            add_eos_token=add_eos_token,
+            decode_with_prefix_space=decode_with_prefix_space,
             **kwargs,
         )
 
@@ -122,8 +123,7 @@ class InternLM25Tokenizer(PretrainedTokenizer):
 
     def save_vocabulary(self, save_directory, filename_prefix: Optional[str] = None) -> Tuple[str]:
         if not os.path.isdir(save_directory):
-            logger.error(f"Vocabulary path ({save_directory}) should be a directory")
-            return
+            raise ValueError(f"Vocabulary path ({save_directory}) should be a directory")
         out_vocab_file = os.path.join(
             save_directory, (filename_prefix + "-" if filename_prefix else "") + VOCAB_FILES_NAMES["vocab_file"]
         )
@@ -157,9 +157,10 @@ class InternLM25Tokenizer(PretrainedTokenizer):
         self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None, already_has_special_tokens: bool = False
     ) -> List[int]:
         if already_has_special_tokens:
-            return super().get_special_tokens_mask(
-                token_ids_0=token_ids_0, token_ids_1=token_ids_1, already_has_special_tokens=True
-            )
+            if token_ids_1 is not None:
+                raise ValueError("A second sequence cannot be supplied when special tokens are already present.")
+            special_ids = set(self.all_special_ids)
+            return [int(token_id in special_ids) for token_id in token_ids_0]
 
         prefix_len = 1 if self.add_bos_token else 0
         suffix_len = 1 if self.add_eos_token else 0
@@ -173,6 +174,12 @@ class InternLM25Tokenizer(PretrainedTokenizer):
         self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
     ) -> List[int]:
         return [0] * len(self.build_inputs_with_special_tokens(token_ids_0, token_ids_1))
+
+
+class InternLM25Tokenizer(InternLMSentencePieceTokenizerMixin, PretrainedTokenizer):
+    resource_files_names = VOCAB_FILES_NAMES
+    vocab_files_names = VOCAB_FILES_NAMES
+    model_input_names = ["input_ids", "attention_mask"]
 
     def encode(
         self,

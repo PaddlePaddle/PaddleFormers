@@ -15,6 +15,7 @@
 """InternLM model configuration."""
 
 from ..configuration_utils import PretrainedConfig
+from ..modeling_rope_utils import rope_config_validation
 
 
 class InternLMConfig(PretrainedConfig):
@@ -85,6 +86,8 @@ class InternLMConfig(PretrainedConfig):
             }
         else:
             raise ValueError("InternLM only supports rotary type 'origin' or 'dynamic'.")
+
+        rope_config_validation(self)
 
         super().__init__(
             pad_token_id=pad_token_id,
