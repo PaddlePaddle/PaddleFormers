@@ -1,0 +1,94 @@
+### data
+train_dataset_type: erniekit
+eval_dataset_type: erniekit
+train_dataset_path: ./dataset/data/pt_data/train.jsonl
+train_dataset_prob: "1.0"
+eval_dataset_path: ./dataset/data/pt_data/eval.jsonl
+eval_dataset_prob: "1.0"
+packing: true
+truncate_packing: true
+max_seq_len: 8192
+mix_strategy: concat
+dataloader_shuffle: false
+dataloader_num_workers: 24
+prefetch_factor: 24
+
+### model
+model_name_or_path: ./huggingface/Kimi-K2
+
+### finetuning
+# base
+stage: PT
+fine_tuning: full
+seed: 23
+do_train: true
+do_eval: false
+per_device_eval_batch_size: 1
+per_device_train_batch_size: 1
+num_train_epochs: 1
+max_steps: 50
+eval_iters: 10000
+eval_steps: 10000
+evaluation_strategy: steps
+save_steps: 200
+save_strategy: steps
+logging_steps: 1
+global_batch_size: 32
+gradient_accumulation_steps: 16
+logging_dir: ./vdl_log
+output_dir: ./checkpoints/kimik2-pt
+disable_tqdm: true
+eval_accumulation_steps: 1
+
+# args
+router_aux_loss_coef: 0.0001
+num_nextn_predict_layers: 1
+moe_router_force_load_balancing: true
+
+# train
+warmup_steps: 20
+learning_rate: 1.0e-5
+min_lr: 1.0e-6
+lr_scheduler_type: cosine
+weight_decay: 0.1
+adam_beta2: 0.95
+
+# parallel
+tensor_model_parallel_size: 1
+sequence_parallel: false
+use_expert_parallel: true
+expert_model_parallel_size: 8
+pipeline_model_parallel_size: 4
+
+# performance
+recompute_granularity: full
+recompute_method: block
+recompute_num_layers: 11
+
+moe_expert_fusion: true
+apply_rope_fusion: true
+moe_deep_gemm: false
+fp32_residual_connection: false
+
+# sharding
+split_param: true
+sharding: stage1
+stage1_overlap: true
+
+# pp
+overlap_p2p_comm: true
+variable_seq_lengths: true
+best_unbalanced_scheduler: true
+pp_release_grads: true
+
+amp_master_grad: true
+bf16: true
+fp16_opt_level: O2
+
+save_checkpoint_format: flex_checkpoint
+load_checkpoint_format: flex_checkpoint
+continue_training: true
+
+tensorwise_offload_optimizer: true
+
+skip_profile_timer: false
