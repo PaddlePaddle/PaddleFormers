@@ -66,6 +66,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("minimax", "MiniMaxConfig"),
         ("minimax_m2", "MiniMaxM2Config"),
         ("minicpm", "MiniCPMConfig"),
+        ("minicpm4", "MiniCPM4Config"),
         ("minicpm4_1", "MiniCPM4_1Config"),
         ("deepseek_v4", "DeepseekV4Config"),
         ("gpt_oss", "GptOssConfig"),
@@ -139,7 +140,8 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("molmo", "MolmoModel"),
         ("minimax", "MiniMaxForCausalLM"),
         ("phi4_multimodal", "Phi4MultimodalModel"),
-        ("minicpm", "MiniCPM"),
+        ("minicpm", "MiniCPMModel"),
+        ("minicpm4", "MiniCPM4Model"),
         ("minicpm4_1", "MiniCPM4_1"),
         ("cohere", "Cohere"),
         ("granite", "Granite"),
@@ -263,22 +265,30 @@ class _LazyConfigMapping(OrderedDict):
 CONFIG_MAPPING = _LazyConfigMapping(CONFIG_MAPPING_NAMES)
 
 
-def resolve_minicpm4_1_model_type(config_dict, model_type_override=None):
-    """Resolve upstream MiniCPM4.1 configs to the PaddleFormers registration key."""
+def resolve_minicpm_model_type(config_dict, model_type_override=None):
+    """Resolve upstream MiniCPM4 and MiniCPM4.1 configs to their registration keys."""
     if model_type_override is not None:
-        if model_type_override != "minicpm4_1":
+        if model_type_override not in {"minicpm4", "minicpm4_1"}:
             raise ValueError(
-                f"Unsupported model_type_override={model_type_override!r}. " "Only 'minicpm4_1' is supported."
+                f"Unsupported model_type_override={model_type_override!r}. "
+                "Only 'minicpm4' and 'minicpm4_1' are supported."
             )
         return model_type_override
 
-    if not isinstance(config_dict, dict) or config_dict.get("model_type") != "minicpm":
+    if not isinstance(config_dict, dict):
+        return None
+    model_type = config_dict.get("model_type")
+    if model_type in {"minicpm4", "minicpm4_1"}:
+        return model_type
+    if model_type not in {None, "minicpm"}:
         return None
 
     original_name = str(config_dict.get("_name_or_path", ""))
     normalized_name = original_name.lower().replace(".", "_").replace("-", "_")
     if "minicpm4_1" in normalized_name:
         return "minicpm4_1"
+    if "minicpm4" in normalized_name:
+        return "minicpm4"
 
     return None
 
@@ -454,7 +464,7 @@ class AutoConfig(PretrainedConfig):
         )
         model_type_override = kwargs.pop("model_type_override", None)
         config_dict, unused_kwargs = PretrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
-        resolved_model_type = resolve_minicpm4_1_model_type(config_dict, model_type_override)
+        resolved_model_type = resolve_minicpm_model_type(config_dict, model_type_override)
         if resolved_model_type is not None:
             config_dict["model_type"] = resolved_model_type
         if "model_type" in config_dict:

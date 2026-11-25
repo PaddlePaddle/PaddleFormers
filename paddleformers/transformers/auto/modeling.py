@@ -29,7 +29,7 @@ from .configuration import (
     MODEL_NAMES_MAPPING,
     AutoConfig,
     PretrainedConfig,
-    resolve_minicpm4_1_model_type,
+    resolve_minicpm_model_type,
 )
 from .factory import _LazyAutoMapping
 
@@ -84,6 +84,7 @@ MAPPING_NAMES = OrderedDict(
         ("MiniMax", "minimax"),
         ("MiniMaxM2", "minimax_m2"),
         ("MiniCPM", "minicpm"),
+        ("MiniCPM4", "minicpm4"),
         ("MiniCPM4_1", "minicpm4_1"),
         ("DeepseekV4", "deepseek_v4"),
         ("GptOss", "gpt_oss"),
@@ -206,7 +207,7 @@ class _BaseAutoModelClass:
             with io.open(config_file_path, encoding="utf-8") as f:
                 config = json.load(f)
 
-        resolved_model_type = resolve_minicpm4_1_model_type(config, model_type_override)
+        resolved_model_type = resolve_minicpm_model_type(config, model_type_override)
 
         # Get class name corresponds to this configuration
         if is_standard_config(config):
@@ -219,7 +220,7 @@ class _BaseAutoModelClass:
         # Sort the MAPPING_NAMES to reorder the model class names with longest-first rule
         # thus the names with same prefix can be correctly inferred
         # such as QWen and QWen2MOE, QWen2MOE is the longest prefix of QWen2MOEModel
-        model_name = "MiniCPM4_1Model" if resolved_model_type == "minicpm4_1" else None
+        model_name = {"minicpm4": "MiniCPM4Model", "minicpm4_1": "MiniCPM4_1Model"}.get(resolved_model_type)
         SORTED_MAPPING_NAMES = dict(sorted(MAPPING_NAMES.items(), key=lambda x: len(x[0]), reverse=True))
         if model_name is None and init_class:
             for model_flag, name in SORTED_MAPPING_NAMES.items():

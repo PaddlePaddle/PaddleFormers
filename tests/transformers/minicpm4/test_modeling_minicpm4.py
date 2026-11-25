@@ -1,0 +1,485 @@
+# Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+import paddle
+
+import paddleformers.transformers as transformers
+from paddleformers.transformers import AutoConfig, AutoModel, AutoModelForCausalLM
+from paddleformers.transformers.auto.modeling import MODEL_MAPPING
+from paddleformers.transformers.minicpm4 import (
+    MiniCPM4Config,
+    MiniCPM4ForCausalLM,
+    MiniCPM4Model,
+)
+
+# from tests.testing_utils import slow
+from tests.transformers.test_configuration_common import ConfigTester
+from tests.transformers.test_generation_utils import GenerationTesterMixin
+from tests.transformers.test_modeling_common import (
+    GenerationD2STestMixin,
+    ModelTesterMixin,
+    ids_tensor,
+    random_attention_mask,
+)
+
+
+class MiniCPM4ModelTester:
+    def __init__(
+        self,
+        parent,
+        vocab_size=256,
+        hidden_size=64,
+        intermediate_size=128,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        masked_softmax_fusion=True,
+        layer_norm_epsilon=1e-5,
+        initializer_range=0.02,
+        is_training=True,
+        use_cache=False,
+        bos_token_id=1,
+        eos_token_id=2,
+        apply_residual_connection_post_layernorm=False,
+        hidden_dropout=0.0,
+        attention_dropout=0.0,
+        attention_softmax_in_fp32=True,
+        pretraining_tp=1,  # TP rank used when training with megatron
+        dtype="bfloat16",
+        slow_but_exact=False,
+        batch_size: int = 2,
+        seq_length: int = 10,
+        type_sequence_label_size=2,
+        activation_function="gelu",
+        num_labels=3,
+        num_choices=4,
+        scope=None,
+        dropout=0.56,
+        use_input_mask: bool = False,
+        use_labels: bool = False,
+        return_dict=False,
+    ):
+        self.parent: MiniCPM4ModelTest = parent
+        self.vocab_size = vocab_size
+        self.hidden_size = hidden_size
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+        self.num_key_value_heads = num_key_value_heads
+        self.masked_softmax_fusion = masked_softmax_fusion
+        self.layer_norm_epsilon = layer_norm_epsilon
+        self.initializer_range = initializer_range
+        self.is_training = is_training
+        self.use_cache = use_cache
+        self.bos_token_id = bos_token_id
+        self.eos_token_id = eos_token_id
+        self.apply_residual_connection_post_layernorm = apply_residual_connection_post_layernorm
+        self.hidden_dropout = hidden_dropout
+        self.attention_dropout = attention_dropout
+        self.attention_softmax_in_fp32 = attention_softmax_in_fp32
+        self.pretraining_tp = pretraining_tp
+        self.dtype = dtype
+        self.slow_but_exact = slow_but_exact
+        self.intermediate_size = intermediate_size
+        self.batch_size = batch_size
+        self.seq_length = seq_length
+        self.type_sequence_label_size = type_sequence_label_size
+        self.activation_function = activation_function
+        self.num_labels = num_labels
+        self.num_choices = num_choices
+        self.scope = scope
+        self.dropout = dropout
+
+        self.use_input_mask = use_input_mask
+        self.use_labels = use_labels
+        self.return_dict = return_dict
+
+    def prepare_config_and_inputs(self):
+        input_ids = ids_tensor([self.batch_size, self.seq_length], self.vocab_size, dtype=paddle.int64)
+
+        input_mask = None
+        if self.use_input_mask:
+            input_mask = random_attention_mask([self.batch_size, self.seq_length])
+
+        sequence_labels = None
+        token_labels = None
+        choice_labels = None
+        if self.use_labels:
+            sequence_labels = ids_tensor([self.batch_size], self.type_sequence_label_size)
+            token_labels = ids_tensor([self.batch_size, self.seq_length], self.num_labels)
+            choice_labels = ids_tensor([self.batch_size], self.num_choices)
+
+        config = self.get_config()
+        return config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+
+    def get_config(self) -> MiniCPM4Config:
+        return MiniCPM4Config(
+            vocab_size=self.vocab_size,
+            hidden_size=self.hidden_size,
+            intermediate_size=self.intermediate_size,
+            num_hidden_layers=self.num_hidden_layers,
+            num_attention_heads=self.num_attention_heads,
+            num_key_value_heads=self.num_key_value_heads,
+            masked_softmax_fusion=self.masked_softmax_fusion,
+            layer_norm_epsilon=self.layer_norm_epsilon,
+            initializer_range=self.initializer_range,
+            use_cache=self.use_cache,
+            bos_token_id=self.bos_token_id,
+            eos_token_id=self.eos_token_id,
+            apply_residual_connection_post_layernorm=self.apply_residual_connection_post_layernorm,
+            hidden_dropout=self.hidden_dropout,
+            attention_dropout=self.attention_dropout,
+            attention_softmax_in_fp32=self.attention_softmax_in_fp32,
+            pretraining_tp=self.pretraining_tp,
+            dtype=self.dtype,
+            slow_but_exact=self.slow_but_exact,
+            activation_function=self.activation_function,
+        )
+
+    def create_and_check_model(
+        self, config: MiniCPM4Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+    ):
+        model = MiniCPM4Model(config)
+        model.eval()
+        result = model(input_ids)
+        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
+
+    def create_and_check_model_attention_mask(
+        self, config: MiniCPM4Config, input_ids, input_mask, sequence_labels, token_labels, choice_labels
+    ):
+        model = MiniCPM4Model(config)
+        model.eval()
+        attn_mask_2d = random_attention_mask([self.batch_size, self.seq_length])
+        result_2d = model(input_ids, attention_mask=attn_mask_2d)[0]
+        batch, seq_length = input_ids.shape
+        causal_mask = paddle.tril(paddle.ones((batch, seq_length, seq_length), dtype=attn_mask_2d.dtype))
+        attn_mask_3d = causal_mask & attn_mask_2d.unsqueeze(-1)
+        result_3d = model(input_ids, attention_mask=attn_mask_3d)[0]
+        attn_mask_4d = attn_mask_3d.unsqueeze(1)
+        result_4d = model(input_ids, attention_mask=attn_mask_4d)[0]
+        result_no_attention_mask = model(input_ids, attention_mask=None)[0]
+        # Assert non-padding tokens have the same logits with different attention_mask shape
+        self.parent.assertTrue((result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all())
+        self.parent.assertTrue((result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all())
+        self.parent.assertTrue((result_2d[attn_mask_2d] == result_no_attention_mask[attn_mask_2d]).all())
+
+    def create_and_check_model_past_large_inputs(
+        self,
+        config: MiniCPM4Config,
+        input_ids,
+        input_mask,
+        sequence_labels,
+        token_labels,
+        choice_labels,
+    ):
+        model = MiniCPM4Model(config)
+        model.eval()
+
+        # first forward pass
+        outputs = model(input_ids, attention_mask=input_mask, use_cache=True, return_dict=self.return_dict)
+        past_key_values = outputs.past_key_values if self.return_dict else outputs[2]
+
+        # create hypothetical multiple next token and extent to next_input_ids
+        next_tokens = ids_tensor((self.batch_size, 3), self.vocab_size)
+        next_mask = ids_tensor((self.batch_size, 3), vocab_size=2)
+
+        # append to next input_ids and
+        next_input_ids = paddle.cat([input_ids, next_tokens], axis=-1)
+        next_attention_mask = paddle.cat([input_mask, next_mask], axis=-1)
+
+        outputs = model(
+            next_input_ids, attention_mask=next_attention_mask, output_hidden_states=True, return_dict=self.return_dict
+        )
+
+        output_from_no_past = outputs[2][0]
+
+        outputs = model(
+            next_tokens,
+            attention_mask=next_attention_mask,
+            past_key_values=past_key_values,
+            output_hidden_states=True,
+            return_dict=self.return_dict,
+        )
+
+        output_from_past = outputs[2][0]
+
+        # select random slice
+        random_slice_idx = ids_tensor((1,), output_from_past.shape[-1]).item()
+        output_from_no_past_slice = output_from_no_past[:, -3:, random_slice_idx].detach()
+        output_from_past_slice = output_from_past[:, :, random_slice_idx].detach()
+
+        self.parent.assertTrue(output_from_past_slice.shape[1] == next_tokens.shape[1])
+
+        # test that outputs are equal for slice
+        self.parent.assertTrue(paddle.allclose(output_from_past_slice, output_from_no_past_slice, atol=1e-3))
+
+    def prepare_config_and_inputs_for_common(self):
+        config_and_inputs = self.prepare_config_and_inputs()
+        (
+            config,
+            input_ids,
+            input_mask,
+            sequence_labels,
+            token_labels,
+            choice_labels,
+        ) = config_and_inputs
+        inputs_dict = {"input_ids": input_ids, "attention_mask": input_mask}
+        return config, inputs_dict
+
+    def create_and_check_lm_head_model(self, config, input_ids, input_mask, *args):
+        model = MiniCPM4ForCausalLM(config)
+        model.eval()
+
+        result = model(
+            input_ids,
+            use_cache=True,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
+        if self.parent.use_labels:
+            self.parent.assertIsInstance(result[0].item(), float)
+            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+        else:
+            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+
+    def check_model_position_ids(self, config, input_ids, input_mask, *args):
+        model = MiniCPM4ForCausalLM(config)
+        model.eval()
+
+        result_no_position_id = model(
+            input_ids,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
+        batch_size, seq_len = input_ids.shape
+        position_ids = paddle.arange(seq_len).expand((batch_size, seq_len))
+        result_position_id = model(
+            input_ids,
+            position_ids=position_ids,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
+        if self.parent.use_labels:
+            self.parent.assertTrue((result_position_id[1] == result_no_position_id[1]).all())
+        else:
+            self.parent.assertTrue((result_position_id[0] == result_no_position_id[0]).all())
+
+    def create_and_check_gqa_model(self, config, input_ids, input_mask, *args):
+        config.num_key_value_heads = 2  # gqa
+        config.apply_rope_fusion = True
+        model = MiniCPM4ForCausalLM(config)
+        model.eval()
+
+        result = model(
+            input_ids,
+            use_cache=True,
+            labels=input_ids if self.parent.use_labels else None,
+            return_dict=self.parent.return_dict,
+        )
+        if self.parent.use_labels:
+            self.parent.assertIsInstance(result[0].item(), float)
+            self.parent.assertEqual(result[1].shape, [self.batch_size, self.seq_length, self.vocab_size])
+        else:
+            self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.vocab_size])
+
+
+class MiniCPMAutoRoutingTest(unittest.TestCase):
+    def check_routing(self, model_type, name, expected_version, override=None):
+        config_dict = {"architectures": ["MiniCPMForCausalLM"]}
+        if model_type is not None:
+            config_dict["model_type"] = model_type
+        if name is not None:
+            config_dict["_name_or_path"] = name
+        prefix = {"minicpm": "MiniCPM", "minicpm4": "MiniCPM4", "minicpm4_1": "MiniCPM4_1"}[expected_version]
+        kwargs = {} if override is None else {"model_type_override": override}
+        with tempfile.TemporaryDirectory(prefix="renamed-model-") as temp_dir:
+            config_file = Path(temp_dir) / "config.json"
+            config_file.write_text(json.dumps(config_dict), encoding="utf-8")
+            config = AutoConfig.from_pretrained(temp_dir, **kwargs)
+            self.assertIsInstance(config, getattr(transformers, prefix + "Config"))
+            for auto_class, suffix in ((AutoModel, "Model"), (AutoModelForCausalLM, "ForCausalLM")):
+                model_class = auto_class._get_model_class_from_config(temp_dir, config_file, **kwargs)
+                self.assertIs(model_class, getattr(transformers, prefix + suffix))
+            self.assertEqual(json.loads(config_file.read_text()), config_dict)
+
+    def test_shared_upstream_config_names(self):
+        for model_type in (None, "minicpm"):
+            for name, expected_version in (
+                ("openbmb/MiniCPM4-0.5B", "minicpm4"),
+                ("openbmb/MiniCPM4-8B", "minicpm4"),
+                ("openbmb/MiniCPM4.1-8B", "minicpm4_1"),
+                ("openbmb/MiniCPM4_1-8B", "minicpm4_1"),
+            ):
+                with self.subTest(model_type=model_type, name=name):
+                    self.check_routing(model_type, name, expected_version)
+
+    def test_explicit_registered_model_types(self):
+        for model_type in ("minicpm4", "minicpm4_1"):
+            with self.subTest(model_type=model_type):
+                self.check_routing(model_type, None, model_type)
+
+    def test_explicit_override_without_original_name(self):
+        for model_type in (None, "minicpm"):
+            for override in ("minicpm4", "minicpm4_1"):
+                with self.subTest(model_type=model_type, override=override):
+                    self.check_routing(model_type, None, override, override)
+
+    def test_original_minicpm_is_preserved(self):
+        self.check_routing("minicpm", "openbmb/MiniCPM-2B", "minicpm")
+        self.check_routing("minicpm", None, "minicpm")
+
+    def test_invalid_override_is_rejected(self):
+        from paddleformers.transformers.auto.configuration import (
+            resolve_minicpm_model_type,
+        )
+
+        with self.assertRaises(ValueError):
+            resolve_minicpm_model_type({}, "unknown")
+
+    def test_other_model_types_are_preserved(self):
+        from paddleformers.transformers.auto.configuration import (
+            resolve_minicpm_model_type,
+        )
+
+        self.assertIsNone(resolve_minicpm_model_type({"model_type": "llama", "_name_or_path": "MiniCPM4-8B"}))
+
+
+class MiniCPM4ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCase):
+    base_model_class = MiniCPM4Model
+    return_dict = False
+    use_labels = False
+
+    all_model_classes = (MiniCPM4Model, MiniCPM4ForCausalLM)
+    all_generative_model_classes = {MiniCPM4ForCausalLM: (MiniCPM4Model, "MiniCPM4")}
+
+    def setUp(self):
+        super().setUp()
+
+        self.model_tester = MiniCPM4ModelTester(self)
+        self.config_tester = ConfigTester(self, config_class=MiniCPM4Config, vocab_size=256, hidden_size=24)
+
+    def test_top_level_exports(self):
+        self.assertIs(transformers.MiniCPM4Config, MiniCPM4Config)
+        self.assertIs(transformers.MiniCPM4Model, MiniCPM4Model)
+        self.assertIs(transformers.MiniCPM4ForCausalLM, MiniCPM4ForCausalLM)
+
+    def test_base_model_auto_mappings(self):
+        self.assertIs(MODEL_MAPPING[transformers.MiniCPMConfig], transformers.MiniCPMModel)
+        self.assertIs(MODEL_MAPPING[MiniCPM4Config], MiniCPM4Model)
+
+    def test_auto_mappings(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config_file = Path(temp_dir) / "config.json"
+            config_file.write_text(
+                json.dumps(
+                    {
+                        "model_type": "minicpm4",
+                        "architectures": ["MiniCPM4ForCausalLM"],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            config = AutoConfig.from_pretrained(temp_dir)
+            model_class = AutoModelForCausalLM._get_model_class_from_config(temp_dir, config_file)
+
+        self.assertIsInstance(config, MiniCPM4Config)
+        self.assertIs(model_class, MiniCPM4ForCausalLM)
+
+    def _get_input_ids_and_config(self):
+        config, inputs_dict = self.model_tester.prepare_config_and_inputs_for_common()
+
+        input_ids = inputs_dict[self.input_name]
+        attention_mask = paddle.ones_like(input_ids, dtype=paddle.int64)
+
+        max_batch_size = 2
+        sequence_length = input_ids.shape[-1] // 2
+        input_ids = input_ids[:max_batch_size, :sequence_length]
+        attention_mask = attention_mask[:max_batch_size, :sequence_length]
+        max_length = 3
+
+        return config, input_ids, attention_mask, max_length
+
+    def test_model(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_model(*config_and_inputs)
+
+    def test_model_attention_mask(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_model_attention_mask(*config_and_inputs)
+
+    def test_model_position_ids(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.check_model_position_ids(*config_and_inputs)
+
+    def test_generate_without_input_ids(self):
+        pass
+
+    def test_MiniCPM4_lm_head_model(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
+
+    def test_MiniCPM4_gqa_model(self):
+        config_and_inputs = self.model_tester.prepare_config_and_inputs()
+        self.model_tester.create_and_check_gqa_model(*config_and_inputs)
+
+    def test_torch_to_paddle_aoa_mapping_unfused(self):
+        config = MiniCPM4Config(
+            vocab_size=256,
+            hidden_size=64,
+            intermediate_size=128,
+            num_hidden_layers=2,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            max_position_embeddings=32768,
+            rope_scaling={
+                "rope_type": "longrope",
+                "short_factor": [1.0] * 32,
+                "long_factor": [1.0] * 32,
+                "original_max_position_embeddings": 32768,
+            },
+            dim_model_base=256,
+            scale_emb=12,
+            scale_depth=1.4,
+        )
+
+        self.assertFalse(config.fuse_attention_qkv)
+        self.assertFalse(config.fuse_attention_ffn)
+
+        statements = MiniCPM4ForCausalLM._gen_aoa_config(config)["aoa_statements"]
+        joined_statements = "\n".join(statements)
+
+        self.assertIn(
+            "model.layers.$LAYER_ID.self_attn.q_proj.weight^T -> model.layers.$LAYER_ID.self_attn.q_proj.weight",
+            statements,
+        )
+        self.assertIn(
+            "model.layers.$LAYER_ID.mlp.gate_proj.weight^T -> model.layers.$LAYER_ID.mlp.gate_proj.weight",
+            statements,
+        )
+        self.assertIn("model.embed_tokens.weight -> lm_head.weight", statements)
+        self.assertNotIn("qkv_proj", joined_statements)
+        self.assertNotIn("up_gate_proj", joined_statements)
+
+
+class MiniCPM4GenerationD2STest(GenerationD2STestMixin, unittest.TestCase):
+    internal_testing_model = "__internal_testing__/micro-random-MiniCPM"
+
+
+if __name__ == "__main__":
+    unittest.main()
