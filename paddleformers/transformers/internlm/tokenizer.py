@@ -18,11 +18,11 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from ..intern_lm2_5.tokenizer import (
+from ..tokenizer_utils import PreTrainedTokenizer
+from ..tokenizer_utils_internlm import (
     VOCAB_FILES_NAMES,
     InternLMSentencePieceTokenizerMixin,
 )
-from ..tokenizer_utils import PreTrainedTokenizer
 
 
 class InternLMTokenizer(InternLMSentencePieceTokenizerMixin, PreTrainedTokenizer):
