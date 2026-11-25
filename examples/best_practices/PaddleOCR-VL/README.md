@@ -690,7 +690,36 @@ if __name__ == "__main__":
 
 ## 6.3 部署推理
 
-部署 PaddleOCR-VL 模型，请参考 [基于 FastDeploy / vLLM 部署模型](../../../docs/zh/deployment_guide.md)和 [FastDeploy - PaddleOCR-VL-0.9B Best Practices](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)
+部署 PaddleOCR-VL 模型时，可以选取 **FastDeploy** 或 **vLLM** 两种方式之一进行部署推理。
+
+#### 基于 FastDeploy 部署推理
+基于 FastDeploy 部署推理 PaddleOCR-VL 模型，请参考 PaddlePaddle 官方提供的 [PaddleOCR-VL部署推理最佳实践](https://paddlepaddle.github.io/FastDeploy/zh/best_practices/PaddleOCR-VL-0.9B/)。
+
+在启动 FastDeploy 服务时，需要加载微调后的模型路径：
+
+```bash
+vllm serve {MODEL_PATH} \  # 微调后模型的本地存储路径
+    --chat-template {chat_template_path}/
+    ......
+```
+
+通过微调后的模型路径、对话模板路径（一般以 chat_template.jinja 为文件名存储在模型路径下）启动 vLLM 服务，vLLM 会加载给定路径的**模型权重**和**对话模板**进行部署，其他可调整参数请参考[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)和[vLLM官方文档](https://docs.vllm.ai/en/latest/usage)，并基于文档编写代码，调用 vLLM 服务进行推理。
+
+
+#### 基于 vLLM 部署推理
+基于 vLLM 部署推理 PaddleOCR-VL 模型，请参考 vLLM 官方提供的[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)。
+
+在启动 vLLM 服务时，需要加载微调后的模型路径：
+
+```bash
+vllm serve {MODEL_PATH} \  # 微调后模型的本地存储路径
+    ......
+```
+
+通过微调后模型的路径启动 vLLM 服务后，vLLM 会加载路径下的**模型权重**和**对话模板**，其他可调整参数请参考[PaddleOCR-VL模型使用文档](https://docs.vllm.ai/projects/recipes/en/latest/PaddlePaddle/PaddleOCR-VL.html)和[vLLM官方文档](https://docs.vllm.ai/en/latest/usage)，并基于文档编写代码，调用 vLLM 服务进行推理。
+
+除此之外，如果需要结合前置版面区域检测排序模型进行推理，请参考[PaddleOCR官方文档](https://www.paddleocr.ai/latest/version3.x/pipeline_usage/PaddleOCR-VL.html#22-python)使用产线进行推理，并在实例化产线对象时指定版面区域检测排序模型、推理服务URL等信息。
+
 
 # 7. 更多硬件上的使用说明
 
