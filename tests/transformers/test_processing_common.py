@@ -28,6 +28,7 @@ from PIL import Image
 from paddleformers.transformers.processing_utils import (
     MODALITY_TO_AUTOPROCESSOR_MAPPING,
 )
+from tests.testing_utils import slow
 
 from .test_utils import check_json_file_has_correct_format
 
@@ -202,6 +203,7 @@ class ProcessorTesterMixin:
                 if "tokenizer" not in attribute:
                     self.assertEqual(repr(attribute_first), repr(attribute_reloaded))
 
+    @slow
     def test_model_input_names(self):
         processor = self.get_processor()
 
@@ -408,6 +410,7 @@ class ProcessorTesterMixin:
         self.assertLessEqual(inputs[self.images_input_name][0][0].mean(), 0)
         self.assertEqual(inputs[self.text_input_name].shape[-1], 76)
 
+    @slow
     def test_tokenizer_defaults_preserved_by_kwargs_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -421,6 +424,7 @@ class ProcessorTesterMixin:
         inputs = processor(text=input_str, videos=video_input, do_sample_frames=False, return_tensors="pd")
         self.assertEqual(inputs[self.text_input_name].shape[-1], 167)
 
+    @slow
     def test_video_processor_defaults_preserved_by_video_kwargs(self):
         """
         We use do_rescale=True, rescale_factor=-1.0 to ensure that image_processor kwargs are preserved in the processor.
@@ -444,6 +448,7 @@ class ProcessorTesterMixin:
         inputs = processor(text=input_str, videos=video_input, do_sample_frames=False, return_tensors="pd")
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
 
+    @slow
     def test_kwargs_overrides_default_tokenizer_kwargs_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -464,6 +469,7 @@ class ProcessorTesterMixin:
         )
         self.assertEqual(inputs[self.text_input_name].shape[-1], 162)
 
+    @slow
     def test_kwargs_overrides_default_video_processor_kwargs(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -489,6 +495,7 @@ class ProcessorTesterMixin:
         )
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
 
+    @slow
     def test_unstructured_kwargs_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -557,6 +564,7 @@ class ProcessorTesterMixin:
                 return_tensors="pd",
             )
 
+    @slow
     def test_structured_kwargs_nested_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
@@ -579,6 +587,7 @@ class ProcessorTesterMixin:
         self.assertLessEqual(inputs[self.videos_input_name][0].mean(), 0)
         self.assertEqual(inputs[self.text_input_name].shape[-1], 176)
 
+    @slow
     def test_structured_kwargs_nested_from_dict_video(self):
         if "video_processor" not in self.processor_class.attributes:
             self.skipTest(f"video_processor attribute not present in {self.processor_class}")
