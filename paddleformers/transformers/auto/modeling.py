@@ -108,6 +108,7 @@ MAPPING_NAMES = OrderedDict(
         ("Molmo", "molmo"),
         ("Olmo2", "olmo2"),
         ("Olmo3", "olmo3"),
+        ("InternLM", "internlm"),
         ("InternLM3", "intern_lm3"),
         ("InternLM2", "intern"),
     ]

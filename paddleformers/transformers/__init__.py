@@ -534,6 +534,13 @@ import_structure = {
         "Olmo3ForCausalLMDeprecated",
         "Olmo3ForCausalLMPipeDeprecated",
     ],
+    "internlm.configuration": ["InternLMConfig"],
+    "internlm.modeling": [
+        "InternLMModel",
+        "InternLMForCausalLM",
+        "InternLMForCausalLMPipe",
+    ],
+    "internlm.tokenizer": ["InternLMTokenizer"],
     "intern_lm3.configuration": ["InternLM3Config"],
     "intern_lm3.modeling": [
         "InternLM3Model",
@@ -668,6 +675,7 @@ if TYPE_CHECKING:
     from .intern_lm2_5 import *
     from .intern import *
     from .intern_lm2 import InternLM2Tokenizer
+    from .internlm import *
     from .gemma4_moe import *
     from .phi4 import *
 else:
