@@ -64,6 +64,8 @@ MAPPING_NAMES = OrderedDict(
         ("Ernie4_5_Moe", "ernie4_5_moe"),
         ("Ernie4_5_VLMoe", "ernie4_5_moe_vl"),
         ("PaddleOCRVL", "paddleocr_vl"),
+        ("Lfm2Vl", "lfm2_vl"),
+        ("Lfm2", "lfm2"),
         ("HunYuanDenseV1", "hunyuan"),
         ("Llama", "llama"),
         ("Llama4", "llama4"),

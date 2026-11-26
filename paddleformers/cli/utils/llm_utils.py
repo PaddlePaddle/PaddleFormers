@@ -152,6 +152,22 @@ def get_lora_target_modules(model):
             ".*down_proj.*",
             ".*up_proj.*",
         ]
+    elif model.config.model_type in ("lfm2", "lfm2_vl"):
+        target_modules = [
+            ".*in_proj.*",
+            ".*out_proj.*",
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*w1.*",
+            ".*w2.*",
+            ".*w3.*",
+            ".*patch_embedding.*",
+            ".*linear_1.*",
+            ".*linear_2.*",
+            ".*fc1.*",
+            ".*fc2.*",
+        ]
     elif model.config.model_type == "hunyuan_v1_dense":
         target_modules = [
             ".*qkv_proj.*",
