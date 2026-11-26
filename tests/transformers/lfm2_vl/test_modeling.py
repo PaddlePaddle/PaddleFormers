@@ -70,15 +70,16 @@ class Lfm2VlModelTest(unittest.TestCase):
     def test_text_model_has_independent_module_registration(self):
         from paddleformers.transformers import (
             AutoConfig,
-            AutoModel,
+            AutoModelForCausalLM,
             Lfm2Config,
+            Lfm2ForCausalLM,
             Lfm2Model,
         )
 
         self.assertEqual(Lfm2Config.__module__, "paddleformers.transformers.lfm2.configuration")
         self.assertEqual(Lfm2Model.__module__, "paddleformers.transformers.lfm2.modeling")
         config = get_config().text_config
-        self.assertIsInstance(AutoModel.from_config(config), Lfm2Model)
+        self.assertIsInstance(AutoModelForCausalLM.from_config(config), Lfm2ForCausalLM)
         with tempfile.TemporaryDirectory() as directory:
             config.save_pretrained(directory)
             self.assertIsInstance(AutoConfig.from_pretrained(directory), Lfm2Config)
