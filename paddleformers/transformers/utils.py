@@ -62,6 +62,21 @@ from .download_utils import DownloadSource
 HUGGINGFACE_CO_RESOLVE_ENDPOINT = "https://huggingface.co"
 
 
+def _use_high_precision_cublas_for_fp32(tensor: paddle.Tensor) -> None:
+    """Match Torch's default FP32 GEMM policy before multimodal computation."""
+    if tensor.dtype != paddle.float32 or not tensor.place.is_gpu_place():
+        return
+
+    # Paddle enables TF32 cuBLAS kernels by default on Ampere and newer GPUs,
+    # while Torch's default float32_matmul_precision="highest" does not.  The
+    # switch is process-wide and must remain disabled for the following text
+    # backbone and backward pass as well as for the vision tower.
+    from paddle.base import core
+
+    if core.get_cublas_switch():
+        core.set_cublas_switch(False)
+
+
 def convert_ndarray_dtype(np_array: np.ndarray, target_dtype: str) -> np.ndarray:
     """convert ndarray
 

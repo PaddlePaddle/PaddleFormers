@@ -117,6 +117,19 @@ class Ovis2ProcessorTest(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "must be a string"):
             self.processor(text=[1, 2])
 
+    def test_processor_honors_custom_image_token(self):
+        with patch.object(Ovis2Processor, "check_argument_for_proper_class"):
+            processor = Ovis2Processor(
+                image_processor=self.processor.image_processor,
+                tokenizer=DummyTokenizer(),
+                image_seq_length=4,
+                image_token="<photo>",
+            )
+        self.assertEqual(processor.image_token, "<photo>")
+        self.assertEqual(processor.image_token_id, processor.tokenizer.convert_tokens_to_ids("<photo>"))
+        inputs = processor(images=self.image, text="<photo> describe the image", return_tensors="np")
+        self.assertEqual(int((inputs["input_ids"] == 3).sum()), 12)
+
     def test_model_input_names_exclude_processor_only_grid(self):
         self.assertEqual(self.processor.model_input_names, ["input_ids", "attention_mask", "pixel_values"])
 

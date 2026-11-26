@@ -18,7 +18,7 @@ import numpy as np
 import paddle
 
 from ..feature_extraction_utils import BatchFeature
-from ..image_utils import make_nested_list_of_images
+from ..image_utils import ImageInput, make_nested_list_of_images
 from ..processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
 from ..tokenizer_utils_base import PreTokenizedInput, TextInput
 
@@ -53,7 +53,7 @@ class Ovis2Processor(ProcessorMixin):
         self.image_seq_length = image_seq_length
         # The public prompt token is deliberately different from the model's
         # <IMG_ATOM> placeholder token, matching the reference processor.
-        self.image_token = "<image>"
+        self.image_token = image_token
         self.image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
         super().__init__(image_processor, tokenizer, chat_template=chat_template, **kwargs)
 
@@ -72,8 +72,8 @@ class Ovis2Processor(ProcessorMixin):
 
     def __call__(
         self,
-        images=None,
-        text: TextInput | PreTokenizedInput | list[TextInput] | list[PreTokenizedInput] = None,
+        images: ImageInput | None = None,
+        text: TextInput | PreTokenizedInput | list[TextInput] | list[PreTokenizedInput] | None = None,
         **kwargs: Unpack[Ovis2ProcessorKwargs],
     ) -> BatchFeature:
         if images is None and text is None:

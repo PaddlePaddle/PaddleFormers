@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import copy
 import tempfile
 import unittest
 from unittest import mock
@@ -21,6 +22,7 @@ from unittest import mock
 import paddle
 import paddle.nn.functional as F
 
+from paddleformers.nn.criterion import CriterionLayer
 from paddleformers.transformers import (
     AutoConfig,
     AutoModel,
@@ -315,6 +317,122 @@ class Ovis2ModelTest(unittest.TestCase):
         model = Ovis2ForConditionalGeneration(self.model_tester.get_config())
 
         self.assertIs(model.get_input_embeddings().weight, model.get_output_embeddings().weight)
+
+    def test_tie_word_embeddings_defaults_to_text_config(self):
+        for tied in (False, True):
+            with self.subTest(tied=tied):
+                values = self.model_tester.get_config().to_dict()
+                values.pop("tie_word_embeddings")
+                values["text_config"]["tie_word_embeddings"] = tied
+                config = Ovis2Config(**values)
+                self.assertEqual(config.tie_word_embeddings, tied)
+                self.assertEqual(config.text_config.tie_word_embeddings, tied)
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    config.save_pretrained(tmpdir)
+                    loaded = Ovis2Config.from_pretrained(tmpdir)
+                self.assertEqual(loaded.tie_word_embeddings, tied)
+                self.assertEqual(loaded.text_config.tie_word_embeddings, tied)
+
+    def test_explicit_tie_word_embeddings_overrides_text_config(self):
+        values = self.model_tester.get_config().to_dict()
+        values["text_config"]["tie_word_embeddings"] = False
+        config = Ovis2Config(**values)
+        model = Ovis2ForConditionalGeneration(config)
+        self.assertTrue(config.text_config.tie_word_embeddings)
+        self.assertIs(model.get_input_embeddings().weight, model.get_output_embeddings().weight)
+
+    def test_aoa_preserves_untied_lm_head(self):
+        values = self.model_tester.get_config().to_dict()
+        values.pop("tie_word_embeddings")
+        values["text_config"]["tie_word_embeddings"] = False
+        config = Ovis2Config(**values)
+        model = Ovis2ForConditionalGeneration(config)
+        self.assertIsNot(model.get_input_embeddings().weight, model.get_output_embeddings().weight)
+        statements = model._gen_aoa_config(config)["aoa_statements"]
+        self.assertIn("lm_head.weight -> lm_head.weight", statements)
+        self.assertNotIn("model.language_model.embed_tokens.weight -> lm_head.weight", statements)
+        base_statements = Ovis2Model._gen_aoa_config(config)["aoa_statements"]
+        self.assertFalse(any("lm_head.weight" in statement for statement in base_statements))
+        config = self.model_tester.get_config()
+        statements = Ovis2ForConditionalGeneration._gen_aoa_config(config)["aoa_statements"]
+        self.assertIn("model.language_model.embed_tokens.weight -> lm_head.weight", statements)
+
+    def test_image_features_preserve_visual_token_probabilities(self):
+        config = self.model_tester.get_config()
+        _, _, pixel_values = self.model_tester.prepare_inputs()
+        model = Ovis2ForConditionalGeneration(config)
+        model.eval()
+        outputs = model.get_image_features(pixel_values)
+        self.assertEqual(tuple(outputs.pooler_output.shape), (2, 4, 27))
+        self.assertEqual(tuple(outputs.image_embeds.shape), (2, 4, 32))
+        self.assertTrue(paddle.allclose(outputs.pooler_output.sum(-1), paddle.ones([2, 4]), atol=1e-6))
+
+    def test_loss_uses_criterion_with_custom_ignore_index(self):
+        config = self.model_tester.get_config()
+        config.text_config.ignored_index = -1
+        model = Ovis2ForConditionalGeneration(config)
+        self.assertIsInstance(model.criterion, CriterionLayer)
+        input_ids = paddle.randint(7, config.vocab_size, shape=[1, 4], dtype="int64")
+        labels = paddle.to_tensor([[-1, 8, 9, -1]], dtype="int64")
+        with mock.patch.object(model.criterion, "forward", wraps=model.criterion.forward) as criterion:
+            outputs = model(input_ids=input_ids, labels=labels, return_dict=True)
+        criterion.assert_called_once()
+        expected = F.cross_entropy(outputs.logits[:, 1:3].reshape([-1, config.vocab_size]), labels[:, 1:3].flatten())
+        self.assertTrue(paddle.allclose(outputs.loss, expected, atol=1e-6))
+
+    def test_sharded_logits_are_routed_to_parallel_criterion(self):
+        config = self.model_tester.get_config()
+        model = Ovis2ForConditionalGeneration(config)
+        model.eval()
+        input_ids = paddle.randint(7, config.vocab_size, shape=[1, 4], dtype="int64")
+        full_logits = model(input_ids=input_ids, return_dict=True).logits
+        # Global target IDs outside the local shard must reach parallel CE.
+        labels = paddle.full_like(input_ids, config.vocab_size - 1)
+        parallel_config = copy.deepcopy(config.text_config)
+        parallel_config.tensor_model_parallel_size = 2
+        parallel_config.tensor_parallel_output = True
+        with mock.patch("paddleformers.nn.criterion.interface.ParallelCrossEntropy") as parallel_ce:
+            parallel_ce.return_value.side_effect = lambda logits, targets: F.cross_entropy(
+                full_logits, targets, reduction="none"
+            )
+            model.criterion = CriterionLayer(parallel_config)
+            with mock.patch.object(model.lm_head, "forward", return_value=full_logits[..., : config.vocab_size // 2]):
+                outputs = model(input_ids=input_ids, labels=labels, return_dict=True)
+            parallel_ce.return_value.assert_called_once()
+            self.assertEqual(parallel_ce.return_value.call_args.args[0].shape[-1], config.vocab_size // 2)
+        expected = F.cross_entropy(full_logits, labels)
+        self.assertTrue(paddle.allclose(outputs.loss, expected, atol=1e-6))
+
+    def test_fused_head_loss_matches_regular_head_and_gradients(self):
+        config = self.model_tester.get_config()
+        regular = Ovis2ForConditionalGeneration(config)
+        fused_config = copy.deepcopy(config)
+        fused_config.text_config.use_fused_head_and_loss_fn = True
+        fused = Ovis2ForConditionalGeneration(fused_config)
+        fused.set_state_dict(regular.state_dict())
+        input_ids, attention_mask, pixel_values = self.model_tester.prepare_inputs()
+        labels = paddle.randint(7, config.vocab_size, shape=input_ids.shape, dtype="int64")
+        labels[:, :5] = -100
+        kwargs = dict(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            pixel_values=pixel_values,
+            labels=labels,
+            return_dict=True,
+        )
+        regular_loss = regular(**kwargs).loss
+        fused_loss = fused(**kwargs).loss
+        self.assertTrue(paddle.allclose(regular_loss, fused_loss, atol=1e-6))
+        regular_loss.backward()
+        fused_loss.backward()
+        self.assertTrue(paddle.allclose(regular.lm_head.weight.grad, fused.lm_head.weight.grad, atol=1e-6))
+        self.assertTrue(
+            paddle.allclose(
+                regular.model.vision_tower.head_linear.weight.grad,
+                fused.model.vision_tower.head_linear.weight.grad,
+                atol=1e-6,
+            )
+        )
 
     def test_auto_model_registration(self):
         config = self.model_tester.get_config()

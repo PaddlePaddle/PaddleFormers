@@ -23,6 +23,7 @@ import paddle.nn.functional as F
 from paddle import nn
 
 from ...generation import GenerationMixin
+from ...nn.criterion.interface import CriterionLayer
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...utils.log import logger
 from ..activations import ACT2FN
@@ -35,22 +36,14 @@ from ..model_outputs import (
 )
 from ..model_utils import PretrainedModel
 from ..qwen2.modeling import Qwen2Model
+from ..utils import _use_high_precision_cublas_for_fp32
 from .configuration import Ovis2Config, Ovis2VisionConfig
-
-
-def _use_high_precision_cublas_for_fp32(tensor):
-    """Match Torch's default FP32 GEMM policy for numerical parity."""
-    if tensor.dtype != paddle.float32 or not tensor.place.is_gpu_place():
-        return
-    from paddle.base import core
-
-    if core.get_cublas_switch():
-        core.set_cublas_switch(False)
 
 
 @dataclass
 class BaseModelOutputWithVisualIndicatorFeatures(BaseModelOutputWithPooling):
     visual_indicator_features: Optional[paddle.Tensor] = None
+    image_embeds: Optional[paddle.Tensor] = None
 
 
 @dataclass
@@ -281,7 +274,10 @@ class Ovis2PreTrainedModel(PretrainedModel):
                     f"{vision_prefix}transformer.encoder.layers.$LAYER_ID.ffn.{projection}.bias"
                 )
         if cls.__name__ != "Ovis2Model":
-            statements.append(f"{source_prefix}language_model.embed_tokens.weight -> lm_head.weight")
+            if config.text_config.tie_word_embeddings:
+                statements.append(f"{source_prefix}language_model.embed_tokens.weight -> lm_head.weight")
+            else:
+                statements.append("lm_head.weight -> lm_head.weight")
         return {"aoa_statements": statements}
 
 
@@ -378,7 +374,7 @@ class Ovis2Model(Ovis2PreTrainedModel):
             self.visual_vocab_size,
             dtype="int64",
         )
-        outputs.pooler_output = features
+        outputs.image_embeds = features
         outputs.visual_indicator_features = self.visual_embeddings_table(indicators)
         return outputs
 
@@ -422,7 +418,7 @@ class Ovis2Model(Ovis2PreTrainedModel):
         image_features = None
         if pixel_values is not None:
             image_outputs = self.get_image_features(pixel_values)
-            image_features = image_outputs.pooler_output.astype(inputs_embeds.dtype)
+            image_features = image_outputs.image_embeds.astype(inputs_embeds.dtype)
             indicator_features = image_outputs.visual_indicator_features.astype(inputs_embeds.dtype)
             mask = self.get_placeholder_mask(input_ids, inputs_embeds, image_features)
             inputs_embeds = inputs_embeds.masked_scatter(mask, image_features)
@@ -462,6 +458,7 @@ class Ovis2ForConditionalGeneration(Ovis2PreTrainedModel, GenerationMixin):
         super().__init__(config)
         self.model = Ovis2Model(config)
         self.lm_head = GeneralLMHead(config.text_config)
+        self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
 
     def get_input_embeddings(self):
@@ -488,6 +485,7 @@ class Ovis2ForConditionalGeneration(Ovis2PreTrainedModel, GenerationMixin):
         past_key_values=None,
         inputs_embeds=None,
         labels=None,
+        loss_mask=None,
         use_cache=None,
         logits_to_keep=0,
         return_dict=None,
@@ -515,16 +513,7 @@ class Ovis2ForConditionalGeneration(Ovis2PreTrainedModel, GenerationMixin):
         logits = self.lm_head(outputs.last_hidden_state[:, indices, :])
         loss = None
         if labels is not None:
-            loss = F.cross_entropy(
-                logits.astype("float32").reshape([-1, logits.shape[-1]]),
-                labels.reshape([-1]),
-                ignore_index=-100,
-                reduction="sum",
-            )
-            # Paddle's default mean includes ignored positions in its divisor.
-            # Match causal-LM loss by averaging only over supervised tokens.
-            num_valid_tokens = (labels != -100).astype("float32").sum()
-            loss = loss / num_valid_tokens.clip(min=1.0)
+            loss, _ = self.criterion(logits, labels, loss_mask=loss_mask)
         result = Ovis2CausalLMOutputWithPast(
             loss=loss,
             logits=logits,

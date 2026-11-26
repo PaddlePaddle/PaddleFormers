@@ -77,23 +77,27 @@ class Ovis2Config(PretrainedConfig):
         visual_indicator_token_ids=(151666, 151667, 151668, 151669, 151670),
         vocab_size=151643,
         hidden_size=1536,
-        tie_word_embeddings=True,
+        tie_word_embeddings=None,
         **kwargs,
     ):
-        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
-
         if isinstance(vision_config, dict):
             vision_config = Ovis2VisionConfig(**vision_config)
         elif vision_config is None:
             vision_config = Ovis2VisionConfig(num_visual_indicator_tokens=len(visual_indicator_token_ids))
 
         if isinstance(text_config, dict):
+            text_config = dict(text_config)
             model_type = text_config.pop("model_type", "qwen2")
             if model_type != "qwen2":
                 raise ValueError(f"Ovis2 currently supports a Qwen2 text backbone, got {model_type!r}.")
             text_config = Qwen2Config(**text_config)
         elif text_config is None:
             text_config = Qwen2Config()
+
+        if tie_word_embeddings is None:
+            tie_word_embeddings = text_config.tie_word_embeddings
+        text_config.tie_word_embeddings = tie_word_embeddings
+        super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
         self.vision_config = vision_config
         self.text_config = text_config
