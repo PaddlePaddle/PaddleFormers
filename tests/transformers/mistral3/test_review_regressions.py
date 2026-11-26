@@ -38,6 +38,26 @@ from .test_modeling import Mistral3ModelTester
 
 
 class Mistral3ReviewTest(unittest.TestCase):
+    def test_empty_cache_keeps_multimodal_prefill(self):
+        from paddleformers.transformers.cache_utils import DynamicCache
+
+        tester = Mistral3ModelTester(self)
+        config = tester.get_config()
+        model = Mistral3ForConditionalGeneration(config).eval()
+        inputs = tester.prepare_inputs()
+        cache = DynamicCache(config=config.text_config)
+        prepared = model.prepare_inputs_for_generation(**inputs, past_key_values=cache, use_cache=True)
+        self.assertIs(prepared["pixel_values"], inputs["pixel_values"])
+        self.assertEqual(prepared["input_ids"].shape, inputs["input_ids"].shape)
+        with paddle.no_grad():
+            expected = model(**inputs, use_cache=False).logits
+            actual = model(**prepared)
+        np.testing.assert_allclose(actual.logits.numpy(), expected.numpy(), atol=1e-6, rtol=1e-6)
+        self.assertEqual(cache.get_seq_length(), inputs["input_ids"].shape[1])
+        decoded = model.prepare_inputs_for_generation(**inputs, past_key_values=cache, use_cache=True)
+        self.assertIsNone(decoded["pixel_values"])
+        self.assertEqual(decoded["input_ids"].shape[1], 1)
+
     def test_nested_tie_config_and_explicit_override(self):
         values = Mistral3ModelTester(self).get_config().to_dict()
         values.pop("tie_word_embeddings", None)

@@ -739,8 +739,14 @@ class Mistral3ForConditionalGeneration(Mistral3PretrainedModel):
         image_sizes=None,
         **kwargs,
     ):
+        cache_length = 0
+        if past_key_values is not None:
+            if hasattr(past_key_values, "get_seq_length"):
+                cache_length = past_key_values.get_seq_length()
+            elif past_key_values and past_key_values[0] is not None:
+                cache_length = past_key_values[0][0].shape[-2]
         if cache_position is None:
-            if past_key_values is None:
+            if cache_length == 0:
                 cache_position = paddle.arange(input_ids.shape[1])
             else:
                 cache_position = paddle.to_tensor([input_ids.shape[1] - 1])
@@ -757,7 +763,7 @@ class Mistral3ForConditionalGeneration(Mistral3PretrainedModel):
             use_cache=use_cache,
             **kwargs,
         )
-        if cache_position[0] != 0:
+        if cache_length > 0:
             model_inputs["pixel_values"] = None
         return model_inputs
 
