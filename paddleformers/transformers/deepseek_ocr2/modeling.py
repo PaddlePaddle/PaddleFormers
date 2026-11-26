@@ -35,6 +35,7 @@ from transformers import TextStreamer
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
+from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead as GeneralLMHead
 from ...utils.log import logger
 from ..cache_utils import Cache
@@ -58,14 +59,16 @@ class MlpProjector(nn.Module):
             modules = nn.Identity()
 
         elif cfg["projector_type"] == "linear":
-            modules = nn.Linear(cfg["input_dim"], cfg["n_embed"])
+            modules = GeneralLinear.create(cfg["input_dim"], cfg["n_embed"], has_bias=True, linear_type="default")
 
         elif cfg["projector_type"] == "mlp_gelu":
             mlp_depth = cfg.get("depth", 1)
-            modules = [nn.Linear(cfg["input_dim"], cfg["n_embed"])]
+            modules = [GeneralLinear.create(cfg["input_dim"], cfg["n_embed"], has_bias=True, linear_type="default")]
             for _ in range(1, mlp_depth):
                 modules.append(nn.GELU())
-                modules.append(nn.Linear(cfg["n_embed"], cfg["n_embed"]))
+                modules.append(
+                    GeneralLinear.create(cfg["n_embed"], cfg["n_embed"], has_bias=True, linear_type="default")
+                )
             modules = nn.Sequential(*modules)
 
         elif cfg["projector_type"] == "normlayer_downsample_mlp_gelu":
@@ -73,53 +76,86 @@ class MlpProjector(nn.Module):
             mlp_ratio = cfg.get("mlp_ratio", 1)
             modules = [
                 nn.LayerNorm(cfg["input_dim"] * cfg["downsample_ratio"] * cfg["downsample_ratio"]),
-                nn.Linear(
-                    cfg["input_dim"] * cfg["downsample_ratio"] * cfg["downsample_ratio"], cfg["n_embed"] * mlp_ratio
+                GeneralLinear.create(
+                    cfg["input_dim"] * cfg["downsample_ratio"] * cfg["downsample_ratio"],
+                    cfg["n_embed"] * mlp_ratio,
+                    has_bias=True,
+                    linear_type="default",
                 ),
             ]
             for _ in range(1, mlp_depth - 1):
                 modules.append(nn.GELU())
-                modules.append(nn.Linear(cfg["n_embed"] * mlp_ratio, cfg["n_embed"] * mlp_ratio))
+                modules.append(
+                    GeneralLinear.create(
+                        cfg["n_embed"] * mlp_ratio, cfg["n_embed"] * mlp_ratio, has_bias=True, linear_type="default"
+                    )
+                )
             modules.append(nn.GELU())
-            modules.append(nn.Linear(cfg["n_embed"] * mlp_ratio, cfg["n_embed"]))
+            modules.append(
+                GeneralLinear.create(cfg["n_embed"] * mlp_ratio, cfg["n_embed"], has_bias=True, linear_type="default")
+            )
             modules = nn.Sequential(*modules)
 
         elif cfg["projector_type"] == "downsample_mlp_gelu":
             mlp_depth = cfg.get("depth", 1)
             mlp_ratio = cfg.get("mlp_ratio", 1)
             modules = [
-                nn.Linear(
-                    cfg["input_dim"] * cfg["downsample_ratio"] * cfg["downsample_ratio"], cfg["n_embed"] * mlp_ratio
+                GeneralLinear.create(
+                    cfg["input_dim"] * cfg["downsample_ratio"] * cfg["downsample_ratio"],
+                    cfg["n_embed"] * mlp_ratio,
+                    has_bias=True,
+                    linear_type="default",
                 )
             ]
             for _ in range(1, mlp_depth - 1):
                 modules.append(nn.GELU())
-                modules.append(nn.Linear(cfg["n_embed"] * mlp_ratio, cfg["n_embed"] * mlp_ratio))
+                modules.append(
+                    GeneralLinear.create(
+                        cfg["n_embed"] * mlp_ratio, cfg["n_embed"] * mlp_ratio, has_bias=True, linear_type="default"
+                    )
+                )
             modules.append(nn.GELU())
-            modules.append(nn.Linear(cfg["n_embed"] * mlp_ratio, cfg["n_embed"]))
+            modules.append(
+                GeneralLinear.create(cfg["n_embed"] * mlp_ratio, cfg["n_embed"], has_bias=True, linear_type="default")
+            )
             modules = nn.Sequential(*modules)
 
         elif cfg["projector_type"] == "low_high_hybrid_split_mlp_gelu":
             mlp_depth = cfg.get("depth", 1)
-            self.high_up_proj = nn.Linear(cfg["input_dim"], cfg["n_embed"] // 2)
-            self.low_up_proj = nn.Linear(cfg["input_dim"], cfg["n_embed"] // 2)
+            self.high_up_proj = GeneralLinear.create(
+                cfg["input_dim"], cfg["n_embed"] // 2, has_bias=True, linear_type="default"
+            )
+            self.low_up_proj = GeneralLinear.create(
+                cfg["input_dim"], cfg["n_embed"] // 2, has_bias=True, linear_type="default"
+            )
 
             modules = []
             for _ in range(1, mlp_depth):
                 modules.append(nn.GELU())
-                modules.append(nn.Linear(cfg["n_embed"], cfg["n_embed"]))
+                modules.append(
+                    GeneralLinear.create(cfg["n_embed"], cfg["n_embed"], has_bias=True, linear_type="default")
+                )
             modules = nn.Sequential(*modules)
 
         elif cfg["projector_type"] == "hybrid_split_feature_mlp_gelu":
             mlp_depth = cfg.get("depth", 1)
             channel_div = cfg.get("channel_div", 0.5)
-            self.high_up_proj = nn.Linear(cfg["input_dim"][0], int(cfg["n_embed"] * channel_div))
-            self.low_up_proj = nn.Linear(cfg["input_dim"][1], cfg["n_embed"] - int(cfg["n_embed"] * channel_div))
+            self.high_up_proj = GeneralLinear.create(
+                cfg["input_dim"][0], int(cfg["n_embed"] * channel_div), has_bias=True, linear_type="default"
+            )
+            self.low_up_proj = GeneralLinear.create(
+                cfg["input_dim"][1],
+                cfg["n_embed"] - int(cfg["n_embed"] * channel_div),
+                has_bias=True,
+                linear_type="default",
+            )
 
             modules = []
             for _ in range(1, mlp_depth):
                 modules.append(nn.GELU())
-                modules.append(nn.Linear(cfg["n_embed"], cfg["n_embed"]))
+                modules.append(
+                    GeneralLinear.create(cfg["n_embed"], cfg["n_embed"], has_bias=True, linear_type="default")
+                )
             modules = nn.Sequential(*modules)
 
         elif cfg["projector_type"] == "low_high_split_mlp_gelu":
@@ -127,7 +163,11 @@ class MlpProjector(nn.Module):
             modules = []
             for _ in range(1, mlp_depth):
                 modules.append(nn.GELU())
-                modules.append(nn.Linear(cfg["n_embed"] // 2, cfg["n_embed"] // 2))
+                modules.append(
+                    GeneralLinear.create(
+                        cfg["n_embed"] // 2, cfg["n_embed"] // 2, has_bias=True, linear_type="default"
+                    )
+                )
             modules = nn.Sequential(*modules)
             self.high_layers = nn.Sequential(*modules)
             self.low_layers = copy.deepcopy(modules)
@@ -136,10 +176,14 @@ class MlpProjector(nn.Module):
             raise ValueError(f"Unknown projector type: {cfg['projector_type']}")
 
         if cfg.get("token_pooling", False):
-            self.token_pooling_layer = nn.Linear(cfg["input_dim"] * 4, cfg["input_dim"])
+            self.token_pooling_layer = GeneralLinear.create(
+                cfg["input_dim"] * 4, cfg["input_dim"], has_bias=True, linear_type="default"
+            )
 
         if cfg.get("conv_fusion_high_low_features", False):
-            self.fusion_layer = nn.Linear(cfg["input_dim"], cfg["input_dim"])
+            self.fusion_layer = GeneralLinear.create(
+                cfg["input_dim"], cfg["input_dim"], has_bias=True, linear_type="default"
+            )
         self.layers = modules
 
     def forward(self, x):
@@ -467,8 +511,8 @@ class MLPBlock(nn.Module):
         act: Type[nn.Module] = nn.GELU,
     ) -> None:
         super().__init__()
-        self.lin1 = nn.Linear(embedding_dim, mlp_dim)
-        self.lin2 = nn.Linear(mlp_dim, embedding_dim)
+        self.lin1 = GeneralLinear.create(embedding_dim, mlp_dim, has_bias=True, linear_type="default")
+        self.lin2 = GeneralLinear.create(mlp_dim, embedding_dim, has_bias=True, linear_type="default")
         self.act = act()
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
@@ -698,13 +742,16 @@ class Attention(nn.Module):
         super().__init__()
 
         self._attn_implementation = attn_implementation
+        if use_rel_pos and attn_implementation == "flashmask":
+            logger.warning("SAM relative-position bias requires additive-mask attention; using sdpa for this layer.")
+            self._attn_implementation = "sdpa"
 
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim**-0.5
 
-        self.qkv = nn.Linear(dim, dim * 3, bias_attr=qkv_bias)
-        self.proj = nn.Linear(dim, dim)
+        self.qkv = GeneralLinear.create(dim, dim * 3, has_bias=qkv_bias, linear_type="default")
+        self.proj = GeneralLinear.create(dim, dim, has_bias=True, linear_type="default")
 
         self.use_rel_pos = use_rel_pos
         if self.use_rel_pos:
@@ -740,11 +787,21 @@ class Attention(nn.Module):
                 key=k,
                 value=v,
                 attention_mask=attn_bias,
+                attn_mask_startend_row_indices=None,
                 scaling=self.scale,
                 is_causal=False,
             )
         else:
-            x, _ = attention_interface(self, query=q, key=k, value=v, scaling=self.scale, is_causal=False)
+            x, _ = attention_interface(
+                self,
+                query=q,
+                key=k,
+                value=v,
+                attention_mask=None,
+                attn_mask_startend_row_indices=None,
+                scaling=self.scale,
+                is_causal=False,
+            )
 
         x = x.view(B, H, W, -1)
 

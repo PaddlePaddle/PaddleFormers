@@ -50,6 +50,30 @@ from tests.transformers.test_modeling_common import (
 
 
 class DeepseekOCR2ImageErrorsTest(unittest.TestCase):
+    def test_sam_attention_backend_contract_and_relative_bias(self):
+        from paddleformers.nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+        from paddleformers.transformers.deepseek_ocr2.modeling import Attention
+
+        eager = ALL_ATTENTION_FUNCTIONS["eager"]
+        for relative in (False, True):
+            layer = Attention(
+                dim=16, num_heads=4, use_rel_pos=relative, input_size=(2, 2), attn_implementation="flashmask"
+            ).eval()
+            expected_backend = "sdpa" if relative else "flashmask"
+
+            def checked_backend(module, query, key, value, attn_mask_startend_row_indices, **kwargs):
+                self.assertIsNone(attn_mask_startend_row_indices)
+                self.assertFalse(kwargs["is_causal"])
+                self.assertEqual(kwargs["attention_mask"] is not None, relative)
+                return eager(module, query, key, value, **kwargs)
+
+            with mock.patch.object(
+                type(ALL_ATTENTION_FUNCTIONS), "__getitem__", return_value=checked_backend
+            ) as lookup:
+                output = layer(paddle.randn([1, 2, 2, 16]))
+                self.assertEqual(output.shape, [1, 2, 2, 16])
+                lookup.assert_called_once_with(expected_backend)
+
     def test_missing_image_reports_path(self):
         with mock.patch("PIL.Image.open", side_effect=FileNotFoundError("missing")):
             with self.assertRaisesRegex(OSError, "missing-image.png"):
