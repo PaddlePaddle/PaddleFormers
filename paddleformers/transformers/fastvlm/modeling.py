@@ -28,6 +28,7 @@ from paddle import nn
 from safetensors import safe_open
 
 from ...nn.criterion.interface import CriterionLayer
+from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead
 from ...utils.download import resolve_file_path
 from ...utils.log import logger
@@ -277,9 +278,9 @@ class FastVLMModel(Qwen2Model):
         if config.mm_projector_type != "mlp2x_gelu":
             raise ValueError(f"Unsupported FastVLM projector: {config.mm_projector_type}")
         self.mm_projector = nn.Sequential(
-            nn.Linear(config.mm_hidden_size, config.hidden_size),
+            GeneralLinear.create(config.mm_hidden_size, config.hidden_size, has_bias=True, linear_type="default"),
             nn.GELU(),
-            nn.Linear(config.hidden_size, config.hidden_size),
+            GeneralLinear.create(config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"),
         )
 
     def encode_images(self, pixel_values):
