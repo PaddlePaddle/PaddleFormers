@@ -42,6 +42,7 @@ import_structure = {
         "Qwen3VLPlugin",
         "GLM4VPlugin",
         "Gemma3Plugin",
+        "Llama4Plugin",
         "register_mm_plugin",
         "get_mm_plugin",
     ],
@@ -50,6 +51,7 @@ import_structure = {
         "Template",
         "ReasoningTemplate",
         "Llama2Template",
+        "SeedOssTemplate",
         "register_template",
         "parse_template",
         "get_template_and_fix_tokenizer",
@@ -63,6 +65,7 @@ import_structure = {
         "GLM4MOEToolUtils",
         "Llama3ToolUtils",
         "ERNIEToolUtils",
+        "SeedOssToolUtils",
         "get_tool_utils",
     ],
     "augment_utils": [
