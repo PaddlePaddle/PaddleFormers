@@ -148,17 +148,19 @@ class MMPluginMixin:
         images,
         videos,
         audios,
+        image_placeholder=None,
     ):
         r"""Validate if the number of images, videos and audios match the number of placeholders in messages."""
+        image_placeholder = IMAGE_PLACEHOLDER if image_placeholder is None else image_placeholder
         num_image_tokens, num_video_tokens, num_audio_tokens = 0, 0, 0
         for message in messages:
-            num_image_tokens += message["content"].count(IMAGE_PLACEHOLDER)
+            num_image_tokens += message["content"].count(image_placeholder)
             num_video_tokens += message["content"].count(VIDEO_PLACEHOLDER)
             num_audio_tokens += message["content"].count(AUDIO_PLACEHOLDER)
 
         if len(images) != num_image_tokens:
             raise ValueError(
-                f"The number of images does not match the number of {IMAGE_PLACEHOLDER} tokens in {messages}."
+                f"The number of images does not match the number of {image_placeholder} tokens in {messages}."
             )
 
         if len(videos) != num_video_tokens:
@@ -1106,22 +1108,13 @@ class Ovis2Plugin(BasePlugin):
         processor,
     ):
         self._validate_input(processor, images, videos, audios)
-        self._validate_messages(messages, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios, image_placeholder=processor.prompt_image_token)
         messages = deepcopy(messages)
-        grids = mm_inputs.get("grids", [])
-        image_index = 0
-
-        for message in messages:
-            content = message["content"]
-            while IMAGE_PLACEHOLDER in content:
-                content = content.replace(
-                    IMAGE_PLACEHOLDER,
-                    processor._image_placeholder(grids[image_index]),
-                    1,
-                )
-                image_index += 1
+        expanded = processor.expand_image_placeholders(
+            [message["content"] for message in messages], mm_inputs.get("grids", [])
+        )
+        for message, content in zip(messages, expanded):
             message["content"] = content
-
         return messages
 
 

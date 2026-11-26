@@ -14,13 +14,15 @@
 
 """Processor for Ovis2."""
 
+import os
+
 import numpy as np
 import paddle
 
 from ..feature_extraction_utils import BatchFeature
 from ..image_utils import ImageInput, make_nested_list_of_images
 from ..processing_utils import ProcessingKwargs, ProcessorMixin, Unpack
-from ..tokenizer_utils_base import PreTokenizedInput, TextInput
+from ..tokenizer_utils_base import TextInput
 
 
 class Ovis2ProcessorKwargs(ProcessingKwargs, total=False):
@@ -48,14 +50,18 @@ class Ovis2Processor(ProcessorMixin):
         chat_template=None,
         image_token="<IMG_ATOM>",
         image_seq_length=256,
-        prompt_image_token="<image>",
+        prompt_image_token=None,
         **kwargs,
     ):
         self.image_seq_length = image_seq_length
         # HF checkpoints store the internal image token separately from the
         # public prompt marker used before expanding image patches.
         self.image_token = image_token
-        self.prompt_image_token = prompt_image_token
+        self.prompt_image_token = (
+            os.getenv("IMAGE_PLACEHOLDER", "<image>") if prompt_image_token is None else prompt_image_token
+        )
+        if not self.prompt_image_token:
+            raise ValueError("`prompt_image_token` must not be empty.")
         self.image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
         super().__init__(image_processor, tokenizer, chat_template=chat_template, **kwargs)
 
@@ -72,10 +78,27 @@ class Ovis2Processor(ProcessorMixin):
                     placeholder += "<IMG_ROW>"
         return placeholder + "<IMG_END>"
 
+    def expand_image_placeholders(self, text: list[TextInput], grids) -> list[TextInput]:
+        """Expand prompt image markers in order, consuming one patch grid per image."""
+        grids = list(_to_list(grids))
+        num_images = sum(prompt.count(self.prompt_image_token) for prompt in text)
+        if num_images != len(grids):
+            raise ValueError(f"Prompt contained {num_images} image tokens but received {len(grids)} image grids.")
+        image_index = 0
+        expanded_text = []
+        for prompt in text:
+            parts = prompt.split(self.prompt_image_token)
+            expanded = parts[0]
+            for part in parts[1:]:
+                expanded += self._image_placeholder(grids[image_index]) + part
+                image_index += 1
+            expanded_text.append(expanded)
+        return expanded_text
+
     def __call__(
         self,
         images: ImageInput | None = None,
-        text: TextInput | PreTokenizedInput | list[TextInput] | list[PreTokenizedInput] | None = None,
+        text: TextInput | list[TextInput] | None = None,
         **kwargs: Unpack[Ovis2ProcessorKwargs],
     ) -> BatchFeature:
         if images is None and text is None:
@@ -102,18 +125,12 @@ class Ovis2Processor(ProcessorMixin):
 
             image_inputs = self.image_processor(images, **output_kwargs["images_kwargs"])
             grids = list(_to_list(image_inputs.pop("grids")))
-            image_index = 0
-            expanded_text = []
             for prompt, batch in zip(text, batched_images):
                 if prompt.count(self.prompt_image_token) != len(batch):
                     raise ValueError(
                         f"Prompt contained {prompt.count(self.prompt_image_token)} image tokens but received {len(batch)} images."
                     )
-                for _ in batch:
-                    prompt = prompt.replace(self.prompt_image_token, self._image_placeholder(grids[image_index]), 1)
-                    image_index += 1
-                expanded_text.append(prompt)
-            text = expanded_text
+            text = self.expand_image_placeholders(text, grids)
 
         return_tensors = output_kwargs["text_kwargs"].get("return_tensors")
         text_inputs = self.tokenizer(text=text, **output_kwargs["text_kwargs"])

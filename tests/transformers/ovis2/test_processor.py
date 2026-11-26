@@ -116,6 +116,8 @@ class Ovis2ProcessorTest(unittest.TestCase):
             self.processor()
         with self.assertRaisesRegex(TypeError, "must be a string"):
             self.processor(text=[1, 2])
+        with self.assertRaisesRegex(TypeError, "must be a string"):
+            self.processor(text=[["pre", "tokenized"]])
 
     def test_processor_honors_custom_image_token(self):
         with patch.object(Ovis2Processor, "check_argument_for_proper_class"):
@@ -144,6 +146,22 @@ class Ovis2ProcessorTest(unittest.TestCase):
         self.assertEqual(processor.prompt_image_token, "<photo>")
         inputs = processor(images=self.image, text="<photo> describe the image", return_tensors="np")
         self.assertEqual(int((inputs["input_ids"] == 3).sum()), 12)
+
+    def test_expansion_validates_image_grid_count(self):
+        with self.assertRaisesRegex(ValueError, "2 image tokens but received 1"):
+            self.processor.expand_image_placeholders(["<image>", "<image>"], [[1, 1]])
+        with self.assertRaisesRegex(ValueError, "0 image tokens but received 1"):
+            self.processor.expand_image_placeholders(["plain text"], [[1, 1]])
+        self.assertEqual(self.processor.expand_image_placeholders(["plain text"], []), ["plain text"])
+
+    def test_processor_rejects_empty_prompt_marker(self):
+        with patch.object(Ovis2Processor, "check_argument_for_proper_class"):
+            with self.assertRaisesRegex(ValueError, "must not be empty"):
+                Ovis2Processor(
+                    image_processor=self.processor.image_processor,
+                    tokenizer=DummyTokenizer(),
+                    prompt_image_token="",
+                )
 
     def test_model_input_names_exclude_processor_only_grid(self):
         self.assertEqual(self.processor.model_input_names, ["input_ids", "attention_mask", "pixel_values"])
