@@ -1011,6 +1011,9 @@ class MiniMaxPretrainedModel(PretrainedModel):
 
         if not config.tie_word_embeddings and cls != cls.base_model_class:
             aoa_statements.append("lm_head.weight -> lm_head.weight")
+        elif cls != cls.base_model_class:
+            # AOA passes unmapped tensors through: discard the tied alias.
+            aoa_statements.append("lm_head.weight -> _")
 
         return {"aoa_statements": aoa_statements}
 
