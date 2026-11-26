@@ -98,7 +98,7 @@ import_structure = {
     "lfm2_vl.configuration": ["Lfm2VlConfig", "Siglip2VisionConfig"],
     "lfm2_vl.image_processor": ["Lfm2VlImageProcessor"],
     "lfm2_vl.processor": ["Lfm2VlProcessor"],
-    "lfm2.modeling": ["Lfm2ForCausalLM", "Lfm2Model", "Lfm2PreTrainedModel"],
+    "lfm2.modeling": ["Lfm2ForCausalLM", "Lfm2Model", "Lfm2PreTrainedModel", "Lfm2HybridConvCache"],
     "lfm2_vl.modeling": [
         "Lfm2VlForConditionalGeneration",
         "Lfm2VlModel",

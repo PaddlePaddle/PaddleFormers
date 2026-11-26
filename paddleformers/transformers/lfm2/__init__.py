@@ -19,11 +19,16 @@ from ...utils.lazy_import import _LazyModule
 
 import_structure = {
     "configuration": ["Lfm2Config"],
-    "modeling": ["Lfm2ForCausalLM", "Lfm2Model", "Lfm2PreTrainedModel"],
+    "modeling": ["Lfm2ForCausalLM", "Lfm2Model", "Lfm2PreTrainedModel", "Lfm2HybridConvCache"],
 }
 
 if TYPE_CHECKING:
     from .configuration import Lfm2Config
-    from .modeling import Lfm2ForCausalLM, Lfm2Model, Lfm2PreTrainedModel
+    from .modeling import (
+        Lfm2ForCausalLM,
+        Lfm2HybridConvCache,
+        Lfm2Model,
+        Lfm2PreTrainedModel,
+    )
 else:
     sys.modules[__name__] = _LazyModule(__name__, globals()["__file__"], import_structure, module_spec=__spec__)

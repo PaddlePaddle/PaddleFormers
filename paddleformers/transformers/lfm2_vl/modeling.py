@@ -29,7 +29,7 @@ from ..lfm2.modeling import Lfm2Model, Lfm2PreTrainedModel
 from ..model_outputs import (
     BaseModelOutputWithPast,
     BaseModelOutputWithPooling,
-    ModelOutput,
+    CausalLMOutputWithPast,
 )
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Lfm2VlConfig
@@ -41,12 +41,7 @@ class Lfm2VlModelOutputWithPast(BaseModelOutputWithPast):
 
 
 @dataclass
-class Lfm2VlCausalLMOutputWithPast(ModelOutput):
-    loss: paddle.Tensor | None = None
-    logits: paddle.Tensor | None = None
-    past_key_values: object | None = None
-    hidden_states: tuple[paddle.Tensor] | None = None
-    attentions: tuple[paddle.Tensor] | None = None
+class Lfm2VlCausalLMOutputWithPast(CausalLMOutputWithPast):
     image_hidden_states: paddle.Tensor | None = None
 
 
@@ -383,8 +378,15 @@ class Lfm2VlForConditionalGeneration(Lfm2VlPreTrainedModel):
     def get_output_embeddings(self):
         return self.lm_head
 
-    def forward(self, labels=None, **kwargs):
-        outputs = self.model(**kwargs)
+    def prepare_inputs_for_generation(self, input_ids, past_key_values=None, **kwargs):
+        inputs = super().prepare_inputs_for_generation(input_ids, past_key_values=past_key_values, **kwargs)
+        if past_key_values is not None and past_key_values.get_seq_length() > 0:
+            for key in ("pixel_values", "pixel_attention_mask", "spatial_shapes"):
+                inputs.pop(key, None)
+        return inputs
+
+    def forward(self, input_ids=None, attention_mask=None, position_ids=None, labels=None, **kwargs):
+        outputs = self.model(input_ids=input_ids, attention_mask=attention_mask, position_ids=position_ids, **kwargs)
         logits = self.lm_head(outputs.last_hidden_state)
         loss = self.criterion(logits, labels)[0] if labels is not None else None
         return Lfm2VlCausalLMOutputWithPast(

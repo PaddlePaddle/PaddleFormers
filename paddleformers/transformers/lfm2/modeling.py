@@ -24,11 +24,35 @@ from ...nn.criterion.interface import CriterionLayer
 from ...nn.lm_head import LMHead
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
+from ..cache_utils import DynamicCache
 from ..llama.modeling import LlamaRotaryEmbedding, apply_rotary_pos_emb
 from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Lfm2Config
+
+
+class Lfm2HybridConvCache(DynamicCache):
+    """Standard dynamic KV cache plus bounded causal-convolution history."""
+
+    def __init__(self, config):
+        super().__init__(config=config)
+        self.config = config
+        self.conv_states = [None] * config.num_hidden_layers
+        self.seen_tokens = 0
+
+    def get_seq_length(self, layer_idx=0):
+        # Also works for all-convolution models and when layer zero is a conv.
+        return self.seen_tokens
+
+    def reorder_cache(self, beam_idx):
+        super().reorder_cache(beam_idx)
+        for index, state in enumerate(self.conv_states):
+            if state is not None:
+                self.conv_states[index] = paddle.index_select(state, beam_idx, axis=0)
+
+    def reset(self):
+        self.__init__(self.config)
 
 
 class Lfm2MLP(nn.Layer):
@@ -72,7 +96,9 @@ class Lfm2Attention(nn.Layer):
             config=config, norm_type="rms_norm", hidden_size=self.head_dim, has_bias=False, norm_eps=config.norm_eps
         )
 
-    def forward(self, hidden_states, cos, sin, attention_mask=None, attn_mask_startend_row_indices=None):
+    def forward(
+        self, hidden_states, cos, sin, attention_mask=None, attn_mask_startend_row_indices=None, past_key_values=None
+    ):
         batch_size, sequence_length, _ = hidden_states.shape
         query = self.q_proj(hidden_states).reshape([batch_size, sequence_length, self.num_heads, self.head_dim])
         key = self.k_proj(hidden_states).reshape(
@@ -85,6 +111,8 @@ class Lfm2Attention(nn.Layer):
         key = self.k_layernorm(key).transpose([0, 2, 1, 3])
         value = value.transpose([0, 2, 1, 3])
         query, key = apply_rotary_pos_emb(query, key, cos, sin)
+        if past_key_values is not None:
+            key, value = past_key_values.update(key, value, self.layer_idx)
         output, _ = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation](
             self,
             query,
@@ -99,8 +127,9 @@ class Lfm2Attention(nn.Layer):
 
 
 class Lfm2ShortConv(nn.Layer):
-    def __init__(self, config):
+    def __init__(self, config, layer_idx):
         super().__init__()
+        self.layer_idx = layer_idx
         self.kernel_size = config.conv_L_cache
         self.in_proj = nn.Linear(config.hidden_size, 3 * config.hidden_size, bias_attr=config.conv_bias)
         self.conv = nn.Conv1D(
@@ -113,14 +142,32 @@ class Lfm2ShortConv(nn.Layer):
         )
         self.out_proj = nn.Linear(config.hidden_size, config.hidden_size, bias_attr=config.conv_bias)
 
-    def forward(self, hidden_states, attention_mask=None, packed_mask=None):
+    def forward(self, hidden_states, attention_mask=None, packed_mask=None, past_key_values=None):
         if attention_mask is not None:
             hidden_states = hidden_states * attention_mask.unsqueeze(-1).astype(hidden_states.dtype)
         projected = self.in_proj(hidden_states).transpose([0, 2, 1])
         b_gate, c_gate, values = paddle.chunk(projected, 3, axis=1)
         values = b_gate * values
         values_dtype = values.dtype
-        if packed_mask is None:
+        if past_key_values is not None:
+            history = past_key_values.conv_states[self.layer_idx]
+            history = (
+                F.pad(values, [self.kernel_size - 1, 0])
+                if history is None
+                else paddle.concat([history, values], axis=-1)
+            )
+            # Keep K-1 values regardless of prompt length; supports both one-token
+            # decoding and a multi-token continuation without rerunning the prefix.
+            past_key_values.conv_states[self.layer_idx] = (
+                history[:, :, -(self.kernel_size - 1) :] if self.kernel_size > 1 else history[:, :, :0]
+            )
+            values = F.conv1d(
+                history.astype("float32"),
+                self.conv.weight.astype("float32"),
+                None if self.conv.bias is None else self.conv.bias.astype("float32"),
+                groups=values.shape[1],
+            ).astype(values_dtype)
+        elif packed_mask is None:
             values = F.conv1d(
                 values.astype("float32"),
                 self.conv.weight.astype("float32"),
@@ -155,7 +202,7 @@ class Lfm2DecoderLayer(nn.Layer):
         if self.is_attention_layer:
             self.self_attn = Lfm2Attention(config, layer_idx)
         else:
-            self.conv = Lfm2ShortConv(config)
+            self.conv = Lfm2ShortConv(config, layer_idx)
         self.feed_forward = Lfm2MLP(config)
         self.operator_norm = GeneralNorm.create(
             config=config,
@@ -181,13 +228,16 @@ class Lfm2DecoderLayer(nn.Layer):
         attention_mask=None,
         attn_mask_startend_row_indices=None,
         packed_mask=None,
+        past_key_values=None,
     ):
         residual = hidden_states
         normalized = self.operator_norm(hidden_states)
         if self.is_attention_layer:
-            hidden_states = self.self_attn(normalized, cos, sin, causal_mask, attn_mask_startend_row_indices)
+            hidden_states = self.self_attn(
+                normalized, cos, sin, causal_mask, attn_mask_startend_row_indices, past_key_values
+            )
         else:
-            hidden_states = self.conv(normalized, attention_mask, packed_mask)
+            hidden_states = self.conv(normalized, attention_mask, packed_mask, past_key_values)
         hidden_states = residual + hidden_states
         return hidden_states + self.feed_forward(self.ffn_norm(hidden_states))
 
@@ -269,6 +319,7 @@ class Lfm2Model(Lfm2PreTrainedModel):
         attn_mask_startend_row_indices=None,
         position_ids=None,
         inputs_embeds=None,
+        past_key_values=None,
         use_cache=False,
         return_dict=True,
         **kwargs,
@@ -278,8 +329,26 @@ class Lfm2Model(Lfm2PreTrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         batch_size, sequence_length, _ = inputs_embeds.shape
+        if use_cache and self.training and getattr(self.config, "recompute_granularity", None) == "full":
+            raise ValueError("LFM2 recompute training requires use_cache=False to avoid updating cache twice")
+        if use_cache and (
+            attn_mask_startend_row_indices is not None or (attention_mask is not None and attention_mask.ndim == 4)
+        ):
+            raise ValueError("LFM2 cached decoding requires a 2D padding mask; packed training uses use_cache=False")
+        if use_cache:
+            if past_key_values is None:
+                past_key_values = Lfm2HybridConvCache(self.config)
+            elif not isinstance(past_key_values, Lfm2HybridConvCache):
+                raise TypeError("LFM2 requires Lfm2HybridConvCache for both KV and convolution history")
+        else:
+            past_key_values = None
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
         if position_ids is None:
-            position_ids = paddle.arange(sequence_length, dtype="int64").unsqueeze(0).expand([batch_size, -1])
+            position_ids = (
+                paddle.arange(cache_length, cache_length + sequence_length, dtype="int64")
+                .unsqueeze(0)
+                .expand([batch_size, -1])
+            )
         cos, sin = self.rotary_emb(inputs_embeds, position_ids)
         packed_mask = None
         if attn_mask_startend_row_indices is not None:
@@ -294,12 +363,14 @@ class Lfm2Model(Lfm2PreTrainedModel):
             inputs_embeds=inputs_embeds,
             batch_size=batch_size,
             seq_length=sequence_length,
-            cache_length=0,
+            cache_length=cache_length,
             attention_mask=attention_mask,
             attn_mask_startend_row_indices=attn_mask_startend_row_indices,
             prepare_decoder_attention_mask=self._prepare_decoder_attention_mask,
         )
-        padding_mask = attention_mask if attention_mask is not None and attention_mask.ndim == 2 else None
+        padding_mask = (
+            attention_mask[:, -sequence_length:] if attention_mask is not None and attention_mask.ndim == 2 else None
+        )
         hidden_states = inputs_embeds
 
         def create_custom_forward(module):
@@ -320,9 +391,13 @@ class Lfm2Model(Lfm2PreTrainedModel):
                     use_reentrant=getattr(self.config, "recompute_use_reentrant", True),
                 )
             else:
-                hidden_states = layer(hidden_states, cos, sin, causal_mask, padding_mask, row_indices, packed_mask)
+                hidden_states = layer(
+                    hidden_states, cos, sin, causal_mask, padding_mask, row_indices, packed_mask, past_key_values
+                )
         hidden_states = self.embedding_norm(hidden_states)
-        return BaseModelOutputWithPast(last_hidden_state=hidden_states, past_key_values=None)
+        if past_key_values is not None:
+            past_key_values.seen_tokens += sequence_length
+        return BaseModelOutputWithPast(last_hidden_state=hidden_states, past_key_values=past_key_values)
 
 
 class Lfm2ForCausalLM(Lfm2PreTrainedModel):
@@ -345,7 +420,7 @@ class Lfm2ForCausalLM(Lfm2PreTrainedModel):
         )
         logits = self.lm_head(outputs.last_hidden_state)
         loss = self.criterion(logits, labels)[0] if labels is not None else None
-        return CausalLMOutputWithPast(loss=loss, logits=logits, past_key_values=None)
+        return CausalLMOutputWithPast(loss=loss, logits=logits, past_key_values=outputs.past_key_values)
 
 
-__all__ = ["Lfm2ForCausalLM", "Lfm2Model", "Lfm2PreTrainedModel"]
+__all__ = ["Lfm2ForCausalLM", "Lfm2Model", "Lfm2PreTrainedModel", "Lfm2HybridConvCache"]
