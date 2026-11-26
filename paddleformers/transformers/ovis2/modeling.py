@@ -519,7 +519,12 @@ class Ovis2ForConditionalGeneration(Ovis2PreTrainedModel, GenerationMixin):
                 logits.astype("float32").reshape([-1, logits.shape[-1]]),
                 labels.reshape([-1]),
                 ignore_index=-100,
+                reduction="sum",
             )
+            # Paddle's default mean includes ignored positions in its divisor.
+            # Match causal-LM loss by averaging only over supervised tokens.
+            num_valid_tokens = (labels != -100).astype("float32").sum()
+            loss = loss / num_valid_tokens.clip(min=1.0)
         result = Ovis2CausalLMOutputWithPast(
             loss=loss,
             logits=logits,

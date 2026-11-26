@@ -226,13 +226,28 @@ class Ovis2ModelTest(unittest.TestCase):
             labels=labels,
             return_dict=True,
         )
+        # Select supervised positions independently of the model's ignore-index
+        # reduction so masked prompt/image tokens cannot dilute the loss.
+        flat_labels = labels.reshape([-1])
+        valid_indices = paddle.nonzero(flat_labels != -100).flatten()
         expected = F.cross_entropy(
-            outputs.logits.astype("float32").reshape([-1, self.model_tester.vocab_size]),
-            labels.reshape([-1]),
-            ignore_index=-100,
+            outputs.logits.astype("float32").reshape([-1, self.model_tester.vocab_size])[valid_indices],
+            flat_labels[valid_indices],
         )
 
         self.assertTrue(paddle.allclose(outputs.loss, expected, atol=1e-7))
+
+    def test_all_ignored_labels_have_zero_loss_and_finite_gradients(self):
+        config = self.model_tester.get_config()
+        model = Ovis2ForConditionalGeneration(config)
+        input_ids = paddle.randint(7, config.vocab_size, shape=[1, 4], dtype="int64")
+        labels = paddle.full_like(input_ids, -100)
+
+        loss = model(input_ids=input_ids, labels=labels, return_dict=True).loss
+        self.assertEqual(float(loss), 0.0)
+        loss.backward()
+        self.assertTrue(bool(paddle.isfinite(model.get_input_embeddings().weight.grad).all()))
+        self.assertEqual(float(model.get_input_embeddings().weight.grad.abs().sum()), 0.0)
 
     def test_backward_reaches_vision_and_language_parameters(self):
         config = self.model_tester.get_config()
