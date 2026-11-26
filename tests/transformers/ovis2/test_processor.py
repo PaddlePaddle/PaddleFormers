@@ -123,4 +123,3 @@ class Ovis2ProcessorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

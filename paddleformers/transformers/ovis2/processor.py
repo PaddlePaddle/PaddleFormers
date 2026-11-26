@@ -1,4 +1,16 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Processor for Ovis2."""
 
@@ -84,9 +96,7 @@ class Ovis2Processor(ProcessorMixin):
             if text is None:
                 text = [" ".join([self.image_token] * len(batch)) for batch in batched_images]
             if len(batched_images) != len(text):
-                raise ValueError(
-                    f"Received {len(batched_images)} image batches but {len(text)} text prompts."
-                )
+                raise ValueError(f"Received {len(batched_images)} image batches but {len(text)} text prompts.")
 
             image_inputs = self.image_processor(images, **output_kwargs["images_kwargs"])
             grids = list(_to_list(image_inputs.pop("grids")))

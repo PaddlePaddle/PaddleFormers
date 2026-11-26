@@ -1,4 +1,16 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Image processor for Ovis2."""
 
@@ -8,7 +20,13 @@ import numpy as np
 
 from ..feature_extraction_utils import BatchFeature
 from ..image_processing_utils import BaseImageProcessor
-from ..image_transforms import convert_to_rgb, normalize, rescale, resize, to_channel_dimension_format
+from ..image_transforms import (
+    convert_to_rgb,
+    normalize,
+    rescale,
+    resize,
+    to_channel_dimension_format,
+)
 from ..image_utils import (
     OPENAI_CLIP_MEAN,
     OPENAI_CLIP_STD,
@@ -133,9 +151,7 @@ class Ovis2ImageProcessor(BaseImageProcessor):
         patch_size=None,
         resample_filter=None,
     ):
-        image = to_channel_dimension_format(
-            image, ChannelDimension.FIRST, infer_channel_dimension_format(image)
-        )
+        image = to_channel_dimension_format(image, ChannelDimension.FIRST, infer_channel_dimension_format(image))
         patch_height, patch_width = patch_size["height"], patch_size["width"]
         original_height, original_width = image.shape[-2:]
         if use_covering_area_grid:
@@ -224,9 +240,7 @@ class Ovis2ImageProcessor(BaseImageProcessor):
 
         processed_images, grids = [], []
         for image in images:
-            image = to_channel_dimension_format(
-                image, ChannelDimension.FIRST, infer_channel_dimension_format(image)
-            )
+            image = to_channel_dimension_format(image, ChannelDimension.FIRST, infer_channel_dimension_format(image))
             if crop_to_patches and max_patches > 1:
                 patches, grid = self.crop_image_to_patches(
                     image,

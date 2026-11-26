@@ -46,9 +46,7 @@ class Ovis2ModelTester:
         self.hidden_stride = 2
         self.image_token_id = 1
         self.visual_indicator_token_ids = [2, 3, 4, 5, 6]
-        self.image_seq_length = (
-            self.image_size // (self.patch_size * self.hidden_stride)
-        ) ** 2
+        self.image_seq_length = (self.image_size // (self.patch_size * self.hidden_stride)) ** 2
 
     def get_config(self):
         return Ovis2Config(
@@ -94,9 +92,7 @@ class Ovis2ModelTester:
         input_ids[:, 1 : 1 + self.image_seq_length] = self.image_token_id
         input_ids[:, 1 + self.image_seq_length] = self.visual_indicator_token_ids[0]
         attention_mask = paddle.ones_like(input_ids)
-        pixel_values = paddle.randn(
-            [self.batch_size, 3, self.image_size, self.image_size], dtype="float32"
-        )
+        pixel_values = paddle.randn([self.batch_size, 3, self.image_size, self.image_size], dtype="float32")
         return input_ids, attention_mask, pixel_values
 
 
@@ -177,9 +173,7 @@ class Ovis2ModelTest(unittest.TestCase):
         model.eval()
         inputs_embeds = model.get_input_embeddings()(input_ids)
 
-        from_ids = model(
-            input_ids=input_ids, attention_mask=attention_mask, return_dict=True
-        ).last_hidden_state
+        from_ids = model(input_ids=input_ids, attention_mask=attention_mask, return_dict=True).last_hidden_state
         from_embeds = model(
             inputs_embeds=inputs_embeds, attention_mask=attention_mask, return_dict=True
         ).last_hidden_state

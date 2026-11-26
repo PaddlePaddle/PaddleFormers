@@ -1,10 +1,22 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Paddle implementation of Ovis2."""
 
 import math
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional
 
 import paddle
 import paddle.nn.functional as F
@@ -15,7 +27,12 @@ from ...nn.lm_head import LMHead as GeneralLMHead
 from ...utils.log import logger
 from ..activations import ACT2FN
 from ..cache_utils import Cache
-from ..model_outputs import BaseModelOutput, BaseModelOutputWithPast, BaseModelOutputWithPooling, ModelOutput
+from ..model_outputs import (
+    BaseModelOutput,
+    BaseModelOutputWithPast,
+    BaseModelOutputWithPooling,
+    ModelOutput,
+)
 from ..model_utils import PretrainedModel
 from ..qwen2.modeling import Qwen2Model
 from .configuration import Ovis2Config, Ovis2VisionConfig
@@ -54,9 +71,7 @@ class Ovis2CausalLMOutputWithPast(ModelOutput):
 class Ovis2RMSNorm(nn.Layer):
     def __init__(self, hidden_size, eps=1e-6):
         super().__init__()
-        self.weight = self.create_parameter(
-            shape=[hidden_size], default_initializer=nn.initializer.Constant(1.0)
-        )
+        self.weight = self.create_parameter(shape=[hidden_size], default_initializer=nn.initializer.Constant(1.0))
         self.variance_epsilon = eps
 
     def forward(self, hidden_states):
@@ -338,9 +353,7 @@ class Ovis2Model(Ovis2PreTrainedModel):
         super().__init__(config)
         self.vision_tower = Ovis2VisionModel(config.vision_config)
         self.language_model = Qwen2Model(config.text_config)
-        self.visual_embeddings_table = Ovis2VisualEmbeddingTable(
-            config.vision_config.vocab_size, config.hidden_size
-        )
+        self.visual_embeddings_table = Ovis2VisualEmbeddingTable(config.vision_config.vocab_size, config.hidden_size)
         self.visual_vocab_size = config.vision_config.vocab_size
         self.vocab_size = config.vocab_size
         self.visual_indicator_token_ids = config.visual_indicator_token_ids

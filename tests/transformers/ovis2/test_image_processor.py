@@ -68,9 +68,7 @@ class Ovis2ImageProcessorTest(unittest.TestCase):
         self.assertTrue(paddle.allclose(inputs["pixel_values"][1], paddle.ones([3, 16, 16])))
 
     def test_crop_to_patches_adds_global_patch(self):
-        processor = Ovis2ImageProcessor(
-            **{**self.image_processor_dict, "crop_to_patches": True}
-        )
+        processor = Ovis2ImageProcessor(**{**self.image_processor_dict, "crop_to_patches": True})
         image = Image.fromarray(np.zeros((16, 32, 3), dtype=np.uint8))
 
         inputs = processor(image, return_tensors="np")
