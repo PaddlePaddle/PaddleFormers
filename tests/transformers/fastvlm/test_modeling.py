@@ -34,6 +34,18 @@ from paddleformers.transformers.fastvlm.processor import FastVLMProcessor
 
 
 class FastVLMModelTest(unittest.TestCase):
+    def test_empty_cache_does_not_truncate_prompt(self):
+        from paddleformers.transformers.cache_utils import DynamicCache
+
+        model = FastVLMForConditionalGeneration(self.config)
+        ids = paddle.to_tensor([[1, 2, 3]])
+        cache = DynamicCache(config=self.config)
+        prepared = model.prepare_inputs_for_generation(ids, past_key_values=cache, use_cache=True)
+        np.testing.assert_array_equal(prepared["input_ids"].numpy(), ids.numpy())
+        cache.update(paddle.zeros([1, 2, 3, 8]), paddle.zeros([1, 2, 3, 8]), 0)
+        prepared = model.prepare_inputs_for_generation(ids, past_key_values=cache, use_cache=True)
+        self.assertEqual(prepared["input_ids"].shape[1], 1)
+
     def test_shared_image_token_defaults(self):
         from paddleformers.datasets.template.mm_plugin import FastVLMPlugin
         from paddleformers.datasets.template.template import FastVLMTemplate

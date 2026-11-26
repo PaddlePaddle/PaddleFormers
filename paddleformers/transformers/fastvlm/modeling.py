@@ -592,7 +592,13 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
         pixel_values=None,
         **kwargs,
     ):
+        cache_length = 0
         if past_key_values is not None:
+            if hasattr(past_key_values, "get_seq_length"):
+                cache_length = past_key_values.get_seq_length()
+            elif past_key_values and past_key_values[0] is not None:
+                cache_length = past_key_values[0][0].shape[-2]
+        if cache_length > 0:
             input_ids = input_ids[:, -1:]
         model_inputs = {
             "input_ids": input_ids,
@@ -605,7 +611,7 @@ class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
             "use_cache": False if pixel_values is not None else kwargs.get("use_cache"),
             "pixel_values": pixel_values,
         }
-        if inputs_embeds is not None and past_key_values is None:
+        if inputs_embeds is not None and cache_length == 0:
             model_inputs["inputs_embeds"] = inputs_embeds
             model_inputs["input_ids"] = None
         return model_inputs
