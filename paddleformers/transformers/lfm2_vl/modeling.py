@@ -14,88 +14,25 @@
 
 """Paddle implementation of LFM2-VL and its SigLIP2 NaFlex vision tower."""
 
-import json
-import os
-import warnings
-from collections import defaultdict
 from dataclasses import dataclass
 
 import paddle
 import paddle.nn.functional as F
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
-from safetensors import safe_open
 
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead
-from ...utils.download import resolve_file_path
-from ...utils.log import logger
 from ..activations import ACT2FN
-from ..configuration_utils import PretrainedConfig
 from ..model_outputs import (
     BaseModelOutputWithPast,
     BaseModelOutputWithPooling,
     ModelOutput,
 )
-from ..model_utils import PretrainedModel, dtype_guard, register_base_model
-from ..utils import get_checkpoint_shard_files
+from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Lfm2VlConfig
 from .modeling_lfm2 import Lfm2ForCausalLM, Lfm2Model, Lfm2PreTrainedModel
-
-
-def _resolve_hf_checkpoint_dir(pretrained_model_name_or_path, **kwargs):
-    if os.path.isdir(pretrained_model_name_or_path):
-        directory = os.path.join(pretrained_model_name_or_path, kwargs.get("subfolder") or "")
-        if any(
-            os.path.isfile(os.path.join(directory, name))
-            for name in ("model.safetensors", "model.safetensors.index.json")
-        ):
-            return directory
-        return None
-    subfolder = kwargs.get("subfolder", "")
-    resolved_file = resolve_file_path(
-        pretrained_model_name_or_path,
-        ["model.safetensors.index.json", "model.safetensors"],
-        subfolder=subfolder,
-        revision=kwargs.get("revision"),
-        cache_dir=kwargs.get("cache_dir"),
-        force_download=kwargs.get("force_download", False),
-        token=kwargs.get("token"),
-        local_files_only=kwargs.get("local_files_only", False),
-        download_hub=kwargs.get("download_hub"),
-        force_return=True,
-    )
-    if resolved_file is None:
-        return None
-    if resolved_file.endswith(".index.json"):
-        get_checkpoint_shard_files(
-            pretrained_model_name_or_path,
-            resolved_file,
-            cache_dir=kwargs.get("cache_dir"),
-            subfolder=subfolder,
-            download_hub=kwargs.get("download_hub"),
-        )
-    return os.path.dirname(resolved_file)
-
-
-def _iter_hf_tensors(model_dir):
-    index_path = os.path.join(model_dir, "model.safetensors.index.json")
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as file:
-            weight_map = json.load(file)["weight_map"]
-        file_to_keys = defaultdict(list)
-        for key, filename in weight_map.items():
-            file_to_keys[filename].append(key)
-    else:
-        checkpoint_path = os.path.join(model_dir, "model.safetensors")
-        if not os.path.exists(checkpoint_path):
-            raise FileNotFoundError(f"No safetensors checkpoint found under {model_dir}")
-        file_to_keys = {"model.safetensors": None}
-    for filename, keys in sorted(file_to_keys.items()):
-        with safe_open(os.path.join(model_dir, filename), framework="np") as checkpoint:
-            for name in sorted(keys if keys is not None else checkpoint.keys()):
-                yield name, paddle.to_tensor(checkpoint.get_tensor(name))
 
 
 @dataclass
@@ -301,6 +238,66 @@ class Lfm2VlPreTrainedModel(PretrainedModel):
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
 
+    @classmethod
+    def _checkpoint_weights(cls, config):
+        weights = [
+            ("language_model." + name, transpose)
+            for name, transpose in Lfm2PreTrainedModel._checkpoint_weights(config.text_config)
+        ]
+        vision = "vision_tower.vision_model."
+        weights += [
+            (vision + "embeddings.patch_embedding.weight", True),
+            (vision + "embeddings.patch_embedding.bias", False),
+            (vision + "embeddings.position_embedding.weight", False),
+            (vision + "post_layernorm.weight", False),
+            (vision + "post_layernorm.bias", False),
+        ]
+        for index in range(config.vision_config.num_hidden_layers):
+            prefix = vision + f"encoder.layers.{index}."
+            for name in (
+                "self_attn.q_proj",
+                "self_attn.k_proj",
+                "self_attn.v_proj",
+                "self_attn.out_proj",
+                "mlp.fc1",
+                "mlp.fc2",
+                "layer_norm1",
+                "layer_norm2",
+            ):
+                weights.append((prefix + name + ".weight", not name.startswith("layer_norm")))
+                weights.append((prefix + name + ".bias", False))
+        for name in ("linear_1", "linear_2"):
+            weights.append(("multi_modal_projector." + name + ".weight", True))
+            if config.projector_bias:
+                weights.append(("multi_modal_projector." + name + ".bias", False))
+        if config.projector_use_layernorm:
+            weights.extend(("multi_modal_projector.layer_norm." + name, False) for name in ("weight", "bias"))
+        return weights
+
+    @classmethod
+    def _gen_aoa_config(cls, config):
+        prefix = "" if cls == cls.base_model_class else "model."
+        statements = [
+            f"model.{name}{'^T' if transpose else ''} -> {prefix}{name}"
+            for name, transpose in cls._checkpoint_weights(config)
+        ]
+        if prefix:
+            source = "model.language_model.embed_tokens.weight" if config.tie_word_embeddings else "lm_head.weight"
+            statements.append(f"{source} -> lm_head.weight")
+        return {"aoa_statements": statements}
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config):
+        prefix = "" if cls == cls.base_model_class else "model."
+        statements = [
+            f"{prefix}{name}{'^T' if transpose else ''} -> model.{name}"
+            for name, transpose in cls._checkpoint_weights(config)
+        ]
+        if prefix:
+            target = "_" if config.tie_word_embeddings else "lm_head.weight"
+            statements.append(f"lm_head.weight -> {target}")
+        return {"aoa_statements": statements}
+
 
 @register_base_model
 class Lfm2VlModel(Lfm2VlPreTrainedModel):
@@ -379,120 +376,6 @@ class Lfm2VlForConditionalGeneration(Lfm2VlPreTrainedModel):
         self.lm_head = LMHead(config.text_config)
         self.criterion = CriterionLayer(config.text_config)
         self.tie_weights()
-
-    @classmethod
-    def _build_pretrained_model(cls, path, args, kwargs):
-        """Separate loader options from constructor kwargs for both formats."""
-        kwargs = dict(kwargs)
-        dtype = kwargs.pop("dtype", None)
-        config = kwargs.pop("config", None)
-        kwargs.pop("convert_from_hf", None)
-        # This converter strictly loads a complete local state dict. These
-        # options belong to the loader, never to the model constructor.
-        kwargs.pop("load_checkpoint_format", None)
-        for key in ("load_via_cpu", "low_cpu_mem_usage"):
-            if kwargs.pop(key, False):
-                warnings.warn(f"{cls.__name__}'s direct checkpoint converter does not implement {key}.")
-        if kwargs.pop("ignore_mismatched_sizes", False):
-            raise ValueError("ignore_mismatched_sizes=True is not supported by the strict checkpoint converter")
-        if kwargs.pop("variant", None) is not None:
-            raise ValueError("Named checkpoint variants are not supported by the direct checkpoint converter")
-        kwargs.pop("use_safetensors", None)
-        if not isinstance(config, PretrainedConfig):
-            config_path = config if config is not None else path
-            config, model_kwargs = cls.config_class.from_pretrained(config_path, return_unused_kwargs=True, **kwargs)
-        else:
-            model_kwargs = kwargs
-        for key in (
-            "cache_dir",
-            "subfolder",
-            "revision",
-            "token",
-            "force_download",
-            "local_files_only",
-            "download_hub",
-        ):
-            model_kwargs.pop(key, None)
-        if dtype is not None:
-            config.dtype = dtype
-            config.text_config.dtype = dtype
-            config.vision_config.dtype = dtype
-        with dtype_guard(dtype or paddle.get_default_dtype()):
-            model = cls(config, *args, **model_kwargs)
-        return model, dtype
-
-    @classmethod
-    def from_pretrained(cls, pretrained_model_name_or_path, *args, **kwargs):
-        if not isinstance(pretrained_model_name_or_path, (str, os.PathLike)):
-            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-
-        native_path = os.path.join(
-            pretrained_model_name_or_path, kwargs.get("subfolder") or "", "model_state.pdparams"
-        )
-        if os.path.isfile(native_path):
-            model, dtype = cls._build_pretrained_model(pretrained_model_name_or_path, args, kwargs)
-            missing_keys, unexpected_keys = model.set_state_dict(paddle.load(native_path))
-            if missing_keys or unexpected_keys:
-                raise ValueError(
-                    f"Native LFM2-VL checkpoint is incomplete; missing={missing_keys}, unexpected={unexpected_keys}"
-                )
-            return model
-
-        if kwargs.get("use_safetensors") is False:
-            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-        checkpoint_dir = _resolve_hf_checkpoint_dir(str(pretrained_model_name_or_path), **kwargs)
-        if checkpoint_dir is None:
-            return super().from_pretrained(pretrained_model_name_or_path, *args, **kwargs)
-
-        if not kwargs.pop("convert_from_hf", True):
-            raise ValueError("Original LFM2-VL safetensors require convert_from_hf=True")
-        model, dtype = cls._build_pretrained_model(pretrained_model_name_or_path, args, kwargs)
-        config = model.config
-
-        linear_weight_suffixes = (
-            ".in_proj.weight",
-            ".out_proj.weight",
-            ".q_proj.weight",
-            ".k_proj.weight",
-            ".v_proj.weight",
-            ".w1.weight",
-            ".w2.weight",
-            ".w3.weight",
-            ".patch_embedding.weight",
-            ".linear_1.weight",
-            ".linear_2.weight",
-            ".fc1.weight",
-            ".fc2.weight",
-        )
-        state_dict = {}
-        for name, tensor in _iter_hf_tensors(checkpoint_dir):
-            if name.endswith(linear_weight_suffixes):
-                tensor = tensor.transpose([1, 0]).contiguous()
-            state_dict[name] = tensor
-        if config.tie_word_embeddings and "lm_head.weight" not in state_dict:
-            state_dict["lm_head.weight"] = state_dict["model.language_model.embed_tokens.weight"].clone()
-
-        target_state_dict = model.state_dict()
-        if set(state_dict) != set(target_state_dict):
-            missing = sorted(set(target_state_dict) - set(state_dict))
-            unexpected = sorted(set(state_dict) - set(target_state_dict))
-            raise ValueError(f"Incomplete LFM2-VL checkpoint conversion: missing={missing}, unexpected={unexpected}")
-        for name, tensor in state_dict.items():
-            target = target_state_dict[name]
-            if list(tensor.shape) != list(target.shape):
-                raise ValueError(f"LFM2-VL shape mismatch for {name}: source={tensor.shape}, target={target.shape}")
-            if tensor.dtype != target.dtype:
-                state_dict[name] = tensor.astype(target.dtype)
-        missing_keys, unexpected_keys = model.set_state_dict(state_dict)
-        if missing_keys or unexpected_keys:
-            raise ValueError(f"LFM2-VL load failed: missing={missing_keys}, unexpected={unexpected_keys}")
-        logger.info(f"Loaded and converted Hugging Face LFM2-VL checkpoint from {pretrained_model_name_or_path}")
-        return model
-
-    def save_pretrained(self, save_dir, *args, **kwargs):
-        kwargs.setdefault("save_checkpoint_format", "paddle")
-        kwargs.setdefault("save_safetensors", False)
-        return super().save_pretrained(save_dir, *args, **kwargs)
 
     def get_input_embeddings(self):
         return self.model.get_input_embeddings()

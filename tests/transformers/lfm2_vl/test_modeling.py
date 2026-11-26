@@ -21,7 +21,7 @@ from unittest import mock
 import numpy as np
 import paddle
 from PIL import Image
-from safetensors.numpy import save_file
+from safetensors.numpy import load_file, save_file
 
 from paddleformers.transformers import (
     AutoModelForCausalLM,
@@ -67,6 +67,95 @@ def get_config():
 
 
 class Lfm2VlModelTest(unittest.TestCase):
+    def test_checkpoint_api_is_inherited_without_model_specific_loader(self):
+        from paddleformers.transformers.model_utils import PretrainedModel
+
+        self.assertIs(
+            Lfm2VlForConditionalGeneration.from_pretrained.__func__, PretrainedModel.from_pretrained.__func__
+        )
+        self.assertIs(Lfm2VlForConditionalGeneration.save_pretrained, PretrainedModel.save_pretrained)
+
+    def test_native_checkpoint_round_trip(self):
+        model = Lfm2VlForConditionalGeneration(get_config()).eval()
+        with tempfile.TemporaryDirectory() as directory:
+            model.save_pretrained(directory, save_checkpoint_format="paddle", save_safetensors=False)
+            loaded = AutoModelForConditionalGeneration.from_pretrained(
+                directory, load_checkpoint_format="paddle", convert_from_hf=False
+            ).eval()
+            for name, tensor in model.state_dict().items():
+                np.testing.assert_array_equal(loaded.state_dict()[name].numpy(), tensor.numpy(), err_msg=name)
+
+    def test_multimodal_standard_aoa_checkpoint_round_trip(self):
+        from pathlib import Path
+
+        for tied in (False, True):
+            for optional_parameters in (False, True):
+                with self.subTest(
+                    tied=tied, optional_parameters=optional_parameters
+                ), tempfile.TemporaryDirectory() as directory:
+                    config = get_config()
+                    config.tie_word_embeddings = config.text_config.tie_word_embeddings = tied
+                    config.projector_bias = config.projector_use_layernorm = optional_parameters
+                    config.text_config.conv_bias = optional_parameters
+                    reference = Lfm2VlForConditionalGeneration(config).eval()
+                    linear_names = {
+                        name + ".weight"
+                        for name, layer in reference.named_sublayers()
+                        if isinstance(layer, paddle.nn.Linear)
+                    }
+                    hf_weights = {
+                        name: (tensor.numpy().T.copy() if name in linear_names else tensor.numpy())
+                        for name, tensor in reference.state_dict().items()
+                        if not (tied and name == "lm_head.weight")
+                    }
+                    config.architectures = ["Lfm2VlForConditionalGeneration"]
+                    config.save_pretrained(directory)
+                    # Exercise the real shared sharded loader, not a mocked converter.
+                    names = list(hf_weights)
+                    shards = (names[::2], names[1::2])
+                    weight_map = {}
+                    for index, keys in enumerate(shards):
+                        filename = f"model-{index}.safetensors"
+                        save_file(
+                            {key: hf_weights[key] for key in keys},
+                            os.path.join(directory, filename),
+                            metadata={"format": "pt"},
+                        )
+                        weight_map.update({key: filename for key in keys})
+                    with open(os.path.join(directory, "model.safetensors.index.json"), "w") as file:
+                        json.dump(
+                            {
+                                "metadata": {"total_size": sum(value.nbytes for value in hf_weights.values())},
+                                "weight_map": weight_map,
+                            },
+                            file,
+                        )
+                    loaded = AutoModelForConditionalGeneration.from_pretrained(
+                        directory, load_checkpoint_format="flex_checkpoint"
+                    ).eval()
+                    exported = os.path.join(directory, "exported")
+                    loaded.save_pretrained(exported, save_checkpoint_format="flex_checkpoint")
+                    exported_weights = {}
+                    for shard in Path(exported).glob("*.safetensors"):
+                        exported_weights.update(load_file(shard))
+                    self.assertEqual(set(exported_weights), set(hf_weights))
+                    for name, value in hf_weights.items():
+                        np.testing.assert_array_equal(exported_weights[name], value, err_msg=name)
+                    reloaded = AutoModelForConditionalGeneration.from_pretrained(
+                        exported, load_checkpoint_format="flex_checkpoint"
+                    ).eval()
+                    inputs = self.get_inputs()
+                    for actual in (loaded, reloaded):
+                        self.assertEqual(set(actual.state_dict()), set(reference.state_dict()))
+                        for name, tensor in reference.state_dict().items():
+                            np.testing.assert_array_equal(
+                                actual.state_dict()[name].numpy(), tensor.numpy(), err_msg=name
+                            )
+                        with paddle.no_grad():
+                            np.testing.assert_allclose(
+                                actual(**inputs).logits.numpy(), reference(**inputs).logits.numpy(), atol=1e-6
+                            )
+
     def test_packed_attention_and_shortconv_match_independent_documents(self):
         from paddleformers.transformers.lfm2_vl.modeling_lfm2 import Lfm2ForCausalLM
 
@@ -300,51 +389,6 @@ class Lfm2VlModelTest(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "not a valid JSON"):
                 Lfm2VlImageProcessor.from_pretrained(directory)
 
-    def test_checkpoint_resolution_errors_are_not_swallowed(self):
-        from paddleformers.transformers.model_utils import PretrainedModel
-
-        for error in (OSError("network failure"), ValueError("bad index"), FileNotFoundError("missing shard")):
-            with self.subTest(error=error), mock.patch(
-                "paddleformers.transformers.lfm2_vl.modeling._resolve_hf_checkpoint_dir", side_effect=error
-            ), mock.patch.object(PretrainedModel, "from_pretrained") as fallback:
-                with self.assertRaises(type(error)) as caught:
-                    Lfm2VlForConditionalGeneration.from_pretrained("test/lfm2-vl")
-                self.assertIs(caught.exception, error)
-                fallback.assert_not_called()
-
-    def test_invalid_hf_index_and_missing_shard_fail(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = os.path.join(directory, "model.safetensors.index.json")
-            for contents, error in (
-                ("{broken", json.JSONDecodeError),
-                (json.dumps({"weight_map": {"weight": "missing.safetensors"}}), FileNotFoundError),
-            ):
-                with self.subTest(contents=contents):
-                    with open(path, "w", encoding="utf-8") as file:
-                        file.write(contents)
-                    with self.assertRaises(error):
-                        Lfm2VlForConditionalGeneration.from_pretrained(directory, config=get_config())
-
-    def test_native_loader_accepts_workflow_kwargs(self):
-        reference = Lfm2VlForConditionalGeneration(get_config()).eval()
-        with tempfile.TemporaryDirectory() as directory:
-            reference.save_pretrained(directory)
-            for config in (None, reference.config):
-                with self.subTest(config=config):
-                    loaded = AutoModelForConditionalGeneration.from_pretrained(
-                        directory,
-                        config=config,
-                        convert_from_hf=False,
-                        load_via_cpu=False,
-                        load_checkpoint_format="flex_checkpoint",
-                        low_cpu_mem_usage=False,
-                        ignore_mismatched_sizes=False,
-                        use_safetensors=False,
-                        variant=None,
-                    )
-                    for key, value in reference.state_dict().items():
-                        np.testing.assert_array_equal(loaded.state_dict()[key].numpy(), value.numpy())
-
     def test_text_and_vision_lfm2_lora_targets(self):
         from types import SimpleNamespace
 
@@ -357,135 +401,11 @@ class Lfm2VlModelTest(unittest.TestCase):
         self.assertEqual(targets[0], targets[1])
         self.assertIn(".*in_proj.*", targets[0])
 
-    def test_missing_remote_safetensors_allows_native_fallback(self):
-        from paddleformers.transformers.lfm2_vl.modeling import (
-            _resolve_hf_checkpoint_dir,
-        )
-
-        with mock.patch("paddleformers.transformers.lfm2_vl.modeling.resolve_file_path", return_value=None) as resolve:
-            self.assertIsNone(_resolve_hf_checkpoint_dir("test/native", download_hub="modelscope"))
-            self.assertTrue(resolve.call_args.kwargs["force_return"])
-
-    def test_native_loader_rejects_unused_kwargs(self):
-        model = Lfm2VlForConditionalGeneration(get_config())
-        with tempfile.TemporaryDirectory() as directory:
-            model.save_pretrained(directory)
-            for options in ({}, {"config": get_config()}):
-                with self.subTest(options=options), self.assertRaisesRegex(TypeError, "unexpected_option"):
-                    Lfm2VlForConditionalGeneration.from_pretrained(directory, unexpected_option=True, **options)
-
-    def test_real_hf_safetensors_conversion_and_kwargs(self):
-        reference = Lfm2VlForConditionalGeneration(get_config()).eval()
-        linear_names = {
-            name + ".weight" for name, layer in reference.named_sublayers() if isinstance(layer, paddle.nn.Linear)
-        }
-        hf_weights = {
-            name: (tensor.numpy().T.copy() if name in linear_names else tensor.numpy())
-            for name, tensor in reference.state_dict().items()
-        }
-        with tempfile.TemporaryDirectory() as directory:
-            subdir = os.path.join(directory, "weights")
-            os.makedirs(subdir)
-            reference.config.architectures = [type(reference).__name__]
-            reference.config.save_pretrained(subdir)
-            save_file(hf_weights, os.path.join(subdir, "model.safetensors"), metadata={"format": "pt"})
-            loaded = AutoModelForConditionalGeneration.from_pretrained(
-                directory,
-                config=reference.config,
-                subfolder="weights",
-                convert_from_hf=True,
-                local_files_only=True,
-                load_via_cpu=False,
-                load_checkpoint_format="flex_checkpoint",
-                ignore_mismatched_sizes=False,
-                low_cpu_mem_usage=False,
-                use_safetensors=True,
-                variant=None,
-            ).eval()
-            for options in ({}, {"config": get_config()}):
-                with self.subTest(options=options), self.assertRaisesRegex(TypeError, "unexpected_option"):
-                    Lfm2VlForConditionalGeneration.from_pretrained(subdir, unexpected_option=True, **options)
-            with self.assertRaisesRegex(ValueError, "convert_from_hf"):
-                Lfm2VlForConditionalGeneration.from_pretrained(subdir, convert_from_hf=False)
-        for name, tensor in reference.state_dict().items():
-            np.testing.assert_array_equal(loaded.state_dict()[name].numpy(), tensor.numpy(), err_msg=name)
-        inputs = self.get_inputs()
-        with paddle.no_grad():
-            np.testing.assert_allclose(loaded(**inputs).logits.numpy(), reference(**inputs).logits.numpy(), atol=1e-6)
-
     def test_processor_rejects_image_token_without_image(self):
         processor = object.__new__(Lfm2VlProcessor)
         processor.image_token = "<image>"
         with self.assertRaisesRegex(ValueError, "image must be supplied"):
             processor(text="Describe <image>", images=None)
-
-    def test_sharded_safetensors_iterator(self):
-        from paddleformers.transformers.lfm2_vl.modeling import _iter_hf_tensors
-
-        with tempfile.TemporaryDirectory() as model_dir:
-            save_file({"first": np.ones([2], dtype="float32")}, os.path.join(model_dir, "part-1.safetensors"))
-            save_file({"second": np.zeros([3], dtype="float32")}, os.path.join(model_dir, "part-2.safetensors"))
-            with open(os.path.join(model_dir, "model.safetensors.index.json"), "w", encoding="utf-8") as file:
-                json.dump(
-                    {
-                        "metadata": {"total_size": 20},
-                        "weight_map": {"first": "part-1.safetensors", "second": "part-2.safetensors"},
-                    },
-                    file,
-                )
-            tensors = dict(_iter_hf_tensors(model_dir))
-        np.testing.assert_array_equal(tensors["first"].numpy(), np.ones([2], dtype="float32"))
-        np.testing.assert_array_equal(tensors["second"].numpy(), np.zeros([3], dtype="float32"))
-
-    def test_official_model_id_uses_lfm2_vl_conversion(self):
-        config = get_config()
-        reference = Lfm2VlForConditionalGeneration(config)
-        linear_weight_suffixes = (
-            ".in_proj.weight",
-            ".out_proj.weight",
-            ".q_proj.weight",
-            ".k_proj.weight",
-            ".v_proj.weight",
-            ".w1.weight",
-            ".w2.weight",
-            ".w3.weight",
-            ".patch_embedding.weight",
-            ".linear_1.weight",
-            ".linear_2.weight",
-            ".fc1.weight",
-            ".fc2.weight",
-        )
-        hf_tensors = []
-        for name, tensor in reference.state_dict().items():
-            source = tensor.transpose([1, 0]) if name.endswith(linear_weight_suffixes) else tensor
-            hf_tensors.append((name, source.clone()))
-        with (
-            mock.patch(
-                "paddleformers.transformers.lfm2_vl.modeling._resolve_hf_checkpoint_dir",
-                return_value="/tmp/lfm2-vl-hf-checkpoint",
-            ),
-            mock.patch(
-                "paddleformers.transformers.lfm2_vl.modeling.Lfm2VlConfig.from_pretrained",
-                return_value=(config, {}),
-            ),
-            mock.patch(
-                "paddleformers.transformers.lfm2_vl.modeling._iter_hf_tensors",
-                return_value=hf_tensors,
-            ) as load_checkpoint,
-        ):
-            loaded = Lfm2VlForConditionalGeneration.from_pretrained("LiquidAI/LFM2.5-VL-450M")
-        load_checkpoint.assert_called_once_with("/tmp/lfm2-vl-hf-checkpoint")
-        for name, tensor in reference.state_dict().items():
-            np.testing.assert_array_equal(tensor.numpy(), loaded.state_dict()[name].numpy())
-
-    def test_default_save_pretrained_round_trip(self):
-        model = Lfm2VlForConditionalGeneration(get_config())
-        with tempfile.TemporaryDirectory() as save_dir:
-            model.save_pretrained(save_dir)
-            self.assertTrue(os.path.exists(os.path.join(save_dir, "model_state.pdparams")))
-            loaded = Lfm2VlForConditionalGeneration.from_pretrained(save_dir)
-        for name, tensor in model.state_dict().items():
-            np.testing.assert_array_equal(tensor.numpy(), loaded.state_dict()[name].numpy())
 
 
 if __name__ == "__main__":
