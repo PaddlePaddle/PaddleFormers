@@ -14,11 +14,13 @@
 
 import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
 import paddle
+from safetensors.numpy import load_file
 
 from paddleformers.datasets.collate import mm_collate_fn
 from paddleformers.datasets.SFTDataset import Sequence
@@ -36,6 +38,23 @@ from .test_modeling import Mistral3ModelTester
 
 
 class Mistral3ReviewTest(unittest.TestCase):
+    def test_nested_tie_config_and_explicit_override(self):
+        values = Mistral3ModelTester(self).get_config().to_dict()
+        values.pop("tie_word_embeddings", None)
+        for nested in (True, False):
+            values["text_config"]["tie_word_embeddings"] = nested
+            for override in (None, True, False):
+                with self.subTest(nested=nested, override=override):
+                    config = Mistral3Config(**values, tie_word_embeddings=override)
+                    expected = nested if override is None else override
+                    self.assertEqual(config.tie_word_embeddings, expected)
+                    self.assertEqual(config.text_config.tie_word_embeddings, expected)
+                    with tempfile.TemporaryDirectory() as directory:
+                        config.save_pretrained(directory)
+                        loaded = Mistral3Config.from_pretrained(directory)
+                    self.assertEqual(loaded.tie_word_embeddings, expected)
+                    self.assertEqual(loaded.text_config.tie_word_embeddings, expected)
+
     def test_pixtral_uses_common_mlp_without_changing_math_or_keys(self):
         for activation in ("gelu", "silu"):
             config = PixtralVisionConfig(
@@ -60,14 +79,26 @@ class Mistral3ReviewTest(unittest.TestCase):
         self.assertIn("language_model.model.embed_tokens.weight -> lm_head.weight", statements)
         inverse = model._gen_inv_aoa_config(config)["aoa_statements"]
         self.assertEqual(sum(s.endswith(" -> language_model.model.embed_tokens.weight") for s in inverse), 1)
+        self.assertIn("lm_head.weight -> _", inverse)
         ids = paddle.to_tensor([[2, 4, 5]], dtype="int64")
         with paddle.no_grad():
             hidden = model.model(input_ids=ids, return_dict=True).last_hidden_state
             expected = paddle.matmul(hidden, model.get_input_embeddings().weight, transpose_y=True)
             np.testing.assert_allclose(model(input_ids=ids).logits.numpy(), expected.numpy(), atol=1e-6)
         with tempfile.TemporaryDirectory() as directory:
-            model.save_pretrained(directory)
-            reloaded = Mistral3ForConditionalGeneration.from_pretrained(directory).eval()
+            model.save_pretrained(directory, save_checkpoint_format="flex_checkpoint")
+            exported = {}
+            for shard in Path(directory).glob("*.safetensors"):
+                exported.update(load_file(shard))
+            self.assertIn("language_model.model.embed_tokens.weight", exported)
+            self.assertFalse(any("lm_head" in key for key in exported))
+            # HF composite configs may store tying only in text_config.
+            values = config.to_dict()
+            values.pop("tie_word_embeddings", None)
+            Mistral3Config(**values).save_pretrained(directory)
+            reloaded = Mistral3ForConditionalGeneration.from_pretrained(
+                directory, convert_from_hf=True, load_checkpoint_format="flex_checkpoint"
+            ).eval()
             self.assertIs(reloaded.lm_head.weight, reloaded.get_input_embeddings().weight)
             np.testing.assert_allclose(reloaded(input_ids=ids).logits.numpy(), expected.numpy(), atol=1e-6)
 
@@ -98,8 +129,8 @@ class Mistral3ReviewTest(unittest.TestCase):
         x = paddle.randn([1, 4, 16])
         cos, sin = paddle.cos(paddle.randn([4, 4])), paddle.sin(paddle.randn([4, 4]))
         mask = paddle.zeros([1, 1, 4, 4])
-        mask[:, :, :2, 2:] = -1e4
-        mask[:, :, 2:, :2] = -1e4
+        mask[:, :, :3, 3:] = -1e4
+        mask[:, :, 3:, :3] = -1e4
         q, k, v = [
             projection(x).reshape([1, 4, 4, 4]).transpose([0, 2, 1, 3])
             for projection in (layer.q_proj, layer.k_proj, layer.v_proj)
@@ -109,14 +140,23 @@ class Mistral3ReviewTest(unittest.TestCase):
             paddle.matmul(q, k.transpose([0, 1, 3, 2])) * layer.scaling + mask, axis=-1, dtype="float32"
         )
         expected = layer.o_proj(paddle.matmul(weights, v).transpose([0, 2, 1, 3]).reshape([1, 4, 16]))
-        actual, _ = layer(x, attention_mask=mask, position_embeddings=(cos, sin))
+        actual, _ = layer(x, patch_lengths=[3, 1], position_embeddings=(cos, sin))
         np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-6, rtol=1e-6)
         backend = ALL_ATTENTION_FUNCTIONS["eager"]
-        config._attn_implementation = "sdpa"
-        # Verify dispatch and noncausal mask contract independently of CUDA.
-        with patch.object(type(ALL_ATTENTION_FUNCTIONS), "__getitem__", return_value=backend) as dispatch:
-            layer(x, attention_mask=mask, position_embeddings=(cos, sin))
-            dispatch.assert_called_once_with("sdpa")
+        # Enforce flashmask's REQUIRED argument, not a permissive eager mock.
+
+        def strict_backend(module, query, key, value, attn_mask_startend_row_indices, **kwargs):
+            self.assertIsNone(attn_mask_startend_row_indices)
+            self.assertIsNone(kwargs["attention_mask"])
+            self.assertIs(kwargs["is_causal"], False)
+            return backend(module, query, key, value, **kwargs)
+
+        for implementation in ("sdpa", "flashmask"):
+            config._attn_implementation = implementation
+            with patch.object(type(ALL_ATTENTION_FUNCTIONS), "__getitem__", return_value=strict_backend) as dispatch:
+                actual, _ = layer(x, patch_lengths=[3, 1], position_embeddings=(cos, sin))
+                dispatch.assert_called_once_with(implementation)
+                np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-6, rtol=1e-6)
         self.assertFalse(layer.is_causal)
 
     def test_image_sizes_collected_once_for_packed_and_padded_batches(self):

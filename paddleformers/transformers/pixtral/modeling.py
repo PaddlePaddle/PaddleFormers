@@ -19,6 +19,7 @@ from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.linear import Linear as GeneralLinear
 from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ..model_outputs import BaseModelOutput
@@ -130,15 +131,15 @@ class PixtralAttention(nn.Layer):
         self.dropout = config.attention_dropout
         self.is_causal = False
 
-        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=False)
-        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=False)
-        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=False)
-        self.o_proj = nn.Linear(self.embed_dim, self.embed_dim, bias_attr=False)
+        self.q_proj = GeneralLinear.create(self.embed_dim, self.embed_dim, has_bias=False, linear_type="default")
+        self.k_proj = GeneralLinear.create(self.embed_dim, self.embed_dim, has_bias=False, linear_type="default")
+        self.v_proj = GeneralLinear.create(self.embed_dim, self.embed_dim, has_bias=False, linear_type="default")
+        self.o_proj = GeneralLinear.create(self.embed_dim, self.embed_dim, has_bias=False, linear_type="default")
 
     def forward(
         self,
         hidden_states: paddle.Tensor,
-        attention_mask: paddle.Tensor | None = None,
+        patch_lengths: list[int],
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
     ) -> tuple[paddle.Tensor, paddle.Tensor | None]:
         """Input shape: Batch x Time x Channel"""
@@ -160,19 +161,27 @@ class PixtralAttention(nn.Layer):
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, unsqueeze_dim=0)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-        attn_output, attn_weights = attention_interface(
-            self,
-            query=query_states,
-            key=key_states,
-            value=value_states,
-            attention_mask=attention_mask,
-            dropout=self.dropout if self.training else 0.0,
-            scaling=self.scaling,
-            is_causal=False,
-        )
+        # Images are independent sequences. Splitting also avoids a dense
+        # block mask, which flashmask cannot represent through attention_mask.
+        splits = [paddle.split(tensor, patch_lengths, axis=2) for tensor in (query_states, key_states, value_states)]
+        attn_outputs = [
+            attention_interface(
+                self,
+                query=query,
+                key=key,
+                value=value,
+                attention_mask=None,
+                attn_mask_startend_row_indices=None,
+                dropout=self.dropout if self.training else 0.0,
+                scaling=self.scaling,
+                is_causal=False,
+            )[0]
+            for query, key, value in zip(*splits)
+        ]
+        attn_output = paddle.concat(attn_outputs, axis=1)
         attn_output = self.o_proj(attn_output)
 
-        return attn_output, attn_weights
+        return attn_output, None
 
 
 class PixtralAttentionLayer(nn.Layer):
@@ -200,14 +209,14 @@ class PixtralAttentionLayer(nn.Layer):
     def forward(
         self,
         hidden_states: paddle.Tensor,
-        attention_mask: paddle.Tensor,
+        patch_lengths: list[int],
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
     ) -> paddle.Tensor:
         residual = hidden_states
         hidden_states = self.attention_norm(hidden_states)
         hidden_states, _ = self.attention(
             hidden_states=hidden_states,
-            attention_mask=attention_mask,
+            patch_lengths=patch_lengths,
             position_embeddings=position_embeddings,
         )
         hidden_states = residual + hidden_states
@@ -231,7 +240,7 @@ class PixtralTransformer(nn.Layer):
     def forward(
         self,
         inputs_embeds: paddle.Tensor,
-        attention_mask: paddle.Tensor | None = None,
+        patch_lengths: list[int],
         position_embeddings: tuple[paddle.Tensor, paddle.Tensor] | None = None,
         output_hidden_states: bool | None = None,
     ) -> BaseModelOutput:
@@ -245,7 +254,7 @@ class PixtralTransformer(nn.Layer):
             def custom_forward(layer_hidden_states):
                 return module(
                     layer_hidden_states,
-                    attention_mask,
+                    patch_lengths,
                     position_embeddings=position_embeddings,
                 )
 
@@ -267,7 +276,7 @@ class PixtralTransformer(nn.Layer):
             else:
                 hidden_states = encoder_layer(
                     hidden_states,
-                    attention_mask,
+                    patch_lengths,
                     position_embeddings=position_embeddings,
                 )
 
@@ -278,22 +287,6 @@ class PixtralTransformer(nn.Layer):
             last_hidden_state=hidden_states,
             hidden_states=all_hidden_states,
         )
-
-
-def generate_block_attention_mask(patch_embeds_list, tensor):
-    """Generate block attention mask so patches from different images don't attend to each other."""
-    dtype = tensor.dtype
-    seq_len = tensor.shape[1]
-    d_min = paddle.finfo(dtype).min
-    causal_mask = paddle.full([seq_len, seq_len], fill_value=d_min, dtype=dtype)
-
-    block_end_idx = paddle.to_tensor(patch_embeds_list).cumsum(-1)
-    block_start_idx = paddle.to_tensor([0] + patch_embeds_list[:-1]).cumsum(-1)
-    for start, end in zip(block_start_idx.numpy().tolist(), block_end_idx.numpy().tolist()):
-        causal_mask[int(start) : int(end), int(start) : int(end)] = 0
-
-    causal_mask = causal_mask[None, None, :, :].expand([tensor.shape[0], 1, -1, -1])
-    return causal_mask
 
 
 def _normalize_image_sizes(image_sizes):
@@ -484,15 +477,12 @@ class PixtralVisionModel(PixtralPretrainedModel):
         # Get position embeddings (cos, sin)
         position_embeddings = self.patch_positional_embedding(patch_embeds, position_ids)
 
-        # Generate block attention mask
-        attention_mask = generate_block_attention_mask(
-            [p.shape[-2] * p.shape[-1] for p in patch_embeds_list], patch_embeds
-        )
+        patch_lengths = [p.shape[-2] * p.shape[-1] for p in patch_embeds_list]
 
         # Forward through transformer
         outputs = self.transformer(
             patch_embeds,
-            attention_mask=attention_mask,
+            patch_lengths=patch_lengths,
             position_embeddings=position_embeddings,
             output_hidden_states=output_hidden_states,
         )

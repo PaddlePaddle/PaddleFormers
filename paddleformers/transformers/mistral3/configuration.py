@@ -36,7 +36,7 @@ class Mistral3Config(PretrainedConfig):
         vision_feature_layer=-1,
         multimodal_projector_bias=False,
         spatial_merge_size=2,
-        tie_word_embeddings=False,
+        tie_word_embeddings=None,
         **kwargs,
     ):
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
@@ -71,6 +71,10 @@ class Mistral3Config(PretrainedConfig):
 
             text_config = dict(text_config)
             text_model_type = text_config.pop("model_type", "llama")
+            if text_model_type == "mistral":
+                # HF Mistral defaults to an untied head; LlamaConfig inherits
+                # a different generic default. Preserve Mistral's semantics.
+                text_config.setdefault("tie_word_embeddings", False)
             # Mistral Small currently uses the Llama-compatible decoder with
             # independent head_dim below. Do not discard other model types.
             config_class = LlamaConfig if text_model_type == "mistral" else CONFIG_MAPPING[text_model_type]
@@ -92,10 +96,14 @@ class Mistral3Config(PretrainedConfig):
                 sliding_window=None,
                 use_cache=True,
                 vocab_size=131072,
+                tie_word_embeddings=False,
             )
         else:
             self.text_config = text_config
 
+        if tie_word_embeddings is None:
+            tie_word_embeddings = self.text_config.tie_word_embeddings
+        self.tie_word_embeddings = tie_word_embeddings
         self.text_config.tie_word_embeddings = tie_word_embeddings
         if "_attn_implementation" in kwargs:
             self.text_config._attn_implementation = kwargs["_attn_implementation"]

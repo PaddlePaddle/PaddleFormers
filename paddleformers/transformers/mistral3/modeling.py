@@ -289,7 +289,9 @@ class Mistral3PatchMerger(nn.Layer):
         hidden_size = config.vision_config.hidden_size
         self.spatial_merge_size = config.spatial_merge_size
         self.patch_size = config.vision_config.patch_size
-        self.merging_layer = nn.Linear(hidden_size * self.spatial_merge_size**2, hidden_size, bias_attr=False)
+        self.merging_layer = GeneralLinear.create(
+            hidden_size * self.spatial_merge_size**2, hidden_size, has_bias=False, linear_type="default"
+        )
 
     def forward(self, image_features: paddle.Tensor, image_sizes) -> paddle.Tensor:
         image_sizes = [
@@ -334,16 +336,18 @@ class Mistral3MultiModalProjector(nn.Layer):
         self.num_feature_layers = (
             1 if isinstance(config.vision_feature_layer, int) else len(config.vision_feature_layer)
         )
-        self.linear_1 = nn.Linear(
+        self.linear_1 = GeneralLinear.create(
             config.vision_config.hidden_size * self.num_feature_layers,
             config.text_config.hidden_size,
-            bias_attr=config.multimodal_projector_bias,
+            has_bias=config.multimodal_projector_bias,
+            linear_type="default",
         )
         self.act = ACT2FN[config.projector_hidden_act]
-        self.linear_2 = nn.Linear(
+        self.linear_2 = GeneralLinear.create(
             config.text_config.hidden_size,
             config.text_config.hidden_size,
-            bias_attr=config.multimodal_projector_bias,
+            has_bias=config.multimodal_projector_bias,
+            linear_type="default",
         )
 
     def forward(self, image_features: paddle.Tensor, image_sizes) -> paddle.Tensor:
@@ -471,7 +475,9 @@ class Mistral3PretrainedModel(PretrainedModel):
             ):
                 continue
             if config.tie_word_embeddings and dst == "lm_head.weight":
-                # Export the shared embedding once, not two sources for one key.
+                # Unmapped tensors pass through AOA unchanged: explicitly drop
+                # the alias so only the shared embedding is exported.
+                inv_statements.append("lm_head.weight -> _")
                 continue
             if src.endswith("^T"):
                 inv_statements.append(f"{dst}^T -> {src[:-2]}")
