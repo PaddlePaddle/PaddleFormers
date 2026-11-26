@@ -20,6 +20,7 @@ import paddle.nn.functional as F
 from paddle import nn
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
+from ...nn.linear import Linear as GeneralLinear
 from ..model_outputs import BaseModelOutputWithPooling, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel
 from .configuration import Llama4Config, Llama4VisionConfig
@@ -60,8 +61,12 @@ def pixel_shuffle(input_tensor, shuffle_ratio):
 class Llama4VisionMLP2(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.fc1 = nn.Linear(config.intermediate_size, config.projector_input_dim, bias_attr=False)
-        self.fc2 = nn.Linear(config.projector_output_dim, config.projector_output_dim, bias_attr=False)
+        self.fc1 = GeneralLinear.create(
+            config.intermediate_size, config.projector_input_dim, has_bias=False, linear_type="default"
+        )
+        self.fc2 = GeneralLinear.create(
+            config.projector_output_dim, config.projector_output_dim, has_bias=False, linear_type="default"
+        )
         self.dropout = config.projector_dropout
 
     def forward(self, hidden_states):
@@ -83,10 +88,11 @@ class Llama4VisionPixelShuffleMLP(nn.Layer):
 class Llama4MultiModalProjector(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.linear_1 = nn.Linear(
+        self.linear_1 = GeneralLinear.create(
             config.vision_config.vision_output_dim,
             config.text_config.hidden_size,
-            bias_attr=config.vision_config.multi_modal_projector_bias,
+            has_bias=config.vision_config.multi_modal_projector_bias,
+            linear_type="default",
         )
 
     def forward(self, image_features):
@@ -119,10 +125,18 @@ class Llama4VisionAttention(nn.Layer):
         self.num_key_value_groups = 1
         self.attention_dropout = config.attention_dropout
         self.scaling = self.head_dim**-0.5
-        self.q_proj = nn.Linear(config.hidden_size, config.hidden_size, bias_attr=True)
-        self.k_proj = nn.Linear(config.hidden_size, config.hidden_size, bias_attr=True)
-        self.v_proj = nn.Linear(config.hidden_size, config.hidden_size, bias_attr=True)
-        self.o_proj = nn.Linear(config.hidden_size, config.hidden_size, bias_attr=True)
+        self.q_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.o_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
 
     def forward(self, hidden_states, freqs_ci, attention_mask=None):
         batch_size, sequence_length, _ = hidden_states.shape
@@ -151,8 +165,12 @@ class Llama4VisionAttention(nn.Layer):
 class Llama4VisionMLP(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size, bias_attr=True)
-        self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size, bias_attr=True)
+        self.fc1 = GeneralLinear.create(
+            config.hidden_size, config.intermediate_size, has_bias=True, linear_type="default"
+        )
+        self.fc2 = GeneralLinear.create(
+            config.intermediate_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
 
     def forward(self, hidden_states):
         return self.fc2(F.gelu(self.fc1(hidden_states)))
@@ -223,8 +241,11 @@ class Llama4UnfoldConvolution(nn.Layer):
             (config.patch_size, config.patch_size) if isinstance(config.patch_size, int) else config.patch_size
         )
         self.unfold = nn.Unfold(kernel_sizes=kernel_size, strides=kernel_size)
-        self.linear = nn.Linear(
-            config.num_channels * kernel_size[0] * kernel_size[1], config.hidden_size, bias_attr=False
+        self.linear = GeneralLinear.create(
+            config.num_channels * kernel_size[0] * kernel_size[1],
+            config.hidden_size,
+            has_bias=False,
+            linear_type="default",
         )
 
     def forward(self, hidden_states):
