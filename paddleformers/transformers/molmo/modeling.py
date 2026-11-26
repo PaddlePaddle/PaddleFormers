@@ -1076,7 +1076,7 @@ class MolmoModel(MolmoPretrainedModel):
         has_image = images is not None
         if has_image and inputs_embeds is not None:
             raise ValueError("Cannot provide both images and inputs_embeds.")
-        if has_image and past_key_values is not None:
+        if has_image and past_key_values is not None and past_key_values.get_seq_length() > 0:
             raise ValueError("Cached key and values should not be used with images.")
 
         if not ((input_ids is None) ^ (inputs_embeds is None)):
@@ -1279,7 +1279,7 @@ class MolmoForCausalLM(MolmoPretrainedModel):
             image_input_idx=image_input_idx,
             **kwargs,
         )
-        if past_key_values is not None:
+        if past_key_values is not None and past_key_values.get_seq_length() > 0:
             model_inputs["images"] = None
             model_inputs["image_masks"] = None
             model_inputs["image_input_idx"] = None
