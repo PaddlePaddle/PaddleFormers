@@ -27,6 +27,8 @@ MODE=cinn RESULTS_DIR=results/infer1 bash tests/cinn/lfm2_vl/infer.sh
 
 ## 验证边界
 
+2026-11-26 组件复用调整：MLP 改用通用投影，ShortConv 的融合 `in_proj` 拆为对应的 B/C/X 三个投影。入口会无损转换历史 Paddle 权重的键名和投影形状，原资源文件与 SHA256 不变；拒绝恢复旧结构的 optimizer 状态。V100S 上完成 `--split` 模式两步 CINN 训练检查，不代表收敛或性能验收；下列性能数据仍是历史结果。
+
 CINN 显式 to_static，日志缺少 Compiling subgraph with CINN backend 则入口失败。训练 loss.jsonl 逐步记录，validation.jsonl 记录留出结果，gradients.npz 保存首步参数梯度；推理保存 logits.npy 及逐次计时 inference.json。原始子集拟合与泛化效果分开，不因短测跑通就宣称收敛。权重、日志和生成结果不提交 Git。
 
 本目录是历史已完成长跑脚本的可移植入口；交付回归只做20步及独立推理，不重新宣称执行全部长跑。吞吐提升=(动态 ms/CINNms-1)×100%，延迟下降=(1-CINNms/动态 ms)×100%。性能只代表当前 tiny 及编译范围。

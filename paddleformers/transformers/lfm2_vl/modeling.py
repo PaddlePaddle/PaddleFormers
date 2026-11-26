@@ -14,6 +14,7 @@
 
 """Paddle implementation of LFM2-VL and its SigLIP2 NaFlex vision tower."""
 
+from copy import deepcopy
 from dataclasses import dataclass
 
 import paddle
@@ -32,6 +33,11 @@ from ..model_outputs import (
     CausalLMOutputWithPast,
 )
 from ..model_utils import PretrainedModel, register_base_model
+from ..siglip_vision_model.modeling import (
+    SiglipAttention,
+    SiglipEncoderLayer,
+    SiglipMLP,
+)
 from .configuration import Lfm2VlConfig
 
 
@@ -82,12 +88,14 @@ class Siglip2VisionEmbeddings(nn.Layer):
         return patch_embeds + paddle.stack(resized_batch)
 
 
-class Siglip2Attention(nn.Layer):
+class Siglip2Attention(SiglipAttention):
     def __init__(self, config):
-        super().__init__()
-        self.num_heads = config.num_attention_heads
-        self.head_dim = config.hidden_size // config.num_attention_heads
-        self.scale = self.head_dim**-0.5
+        config = deepcopy(config)
+        if config._attn_implementation == "flashmask":
+            # Shared SigLIP's flashmask indices describe a full square, but NaFlex
+            # batches have padded patches. Keep their additive padding mask with SDPA.
+            config._attn_implementation = "sdpa"
+        super().__init__(config)
         self.q_proj = GeneralLinear.create(
             config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
         )
@@ -101,46 +109,31 @@ class Siglip2Attention(nn.Layer):
             config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
         )
 
-    def forward(self, hidden_states, attention_mask=None):
-        batch_size, sequence_length, hidden_size = hidden_states.shape
-        shape = [batch_size, sequence_length, self.num_heads, self.head_dim]
-        query = self.q_proj(hidden_states).reshape(shape).transpose([0, 2, 1, 3])
-        key = self.k_proj(hidden_states).reshape(shape).transpose([0, 2, 1, 3])
-        value = self.v_proj(hidden_states).reshape(shape).transpose([0, 2, 1, 3])
-        scores = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * self.scale
-        if attention_mask is not None:
-            scores = scores + attention_mask
-        probabilities = F.softmax(scores.astype("float32"), axis=-1).astype(query.dtype)
-        output = paddle.matmul(probabilities, value).transpose([0, 2, 1, 3])
-        return self.out_proj(output.reshape([batch_size, sequence_length, hidden_size]))
+    def _get_bidirectional_indices(self, batch_size, seq_len, dtype):
+        # On GPU, shared SDPA prioritizes row indices over attention_mask.
+        # A full square would silently unmask padded NaFlex patches.
+        # Keep an assignment so dy2static does not emit an empty function body
+        # when removing a literal ``return None``.
+        indices = None
+        return indices
 
 
-class Siglip2MLP(nn.Layer):
+class Siglip2MLP(SiglipMLP):
     def __init__(self, config):
-        super().__init__()
+        super().__init__(config)
         self.fc1 = GeneralLinear.create(
             config.hidden_size, config.intermediate_size, has_bias=True, linear_type="default"
         )
         self.fc2 = GeneralLinear.create(
             config.intermediate_size, config.hidden_size, has_bias=True, linear_type="default"
         )
-        self.activation = ACT2FN[config.hidden_act]
-
-    def forward(self, hidden_states):
-        return self.fc2(self.activation(self.fc1(hidden_states)))
 
 
-class Siglip2EncoderLayer(nn.Layer):
+class Siglip2EncoderLayer(SiglipEncoderLayer):
     def __init__(self, config):
-        super().__init__()
-        self.layer_norm1 = nn.LayerNorm(config.hidden_size, epsilon=config.layer_norm_eps)
+        super().__init__(config)
         self.self_attn = Siglip2Attention(config)
-        self.layer_norm2 = nn.LayerNorm(config.hidden_size, epsilon=config.layer_norm_eps)
         self.mlp = Siglip2MLP(config)
-
-    def forward(self, hidden_states, attention_mask):
-        hidden_states = hidden_states + self.self_attn(self.layer_norm1(hidden_states), attention_mask)
-        return hidden_states + self.mlp(self.layer_norm2(hidden_states))
 
 
 class Siglip2Encoder(nn.Layer):
@@ -152,7 +145,7 @@ class Siglip2Encoder(nn.Layer):
     def forward(self, hidden_states, attention_mask):
         def create_custom_forward(module):
             def custom_forward(layer_hidden_states):
-                return module(layer_hidden_states, attention_mask)
+                return module(layer_hidden_states, attention_mask)[0]
 
             return custom_forward
 
@@ -168,7 +161,7 @@ class Siglip2Encoder(nn.Layer):
                     use_reentrant=getattr(self.config, "recompute_use_reentrant", True),
                 )
             else:
-                hidden_states = layer(hidden_states, attention_mask)
+                hidden_states = layer(hidden_states, attention_mask)[0]
         return hidden_states
 
 
@@ -272,10 +265,7 @@ class Lfm2VlPreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config):
         prefix = "" if cls == cls.base_model_class else "model."
-        statements = [
-            f"model.{name}{'^T' if transpose else ''} -> {prefix}{name}"
-            for name, transpose in cls._checkpoint_weights(config)
-        ]
+        statements = Lfm2PreTrainedModel._weight_statements(cls._checkpoint_weights(config), prefix)
         if prefix:
             source = "model.language_model.embed_tokens.weight" if config.tie_word_embeddings else "lm_head.weight"
             statements.append(f"{source} -> lm_head.weight")
@@ -284,10 +274,7 @@ class Lfm2VlPreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_inv_aoa_config(cls, config):
         prefix = "" if cls == cls.base_model_class else "model."
-        statements = [
-            f"{prefix}{name}{'^T' if transpose else ''} -> model.{name}"
-            for name, transpose in cls._checkpoint_weights(config)
-        ]
+        statements = Lfm2PreTrainedModel._weight_statements(cls._checkpoint_weights(config), prefix, inverse=True)
         if prefix:
             target = "_" if config.tie_word_embeddings else "lm_head.weight"
             statements.append(f"lm_head.weight -> {target}")

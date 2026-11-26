@@ -18,10 +18,14 @@ import paddle
 import paddle.nn.functional as F
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
+from paddle.distributed.fleet.utils.sequence_parallel_utils import ScatterOp
 
 from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
+from ...nn.embedding import Embedding as GeneralEmbedding
+from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead
+from ...nn.mlp import MLP
 from ...nn.norm import Norm as GeneralNorm
 from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
 from ..cache_utils import DynamicCache
@@ -55,9 +59,8 @@ class Lfm2HybridConvCache(DynamicCache):
         self.__init__(self.config)
 
 
-class Lfm2MLP(nn.Layer):
+class Lfm2MLP(MLP):
     def __init__(self, config):
-        super().__init__()
         intermediate_size = config.intermediate_size
         if config.block_auto_adjust_ff_dim:
             intermediate_size = int(2 * intermediate_size / 3)
@@ -65,13 +68,7 @@ class Lfm2MLP(nn.Layer):
                 intermediate_size = int(config.block_ffn_dim_multiplier * intermediate_size)
                 multiple = config.block_multiple_of
                 intermediate_size = multiple * ((intermediate_size + multiple - 1) // multiple)
-        self.w1 = nn.Linear(config.hidden_size, intermediate_size, bias_attr=False)
-        self.w3 = nn.Linear(config.hidden_size, intermediate_size, bias_attr=False)
-        self.w2 = nn.Linear(intermediate_size, config.hidden_size, bias_attr=False)
-
-    def forward(self, hidden_states):
-        hidden_states = F.silu(self.w1(hidden_states)) * self.w3(hidden_states)
-        return self.w2(hidden_states)
+        super().__init__(config, intermediate_size=intermediate_size, has_bias=False)
 
 
 class Lfm2Attention(nn.Layer):
@@ -85,21 +82,61 @@ class Lfm2Attention(nn.Layer):
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
         self.head_dim = getattr(config, "head_dim", config.hidden_size // self.num_heads)
         self.scaling = self.head_dim**-0.5
-        self.q_proj = nn.Linear(config.hidden_size, self.num_heads * self.head_dim, bias_attr=False)
-        self.k_proj = nn.Linear(config.hidden_size, self.num_key_value_heads * self.head_dim, bias_attr=False)
-        self.v_proj = nn.Linear(config.hidden_size, self.num_key_value_heads * self.head_dim, bias_attr=False)
-        self.out_proj = nn.Linear(self.num_heads * self.head_dim, config.hidden_size, bias_attr=False)
+        degree = config.tensor_model_parallel_size
+        if self.num_heads % degree or self.num_key_value_heads % degree:
+            raise ValueError("LFM2 attention and KV heads must be divisible by tensor_model_parallel_size")
+        self.q_proj = GeneralLinear.create(
+            config.hidden_size, self.num_heads * self.head_dim, has_bias=False, config=config, tp_plan="colwise"
+        )
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size,
+            self.num_key_value_heads * self.head_dim,
+            has_bias=False,
+            config=config,
+            tp_plan="colwise",
+        )
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size,
+            self.num_key_value_heads * self.head_dim,
+            has_bias=False,
+            config=config,
+            tp_plan="colwise",
+        )
+        self.out_proj = GeneralLinear.create(
+            self.num_heads * self.head_dim, config.hidden_size, has_bias=False, config=config, tp_plan="rowwise"
+        )
+        self.num_heads //= degree
+        self.num_key_value_heads //= degree
         self.q_layernorm = GeneralNorm.create(
             config=config, norm_type="rms_norm", hidden_size=self.head_dim, has_bias=False, norm_eps=config.norm_eps
         )
         self.k_layernorm = GeneralNorm.create(
             config=config, norm_type="rms_norm", hidden_size=self.head_dim, has_bias=False, norm_eps=config.norm_eps
         )
+        if degree > 1:
+            from paddle.distributed import fleet
+
+            group = fleet.get_hybrid_communicate_group().get_model_parallel_group()
+
+            def sum_head_gradients(gradient):
+                # Q/K norm weights are shared across sharded heads, even without SP.
+                # Reduce the incoming gradient, not the accumulated .grad buffer.
+                gradient = gradient.clone()
+                paddle.distributed.all_reduce(gradient, group=group)
+                return gradient
+
+            self.q_layernorm.weight.register_hook(sum_head_gradients)
+            self.k_layernorm.weight.register_hook(sum_head_gradients)
 
     def forward(
         self, hidden_states, cos, sin, attention_mask=None, attn_mask_startend_row_indices=None, past_key_values=None
     ):
-        batch_size, sequence_length, _ = hidden_states.shape
+        sequence_length = cos.shape[1]
+        batch_size = (
+            hidden_states.shape[0] * self.config.tensor_model_parallel_size // sequence_length
+            if self.config.sequence_parallel
+            else hidden_states.shape[0]
+        )
         query = self.q_proj(hidden_states).reshape([batch_size, sequence_length, self.num_heads, self.head_dim])
         key = self.k_proj(hidden_states).reshape(
             [batch_size, sequence_length, self.num_key_value_heads, self.head_dim]
@@ -123,6 +160,8 @@ class Lfm2Attention(nn.Layer):
             scaling=self.scaling,
             dropout=0.0,
         )
+        if self.config.sequence_parallel:
+            output = output.reshape([-1, output.shape[-1]])
         return self.out_proj(output)
 
 
@@ -130,23 +169,54 @@ class Lfm2ShortConv(nn.Layer):
     def __init__(self, config, layer_idx):
         super().__init__()
         self.layer_idx = layer_idx
+        self.config = config
         self.kernel_size = config.conv_L_cache
-        self.in_proj = nn.Linear(config.hidden_size, 3 * config.hidden_size, bias_attr=config.conv_bias)
+        degree = config.tensor_model_parallel_size
+        if config.hidden_size % degree:
+            raise ValueError("ShortConv hidden_size must be divisible by tensor_model_parallel_size")
+        channels = config.hidden_size // degree
+        # Separate projections preserve corresponding B/C/value channels on each TP rank.
+        # Splitting the old fused [B, C, X] weight contiguously would mix the three gates.
+        self.b_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=config.conv_bias, config=config, tp_plan="colwise"
+        )
+        self.c_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=config.conv_bias, config=config, tp_plan="colwise"
+        )
+        self.x_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=config.conv_bias, config=config, tp_plan="colwise"
+        )
         self.conv = nn.Conv1D(
-            config.hidden_size,
-            config.hidden_size,
+            channels,
+            channels,
             self.kernel_size,
-            groups=config.hidden_size,
+            groups=channels,
             padding=self.kernel_size - 1,
             bias_attr=config.conv_bias,
         )
-        self.out_proj = nn.Linear(config.hidden_size, config.hidden_size, bias_attr=config.conv_bias)
+        for parameter in (self.conv.weight, self.conv.bias):
+            if parameter is not None:
+                parameter.is_distributed = degree > 1
+                if degree > 1:
+                    parameter.split_axis = 0
+        self.out_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=config.conv_bias, config=config, tp_plan="rowwise"
+        )
 
-    def forward(self, hidden_states, attention_mask=None, packed_mask=None, past_key_values=None):
+    def forward(
+        self, hidden_states, attention_mask=None, packed_mask=None, past_key_values=None, sequence_length=None
+    ):
+        sequence_length = hidden_states.shape[1] if sequence_length is None else sequence_length
         if attention_mask is not None:
-            hidden_states = hidden_states * attention_mask.unsqueeze(-1).astype(hidden_states.dtype)
-        projected = self.in_proj(hidden_states).transpose([0, 2, 1])
-        b_gate, c_gate, values = paddle.chunk(projected, 3, axis=1)
+            mask = attention_mask.unsqueeze(-1).astype(hidden_states.dtype)
+            if self.config.sequence_parallel:
+                mask = ScatterOp.apply(mask.reshape([-1, 1]))
+            hidden_states = hidden_states * mask
+        projected = [
+            projection(hidden_states).reshape([-1, sequence_length, self.conv.weight.shape[0]]).transpose([0, 2, 1])
+            for projection in (self.b_proj, self.c_proj, self.x_proj)
+        ]
+        b_gate, c_gate, values = projected
         values = b_gate * values
         values_dtype = values.dtype
         if past_key_values is not None:
@@ -174,7 +244,7 @@ class Lfm2ShortConv(nn.Layer):
                 None if self.conv.bias is None else self.conv.bias.astype("float32"),
                 padding=self.kernel_size - 1,
                 groups=values.shape[1],
-            )[:, :, : hidden_states.shape[1]].astype(values_dtype)
+            )[:, :, :sequence_length].astype(values_dtype)
         else:
             # A causal convolution must obey the same document boundaries as
             # attention. Mask each of its K lag contributions, including bias
@@ -192,6 +262,8 @@ class Lfm2ShortConv(nn.Layer):
                 result = result + self.conv.bias.astype("float32").reshape([1, -1, 1])
             values = result.astype(values_dtype)
         output = (c_gate * values).transpose([0, 2, 1]).contiguous()
+        if self.config.sequence_parallel:
+            output = output.reshape([-1, output.shape[-1]])
         return self.out_proj(output)
 
 
@@ -210,6 +282,7 @@ class Lfm2DecoderLayer(nn.Layer):
             hidden_size=config.hidden_size,
             has_bias=False,
             norm_eps=config.norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.ffn_norm = GeneralNorm.create(
             config=config,
@@ -217,6 +290,7 @@ class Lfm2DecoderLayer(nn.Layer):
             hidden_size=config.hidden_size,
             has_bias=False,
             norm_eps=config.norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
 
     def forward(
@@ -237,7 +311,9 @@ class Lfm2DecoderLayer(nn.Layer):
                 normalized, cos, sin, causal_mask, attn_mask_startend_row_indices, past_key_values
             )
         else:
-            hidden_states = self.conv(normalized, attention_mask, packed_mask, past_key_values)
+            hidden_states = self.conv(
+                normalized, attention_mask, packed_mask, past_key_values, sequence_length=cos.shape[1]
+            )
         hidden_states = residual + hidden_states
         return hidden_states + self.feed_forward(self.ffn_norm(hidden_states))
 
@@ -247,6 +323,32 @@ class Lfm2PreTrainedModel(PretrainedModel):
     config_class = Lfm2Config
     base_model_prefix = "model"
     supports_gradient_checkpointing = True
+
+    @staticmethod
+    def _paddle_weight_name(name):
+        for old, new in (("w1", "gate_proj"), ("w3", "up_proj"), ("w2", "down_proj")):
+            name = name.replace(f"feed_forward.{old}.", f"feed_forward.{new}.")
+        return name
+
+    @classmethod
+    def _weight_statements(cls, weights, prefix, inverse=False):
+        statements = []
+        for name, transpose in weights:
+            source, target = "model." + name, prefix + cls._paddle_weight_name(name)
+            if ".conv.in_proj." in name:
+                targets = [target.replace(".conv.in_proj.", f".conv.{gate}_proj.") for gate in ("b", "c", "x")]
+                if inverse:
+                    left = ", ".join(item + ("^T" if transpose else "") for item in targets)
+                    statements.append(f"{left} -> {source}, axis=0")
+                else:
+                    statements.append(
+                        f"{source}{'^T' if transpose else ''} -> {', '.join(targets)}, axis={1 if transpose else 0}"
+                    )
+            else:
+                if inverse:
+                    source, target = target, source
+                statements.append(f"{source}{'^T' if transpose else ''} -> {target}")
+        return statements
 
     @classmethod
     def _checkpoint_weights(cls, config):
@@ -273,10 +375,7 @@ class Lfm2PreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_aoa_config(cls, config):
         prefix = "" if cls == cls.base_model_class else "model."
-        statements = [
-            f"model.{name}{'^T' if transpose else ''} -> {prefix}{name}"
-            for name, transpose in cls._checkpoint_weights(config)
-        ]
+        statements = cls._weight_statements(cls._checkpoint_weights(config), prefix)
         if prefix and not config.tie_word_embeddings:
             statements.append("lm_head.weight -> lm_head.weight")
         elif prefix:
@@ -286,10 +385,7 @@ class Lfm2PreTrainedModel(PretrainedModel):
     @classmethod
     def _gen_inv_aoa_config(cls, config):
         prefix = "" if cls == cls.base_model_class else "model."
-        statements = [
-            f"{prefix}{name}{'^T' if transpose else ''} -> model.{name}"
-            for name, transpose in cls._checkpoint_weights(config)
-        ]
+        statements = cls._weight_statements(cls._checkpoint_weights(config), prefix, inverse=True)
         if prefix and not config.tie_word_embeddings:
             statements.append("lm_head.weight -> lm_head.weight")
         elif prefix:
@@ -301,7 +397,12 @@ class Lfm2PreTrainedModel(PretrainedModel):
 class Lfm2Model(Lfm2PreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
-        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, padding_idx=config.pad_token_id)
+        self.embed_tokens = GeneralEmbedding.create(
+            config=config,
+            num_embeddings=config.vocab_size,
+            embedding_dim=config.hidden_size,
+            padding_idx=config.pad_token_id,
+        )
         self.layers = nn.LayerList([Lfm2DecoderLayer(config, index) for index in range(config.num_hidden_layers)])
         self.embedding_norm = GeneralNorm.create(
             config=config,
@@ -309,6 +410,7 @@ class Lfm2Model(Lfm2PreTrainedModel):
             hidden_size=config.hidden_size,
             has_bias=False,
             norm_eps=config.norm_eps,
+            input_is_parallel=config.sequence_parallel,
         )
         self.rotary_emb = LlamaRotaryEmbedding(config)
 
@@ -329,6 +431,12 @@ class Lfm2Model(Lfm2PreTrainedModel):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
         batch_size, sequence_length, _ = inputs_embeds.shape
+        if self.config.sequence_parallel and use_cache:
+            raise ValueError("LFM2 sequence-parallel training requires use_cache=False")
+        if self.config.sequence_parallel and sequence_length != self.config.max_sequence_length:
+            raise ValueError("LFM2 sequence-parallel input length must match max_sequence_length for LMHead gathering")
+        if self.config.sequence_parallel and batch_size * sequence_length % self.config.tensor_model_parallel_size:
+            raise ValueError("Batch times sequence length must be divisible by the sequence-parallel degree")
         if use_cache and self.training and getattr(self.config, "recompute_granularity", None) == "full":
             raise ValueError("LFM2 recompute training requires use_cache=False to avoid updating cache twice")
         if use_cache and (
@@ -372,6 +480,8 @@ class Lfm2Model(Lfm2PreTrainedModel):
             attention_mask[:, -sequence_length:] if attention_mask is not None and attention_mask.ndim == 2 else None
         )
         hidden_states = inputs_embeds
+        if self.config.sequence_parallel:
+            hidden_states = ScatterOp.apply(hidden_states.reshape([-1, hidden_states.shape[-1]]))
 
         def create_custom_forward(module):
             def custom_forward(layer_hidden_states):
@@ -423,4 +533,30 @@ class Lfm2ForCausalLM(Lfm2PreTrainedModel):
         return CausalLMOutputWithPast(loss=loss, logits=logits, past_key_values=outputs.past_key_values)
 
 
-__all__ = ["Lfm2ForCausalLM", "Lfm2Model", "Lfm2PreTrainedModel", "Lfm2HybridConvCache"]
+def convert_lfm2_legacy_state_dict(state_dict):
+    """Migrate historical Paddle w1/w2/w3 and fused ShortConv keys without changing values."""
+    converted = {}
+    for name, value in state_dict.items():
+        target = Lfm2PreTrainedModel._paddle_weight_name(name)
+        if ".conv.in_proj." in target:
+            pieces = value.chunk(3, axis=1 if name.endswith(".weight") else 0)
+            items = [
+                (target.replace(".conv.in_proj.", f".conv.{gate}_proj."), piece)
+                for gate, piece in zip(("b", "c", "x"), pieces)
+            ]
+        else:
+            items = [(target, value)]
+        for key, tensor in items:
+            if key in converted:
+                raise ValueError(f"Checkpoint contains conflicting old/new LFM2 parameter names: {key}")
+            converted[key] = tensor
+    return converted
+
+
+__all__ = [
+    "Lfm2ForCausalLM",
+    "Lfm2Model",
+    "Lfm2PreTrainedModel",
+    "Lfm2HybridConvCache",
+    "convert_lfm2_legacy_state_dict",
+]

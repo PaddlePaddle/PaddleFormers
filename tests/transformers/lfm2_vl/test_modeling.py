@@ -37,6 +37,29 @@ from paddleformers.transformers.lfm2_vl.modeling import Lfm2VlForConditionalGene
 from paddleformers.transformers.lfm2_vl.processor import Lfm2VlProcessor
 
 
+def hf_reference_weights(model, tied):
+    """Build the upstream w1/w2/w3 and fused [B,C,X] layout independently of AOA."""
+    linear_names = {name + ".weight" for name, layer in model.named_sublayers() if isinstance(layer, paddle.nn.Linear)}
+    state = model.state_dict()
+    result = {}
+    for name, tensor in state.items():
+        if tied and name == "lm_head.weight":
+            continue
+        if ".conv.c_proj." in name or ".conv.x_proj." in name:
+            continue
+        array = tensor.numpy()
+        if ".conv.b_proj." in name:
+            keys = [name.replace(".conv.b_proj.", f".conv.{gate}_proj.") for gate in ("b", "c", "x")]
+            array = np.concatenate([state[key].numpy() for key in keys], axis=1 if name.endswith("weight") else 0)
+        if name in linear_names:
+            array = array.T.copy()
+        target = name.replace(".conv.b_proj.", ".conv.in_proj.")
+        for new, old in (("gate_proj", "w1"), ("up_proj", "w3"), ("down_proj", "w2")):
+            target = target.replace(f"feed_forward.{new}.", f"feed_forward.{old}.")
+        result[target] = array
+    return result
+
+
 def get_config():
     text_config = Lfm2Config(
         vocab_size=128,
@@ -115,16 +138,7 @@ class Lfm2VlModelTest(unittest.TestCase):
                     config.projector_bias = config.projector_use_layernorm = optional_parameters
                     config.text_config.conv_bias = optional_parameters
                     reference = Lfm2VlForConditionalGeneration(config).eval()
-                    linear_names = {
-                        name + ".weight"
-                        for name, layer in reference.named_sublayers()
-                        if isinstance(layer, paddle.nn.Linear)
-                    }
-                    hf_weights = {
-                        name: (tensor.numpy().T.copy() if name in linear_names else tensor.numpy())
-                        for name, tensor in reference.state_dict().items()
-                        if not (tied and name == "lm_head.weight")
-                    }
+                    hf_weights = hf_reference_weights(reference, tied)
                     config.architectures = ["Lfm2VlForConditionalGeneration"]
                     config.save_pretrained(directory)
                     # Exercise the real shared sharded loader, not a mocked converter.
@@ -223,7 +237,7 @@ class Lfm2VlModelTest(unittest.TestCase):
         from paddleformers.transformers.lfm2.modeling import Lfm2MLP
 
         mlp = Lfm2MLP(get_config().text_config)
-        original = mlp.w2
+        original = mlp.down_proj
 
         class WrappedProjection(paddle.nn.Layer):
             def __init__(self):
@@ -234,10 +248,10 @@ class Lfm2VlModelTest(unittest.TestCase):
             def forward(self, x):
                 return self.base(x) + paddle.matmul(x, self.adapter)
 
-        mlp.w2 = WrappedProjection()
+        mlp.down_proj = WrappedProjection()
         mlp(paddle.randn([1, 3, 32])).sum().backward()
-        self.assertIsNotNone(mlp.w2.adapter.grad)
-        self.assertGreater(float(paddle.abs(mlp.w2.adapter.grad).max()), 0)
+        self.assertIsNotNone(mlp.down_proj.adapter.grad)
+        self.assertGreater(float(paddle.abs(mlp.down_proj.adapter.grad).max()), 0)
 
     def test_text_auto_model_loads_hf_linear_weights(self):
         self._check_text_hf_round_trip(tied=True)
@@ -253,12 +267,7 @@ class Lfm2VlModelTest(unittest.TestCase):
         config.conv_bias = not tied
         config.architectures = ["Lfm2ForCausalLM"]
         reference = Lfm2ForCausalLM(config).eval()
-        hf_weights = {}
-        for name, tensor in reference.state_dict().items():
-            array = tensor.numpy()
-            if name.endswith(".weight") and name.split(".")[-2] in reference.transpose_weight_keys:
-                array = array.T.copy()
-            hf_weights[name] = array
+        hf_weights = hf_reference_weights(reference, tied)
         with tempfile.TemporaryDirectory() as directory:
             config.save_pretrained(directory)
             save_file(hf_weights, os.path.join(directory, "model.safetensors"), metadata={"format": "pt"})
@@ -312,7 +321,7 @@ class Lfm2VlModelTest(unittest.TestCase):
         outputs = model(**self.get_inputs())
         outputs.loss.backward()
 
-        self.assertIsNotNone(model.model.language_model.layers[0].feed_forward.w1.weight.grad)
+        self.assertIsNotNone(model.model.language_model.layers[0].feed_forward.gate_proj.weight.grad)
         self.assertIsNotNone(model.model.vision_tower.vision_model.encoder.layers[0].self_attn.q_proj.weight.grad)
 
     def test_text_only_forward(self):

@@ -212,6 +212,8 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
 
 LFM2-VL 图文 SFT 请设置 `template: lfm2_vl` 和 `template_backend: custom`，以启用对应的图像 token 展开、图像预处理及标签掩码。
 
+文本 MLP 复用通用 `MLP`，视觉 attention/MLP/encoder layer 复用 SigLIP；NaFlex padding 保留在 attention mask 中。HF checkpoint 的 `w1/w2/w3`、融合 `in_proj` 由 AOA 映射到通用投影命名。历史 Paddle 权重可用 `convert_lfm2_legacy_state_dict`（`paddleformers.transformers.lfm2.modeling`）无损迁移键名及拆分投影，CINN 入口已接入；旧 optimizer 状态不支持跨此次结构调整恢复。TP/SP 代码及双卡回归入口已提供，验证范围见模型能力矩阵。
+
 * 更多关于模型训练能力的支持细节，请参考：[PaddleFormers 模型能力矩阵](./docs/zh/model_capability.md)
 * 带有🏛️标签的模型是 PaddleFormers 官方维护的模型
 

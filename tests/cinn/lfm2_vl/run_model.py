@@ -28,6 +28,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import paddle
 
+from paddleformers.transformers.lfm2.modeling import convert_lfm2_legacy_state_dict
 from paddleformers.transformers.lfm2_vl.configuration import (
     Lfm2Config,
     Lfm2VlConfig,
@@ -78,11 +79,15 @@ c = Lfm2VlConfig(
 )
 model = Lfm2VlForConditionalGeneration(c)
 if a.checkpoint:
-    strict_set_state_dict(model, paddle.load(str(a.checkpoint)))
+    strict_set_state_dict(model, convert_lfm2_legacy_state_dict(paddle.load(str(a.checkpoint))))
 resume_state = paddle.load(str(a.resume)) if a.resume else None
 start_step = resume_state["step"] if resume_state else 0
 if resume_state:
-    strict_set_state_dict(model, resume_state["model"])
+    if any(".feed_forward.w1." in key or ".conv.in_proj." in key for key in resume_state["model"]):
+        raise ValueError(
+            "Legacy optimizer states cannot resume after the projection migration; use --checkpoint with the initial weights instead."
+        )
+    strict_set_state_dict(model, convert_lfm2_legacy_state_dict(resume_state["model"]))
 c.save_pretrained(str(a.output / "config"))
 paddle.save(model.state_dict(), str(a.output / "initial.pdparams"))
 
