@@ -59,6 +59,8 @@ MAPPING_NAMES = OrderedDict(
         ("DeepseekV3", "deepseek_v3"),
         ("DeepseekV32", "deepseek_v32"),
         ("PaliGemma2", "paligemma2"),
+        ("FastVLM", "fastvlm"),
+        ("FastVlm", "fast_vlm"),
         ("DiffTransformer", "diff_transformer"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),
@@ -237,6 +239,9 @@ class _BaseAutoModelClass:
         if init_class == "PaliGemmaForConditionalGeneration":
             import_class = importlib.import_module("paddleformers.transformers.paligemma2.modeling")
             return getattr(import_class, "PaliGemma2ForConditionalGeneration")
+        if init_class == "LlavaQwen2ForCausalLM":
+            import_class = importlib.import_module("paddleformers.transformers.fastvlm.modeling")
+            return getattr(import_class, "FastVLMForConditionalGeneration")
         if init_class == "Llama4ForConditionalGeneration":
             import_class = importlib.import_module("paddleformers.transformers.llama4.multimodal")
             return getattr(import_class, "Llama4ForConditionalGeneration")

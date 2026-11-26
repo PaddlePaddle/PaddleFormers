@@ -65,6 +65,8 @@ IMAGE_PROCESSOR_MAPPING_NAMES.update(
         "glm_ocr": ("Glm46VImageProcessor"),
         "molmo": ("MolmoImageProcessor"),
         "paligemma": ("PaliGemmaImageProcessor"),
+        "llava_qwen2": ("FastVLMImageProcessor"),
+        "fast_vlm": ("FastVlmImageProcessor"),
     }
 )
 
