@@ -27,8 +27,8 @@ from paddleformers.transformers import (
     AutoModelForCausalLM,
     AutoModelForConditionalGeneration,
 )
+from paddleformers.transformers.lfm2.configuration import Lfm2Config
 from paddleformers.transformers.lfm2_vl.configuration import (
-    Lfm2Config,
     Lfm2VlConfig,
     Siglip2VisionConfig,
 )
@@ -67,6 +67,22 @@ def get_config():
 
 
 class Lfm2VlModelTest(unittest.TestCase):
+    def test_text_model_has_independent_module_registration(self):
+        from paddleformers.transformers import (
+            AutoConfig,
+            AutoModel,
+            Lfm2Config,
+            Lfm2Model,
+        )
+
+        self.assertEqual(Lfm2Config.__module__, "paddleformers.transformers.lfm2.configuration")
+        self.assertEqual(Lfm2Model.__module__, "paddleformers.transformers.lfm2.modeling")
+        config = get_config().text_config
+        self.assertIsInstance(AutoModel.from_config(config), Lfm2Model)
+        with tempfile.TemporaryDirectory() as directory:
+            config.save_pretrained(directory)
+            self.assertIsInstance(AutoConfig.from_pretrained(directory), Lfm2Config)
+
     def test_checkpoint_api_is_inherited_without_model_specific_loader(self):
         from paddleformers.transformers.model_utils import PretrainedModel
 
@@ -157,7 +173,7 @@ class Lfm2VlModelTest(unittest.TestCase):
                             )
 
     def test_packed_attention_and_shortconv_match_independent_documents(self):
-        from paddleformers.transformers.lfm2_vl.modeling_lfm2 import Lfm2ForCausalLM
+        from paddleformers.transformers.lfm2.modeling import Lfm2ForCausalLM
 
         config = get_config().text_config
         config._attn_implementation = "eager"
@@ -189,7 +205,7 @@ class Lfm2VlModelTest(unittest.TestCase):
             np.testing.assert_allclose(changed_logits[:, 2:].numpy(), actual[:, 2:].numpy(), atol=1e-6)
 
     def test_custom_rope_theta_and_head_dim(self):
-        from paddleformers.transformers.lfm2_vl.modeling_lfm2 import Lfm2ForCausalLM
+        from paddleformers.transformers.lfm2.modeling import Lfm2ForCausalLM
 
         values = get_config().text_config.to_dict()
         values["head_dim"] = 12
@@ -203,7 +219,7 @@ class Lfm2VlModelTest(unittest.TestCase):
         self.assertEqual(model(input_ids=paddle.to_tensor([[5, 6, 8]])).logits.shape, [1, 3, 128])
 
     def test_mlp_calls_wrapped_down_projection(self):
-        from paddleformers.transformers.lfm2_vl.modeling_lfm2 import Lfm2MLP
+        from paddleformers.transformers.lfm2.modeling import Lfm2MLP
 
         mlp = Lfm2MLP(get_config().text_config)
         original = mlp.w2
@@ -229,7 +245,7 @@ class Lfm2VlModelTest(unittest.TestCase):
         self._check_text_hf_round_trip(tied=False)
 
     def _check_text_hf_round_trip(self, tied):
-        from paddleformers.transformers.lfm2_vl.modeling_lfm2 import Lfm2ForCausalLM
+        from paddleformers.transformers.lfm2.modeling import Lfm2ForCausalLM
 
         config = get_config().text_config
         config.tie_word_embeddings = tied

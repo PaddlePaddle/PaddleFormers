@@ -25,6 +25,7 @@ from ...nn.criterion.interface import CriterionLayer
 from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead
 from ..activations import ACT2FN
+from ..lfm2.modeling import Lfm2Model, Lfm2PreTrainedModel
 from ..model_outputs import (
     BaseModelOutputWithPast,
     BaseModelOutputWithPooling,
@@ -32,7 +33,6 @@ from ..model_outputs import (
 )
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Lfm2VlConfig
-from .modeling_lfm2 import Lfm2ForCausalLM, Lfm2Model, Lfm2PreTrainedModel
 
 
 @dataclass
@@ -396,9 +396,6 @@ class Lfm2VlForConditionalGeneration(Lfm2VlPreTrainedModel):
 
 
 __all__ = [
-    "Lfm2ForCausalLM",
-    "Lfm2Model",
-    "Lfm2PreTrainedModel",
     "Lfm2VlForConditionalGeneration",
     "Lfm2VlModel",
     "Lfm2VlPreTrainedModel",

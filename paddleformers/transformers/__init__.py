@@ -94,10 +94,11 @@ import_structure = {
     "auto.processing": ["AutoProcessor"],
     "paligemma2.image_processor": ["PaliGemmaImageProcessor"],
     "paligemma2.processor": ["PaliGemmaProcessor"],
-    "lfm2_vl.configuration": ["Lfm2Config", "Lfm2VlConfig", "Siglip2VisionConfig"],
+    "lfm2.configuration": ["Lfm2Config"],
+    "lfm2_vl.configuration": ["Lfm2VlConfig", "Siglip2VisionConfig"],
     "lfm2_vl.image_processor": ["Lfm2VlImageProcessor"],
     "lfm2_vl.processor": ["Lfm2VlProcessor"],
-    "lfm2_vl.modeling_lfm2": ["Lfm2ForCausalLM", "Lfm2Model", "Lfm2PreTrainedModel"],
+    "lfm2.modeling": ["Lfm2ForCausalLM", "Lfm2Model", "Lfm2PreTrainedModel"],
     "lfm2_vl.modeling": [
         "Lfm2VlForConditionalGeneration",
         "Lfm2VlModel",

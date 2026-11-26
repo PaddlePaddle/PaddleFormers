@@ -171,7 +171,6 @@ MULTI_MODELS_MAPPING = OrderedDict(
 
 SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
     [
-        ("lfm2", "lfm2_vl"),
         ("hunyuan_v1_dense", "hunyuan"),
         ("llama4_text", "llama4"),
         ("paligemma", "paligemma2"),
