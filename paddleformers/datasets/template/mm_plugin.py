@@ -440,6 +440,29 @@ class FastVLMPlugin(BasePlugin):
 
 
 @dataclass
+class FastVlmPlugin(FastVLMPlugin):
+    """Native fast_vlm expands real vocabulary tokens before collation."""
+
+    def process_messages(self, messages, images, videos, audios, mm_inputs, processor):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        messages = deepcopy(messages)
+        if images:
+            pixels = mm_inputs["pixel_values"]
+            height, width = pixels.shape[-2:]
+            count = (height // processor.patch_size) * (width // processor.patch_size)
+            for message in messages:
+                message["content"] = message["content"].replace(self.image_token, processor.image_token * count)
+        return messages
+
+    def process_tokens(self, tokens, processor, labels=None):
+        labels = deepcopy(tokens) if labels is None else deepcopy(labels)
+        if len(labels) != len(tokens):
+            raise ValueError("FastVLM tokens and labels must have the same length")
+        return [-100 if token == processor.image_token_id else label for token, label in zip(tokens, labels)]
+
+
+@dataclass
 class Phi4MultimodalPlugin(BasePlugin):
     mask_mm_token_labels: bool = True
 
@@ -1924,6 +1947,7 @@ class KimiK3Plugin(BasePlugin):
 PLUGINS = {
     "base": BasePlugin,
     "fastvlm": FastVLMPlugin,
+    "fast_vlm": FastVlmPlugin,
     "phi4_multimodal": Phi4MultimodalPlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,

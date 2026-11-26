@@ -254,15 +254,21 @@ def _load_hf_fastvlm_state_dict(model_dir, config):
     return state_dict
 
 
+class FastVLMPreTrainedModel(Qwen2PretrainedModel):
+    """Keep legacy FastVLM base-model registration separate from Qwen2."""
+
+    config_class = FastVLMConfig
+
+
 @register_base_model
-class FastVLMModel(Qwen2Model):
+class FastVLMModel(FastVLMPreTrainedModel, Qwen2Model):
     """Qwen2 decoder augmented with the FastVLM MobileCLIP vision tower."""
 
     config_class = FastVLMConfig
 
     def __init__(self, config: FastVLMConfig):
         config.fuse_rms_norm = False
-        super().__init__(config)
+        Qwen2Model.__init__(self, config)
         # The custom layer reproduces the three Hugging Face BF16 GEMMs on one
         # device. Under tensor parallelism Qwen2's ColumnParallelLinear must be
         # retained so each rank owns only its QKV shard.
@@ -287,7 +293,7 @@ class FastVLMModel(Qwen2Model):
         return self.mm_projector(self.vision_tower(pixel_values))
 
 
-class FastVLMForConditionalGeneration(Qwen2PretrainedModel):
+class FastVLMForConditionalGeneration(FastVLMPreTrainedModel):
     """FastVLM image-text conditional generation model."""
 
     config_class = FastVLMConfig

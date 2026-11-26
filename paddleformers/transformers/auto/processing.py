@@ -66,6 +66,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("molmo", "MolmoProcessor"),
         ("paligemma2", "PaliGemmaProcessor"),
         ("llava_qwen2", "FastVLMProcessor"),
+        ("fast_vlm", "FastVlmProcessor"),
     ]
 )
 
@@ -207,6 +208,12 @@ class AutoProcessor:
             # falling back to the Transformers config-class mapping.
             if processor_class is None:
                 processor_class = PROCESSOR_MAPPING_NAMES.get(getattr(config, "model_type", None))
+
+        if processor_class == "LlavaProcessor":
+            # Native FastVLM checkpoints reuse HF's LlavaProcessor class name.
+            native_config = AutoConfig.from_pretrained(pretrained_model_name_or_path, **kwargs)
+            if native_config.model_type == "fast_vlm":
+                processor_class = "FastVlmProcessor"
 
         if processor_class is not None:
             processor_class = processor_class_from_name(processor_class)

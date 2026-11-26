@@ -164,8 +164,8 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     <tr>
       <td rowspan="8" style="vertical-align: top;">VLM</td>
       <td>FastVLM</td>
-      <td>apple/FastVLM-0.5B</td>
-      <td>fastvlm</td>
+      <td>KamilaMila/FastVLM-0.5B（Transformers 原生格式）</td>
+      <td>fast_vlm</td>
     </tr>
     <tr>
       <td>Llama Guard 4</td>
@@ -210,7 +210,9 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
   </tbody>
 </table>
 
-FastVLM 图文 SFT 请设置 `template: fastvlm` 和 `template_backend: custom`，以启用图像预处理和标签掩码。当前每条样本最多支持一张图，不支持将多张图的样本 packing 到同一序列。
+FastVLM 原生 `fast_vlm` checkpoint 使用 `FastVlmForConditionalGeneration`、`AutoProcessor`，图文 SFT 设置 `template: fast_vlm` 和 `template_backend: custom`。处理器/模板在进入模型前展开真实词表中的图像 token，模型支持图文 KV cache，并通过共享加载流程和双向 AOA 映射读写 HF 格式权重。直接调用模型计算 loss 时，labels 与 PaddleFormers 数据管线一致，需提前完成 next-token shift。
+
+旧 `apple/FastVLM-0.5B` 的 `llava_qwen2` 配置及已有 CINN 资源仍由 `fastvlm` 兼容接口读取，使用 `template: fastvlm`，每条样本最多一张图；不能仅修改旧配置的 `model_type` 来冒充原生 checkpoint。新模型开发和验证以 Transformers 原生 `fast_vlm` 接口为准。HF BatchNorm 的 `num_batches_tracked` 为 Paddle 不使用的计数器，不参与转换；可训练参数及 running mean/variance 均映射。
 
 * 更多关于模型训练能力的支持细节，请参考：[PaddleFormers 模型能力矩阵](./docs/zh/model_capability.md)
 * 带有🏛️标签的模型是 PaddleFormers 官方维护的模型

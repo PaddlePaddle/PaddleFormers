@@ -60,6 +60,7 @@ MAPPING_NAMES = OrderedDict(
         ("DeepseekV32", "deepseek_v32"),
         ("PaliGemma2", "paligemma2"),
         ("FastVLM", "fastvlm"),
+        ("FastVlm", "fast_vlm"),
         ("DiffTransformer", "diff_transformer"),
         ("Ernie4_5", "ernie4_5"),
         ("Ernie4_5_Moe", "ernie4_5_moe"),

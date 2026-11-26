@@ -890,6 +890,19 @@ register_template(
 )
 
 
+register_template(
+    name="fast_vlm",
+    format_user=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["<|im_start|>system\n{{content}}<|im_end|>\n"]),
+    format_observation=StringFormatter(slots=["<|im_start|>user\n{{content}}<|im_end|>\n<|im_start|>assistant\n"]),
+    default_system="You are a helpful assistant.",
+    chat_sep="<|im_end|>\n",
+    suffix=["<|im_end|>\n"],
+    mm_plugin=get_mm_plugin(name="fast_vlm", image_token="<image>"),
+)
+
+
 # copied from qwen template
 register_template(
     name="qwen3",
