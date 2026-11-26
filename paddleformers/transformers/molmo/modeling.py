@@ -394,8 +394,12 @@ class MolmoVisionMLP(nn.Layer):
     def __init__(self, config: MolmoConfig):
         super().__init__()
         v_cfg = _vision_cfg(config)
-        self.w1 = nn.Linear(v_cfg["image_emb_dim"], v_cfg["image_mlp_dim"], bias_attr=True)
-        self.w2 = nn.Linear(v_cfg["image_mlp_dim"], v_cfg["image_emb_dim"], bias_attr=True)
+        self.w1 = GeneralLinear.create(
+            v_cfg["image_emb_dim"], v_cfg["image_mlp_dim"], has_bias=True, linear_type="default"
+        )
+        self.w2 = GeneralLinear.create(
+            v_cfg["image_mlp_dim"], v_cfg["image_emb_dim"], has_bias=True, linear_type="default"
+        )
         self.activation = v_cfg.get("image_mlp_activations", "quick_gelu")
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
@@ -422,10 +426,18 @@ class MolmoVisionAttention(nn.Layer):
         self.is_vit_layer = is_vit_layer
 
         nlayers = 1 if (is_vit_layer or config.vit_layers is None) else len(config.vit_layers)
-        self.wq = nn.Linear(nlayers * self.embed_dim, self.num_heads * self.head_dim, bias_attr=True)
-        self.wk = nn.Linear(nlayers * self.embed_dim, self.num_key_value_heads * self.head_dim, bias_attr=True)
-        self.wv = nn.Linear(nlayers * self.embed_dim, self.num_key_value_heads * self.head_dim, bias_attr=True)
-        self.wo = nn.Linear(self.num_heads * self.head_dim, self.embed_dim, bias_attr=True)
+        self.wq = GeneralLinear.create(
+            nlayers * self.embed_dim, self.num_heads * self.head_dim, has_bias=True, linear_type="default"
+        )
+        self.wk = GeneralLinear.create(
+            nlayers * self.embed_dim, self.num_key_value_heads * self.head_dim, has_bias=True, linear_type="default"
+        )
+        self.wv = GeneralLinear.create(
+            nlayers * self.embed_dim, self.num_key_value_heads * self.head_dim, has_bias=True, linear_type="default"
+        )
+        self.wo = GeneralLinear.create(
+            self.num_heads * self.head_dim, self.embed_dim, has_bias=True, linear_type="default"
+        )
 
     def _split_heads(self, hidden_states: paddle.Tensor, num_heads: int) -> paddle.Tensor:
         return hidden_states.reshape(hidden_states.shape[:2] + [num_heads, self.head_dim])
@@ -535,7 +547,9 @@ class MolmoVisionTransformer(nn.Layer):
             default_initializer=nn.initializer.Constant(0.0),
         )
         patch_size = v_cfg["image_patch_size"]
-        self.patch_embedding = nn.Linear(patch_size * patch_size * 3, v_cfg["image_emb_dim"], bias_attr=False)
+        self.patch_embedding = GeneralLinear.create(
+            patch_size * patch_size * 3, v_cfg["image_emb_dim"], has_bias=False, linear_type="default"
+        )
         self.pre_ln = MolmoVisionLayerNormFp32(v_cfg["image_emb_dim"], epsilon=v_cfg["image_norm_eps"])
         self.transformer = MolmoVisionBlockCollection(config)
 
@@ -567,9 +581,9 @@ class MolmoVisionProjectorMLP(nn.Layer):
     def __init__(self, config: MolmoConfig, input_dim: int):
         super().__init__()
         hidden = config.intermediate_size // 2
-        self.w1 = nn.Linear(input_dim, hidden, bias_attr=False)
-        self.w2 = nn.Linear(hidden, config.hidden_size, bias_attr=False)
-        self.w3 = nn.Linear(input_dim, hidden, bias_attr=False)
+        self.w1 = GeneralLinear.create(input_dim, hidden, has_bias=False, linear_type="default")
+        self.w2 = GeneralLinear.create(hidden, config.hidden_size, has_bias=False, linear_type="default")
+        self.w3 = GeneralLinear.create(input_dim, hidden, has_bias=False, linear_type="default")
 
     def forward(self, x: paddle.Tensor) -> paddle.Tensor:
         return self.w2(F.silu(self.w1(x)) * self.w3(x))
@@ -721,14 +735,18 @@ class MolmoPretrainedModel(PretrainedModel):
 
         aoa_statements = [
             f"model.transformer.wte.embedding -> {model_prefix}embed_tokens.embedding.weight",
-            f"model.transformer.wte.new_embedding -> {model_prefix}embed_tokens.new_embedding.weight",
             f"model.transformer.ln_f.weight -> {model_prefix}norm.weight",
         ]
 
+        if getattr(config, "additional_vocab_size", 0):
+            aoa_statements.append(
+                f"model.transformer.wte.new_embedding -> {model_prefix}embed_tokens.new_embedding.weight"
+            )
         if getattr(config, "vision_backbone", None) is not None:
             v_prefix = f"{model_prefix}vision_backbone"
+            if config.image_padding_embed:
+                aoa_statements.append(f"model.vision_backbone.pad_embed -> {v_prefix}.pad_embed")
             aoa_statements += [
-                f"model.vision_backbone.pad_embed -> {v_prefix}.pad_embed",
                 f"model.vision_backbone.image_vit.class_embedding -> {v_prefix}.image_vit.class_embedding",
                 f"model.vision_backbone.image_vit.positional_embedding -> {v_prefix}.image_vit.positional_embedding",
                 f"model.vision_backbone.image_vit.patch_embedding.weight^T -> {v_prefix}.image_vit.patch_embedding.weight",
@@ -837,9 +855,12 @@ class MolmoPretrainedModel(PretrainedModel):
 
         aoa_statements = [
             f"{model_prefix}embed_tokens.embedding.weight -> model.transformer.wte.embedding",
-            f"{model_prefix}embed_tokens.new_embedding.weight -> model.transformer.wte.new_embedding",
             f"{model_prefix}norm.weight -> model.transformer.ln_f.weight",
         ]
+        if getattr(config, "additional_vocab_size", 0):
+            aoa_statements.append(
+                f"{model_prefix}embed_tokens.new_embedding.weight -> model.transformer.wte.new_embedding"
+            )
         if config.qkv_bias:
             aoa_statements.append(
                 f"{model_prefix}layers.$LAYER_ID.self_attn.q_proj.bias, "
@@ -850,8 +871,9 @@ class MolmoPretrainedModel(PretrainedModel):
 
         if getattr(config, "vision_backbone", None) is not None:
             v_prefix = f"{model_prefix}vision_backbone"
+            if config.image_padding_embed:
+                aoa_statements.append(f"{v_prefix}.pad_embed -> model.vision_backbone.pad_embed")
             aoa_statements += [
-                f"{v_prefix}.pad_embed -> model.vision_backbone.pad_embed",
                 f"{v_prefix}.image_vit.class_embedding -> model.vision_backbone.image_vit.class_embedding",
                 f"{v_prefix}.image_vit.positional_embedding -> model.vision_backbone.image_vit.positional_embedding",
                 f"{v_prefix}.image_vit.patch_embedding.weight^T -> "
@@ -936,6 +958,8 @@ class MolmoPretrainedModel(PretrainedModel):
 
         if not (config.weight_tying or config.tie_word_embeddings) and cls != cls.base_model_class:
             aoa_statements.append("lm_head.weight -> model.transformer.ff_out.weight")
+        elif cls != cls.base_model_class:
+            aoa_statements.append("lm_head.weight -> _")
 
         return {"aoa_statements": aoa_statements}
 
