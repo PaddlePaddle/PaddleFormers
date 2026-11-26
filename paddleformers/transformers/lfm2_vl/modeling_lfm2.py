@@ -19,9 +19,13 @@ import paddle.nn.functional as F
 from paddle import nn
 from paddle.distributed.fleet.utils import recompute
 
+from ...nn.attention.interface import ALL_ATTENTION_FUNCTIONS
 from ...nn.criterion.interface import CriterionLayer
 from ...nn.lm_head import LMHead
 from ...nn.norm import Norm as GeneralNorm
+from ...utils.masking_utils import _gen_from_sparse_attn_mask_indices
+from ..llama.modeling import LlamaRotaryEmbedding, apply_rotary_pos_emb
+from ..masking_utils import create_causal_mask_and_row_indices
 from ..model_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from ..model_utils import PretrainedModel, register_base_model
 from .configuration import Lfm2Config
@@ -43,25 +47,19 @@ class Lfm2MLP(nn.Layer):
 
     def forward(self, hidden_states):
         hidden_states = F.silu(self.w1(hidden_states)) * self.w3(hidden_states)
-        if hidden_states.dtype == paddle.bfloat16:
-            weight = self.w2.weight.transpose([1, 0]).contiguous()
-            return paddle.matmul(hidden_states, weight, transpose_y=True)
         return self.w2(hidden_states)
-
-
-def rotate_half(hidden_states):
-    first, second = paddle.chunk(hidden_states, 2, axis=-1)
-    return paddle.concat([-second, first], axis=-1)
 
 
 class Lfm2Attention(nn.Layer):
     def __init__(self, config, layer_idx):
         super().__init__()
+        self.config = config
+        self.is_causal = True
         self.layer_idx = layer_idx
         self.num_heads = config.num_attention_heads
         self.num_key_value_heads = config.num_key_value_heads
         self.num_key_value_groups = self.num_heads // self.num_key_value_heads
-        self.head_dim = config.hidden_size // self.num_heads
+        self.head_dim = getattr(config, "head_dim", config.hidden_size // self.num_heads)
         self.scaling = self.head_dim**-0.5
         self.q_proj = nn.Linear(config.hidden_size, self.num_heads * self.head_dim, bias_attr=False)
         self.k_proj = nn.Linear(config.hidden_size, self.num_key_value_heads * self.head_dim, bias_attr=False)
@@ -74,7 +72,7 @@ class Lfm2Attention(nn.Layer):
             config=config, norm_type="rms_norm", hidden_size=self.head_dim, has_bias=False, norm_eps=config.norm_eps
         )
 
-    def forward(self, hidden_states, cos, sin, attention_mask=None):
+    def forward(self, hidden_states, cos, sin, attention_mask=None, attn_mask_startend_row_indices=None):
         batch_size, sequence_length, _ = hidden_states.shape
         query = self.q_proj(hidden_states).reshape([batch_size, sequence_length, self.num_heads, self.head_dim])
         key = self.k_proj(hidden_states).reshape(
@@ -86,19 +84,18 @@ class Lfm2Attention(nn.Layer):
         query = self.q_layernorm(query).transpose([0, 2, 1, 3])
         key = self.k_layernorm(key).transpose([0, 2, 1, 3])
         value = value.transpose([0, 2, 1, 3])
-        cos = cos.unsqueeze(1)
-        sin = sin.unsqueeze(1)
-        query = query * cos + rotate_half(query) * sin
-        key = key * cos + rotate_half(key) * sin
-        if self.num_key_value_groups > 1:
-            key = paddle.repeat_interleave(key, self.num_key_value_groups, axis=1)
-            value = paddle.repeat_interleave(value, self.num_key_value_groups, axis=1)
-        scores = paddle.matmul(query, key.transpose([0, 1, 3, 2])) * self.scaling
-        if attention_mask is not None:
-            scores = scores + attention_mask
-        probabilities = F.softmax(scores.astype("float32"), axis=-1).astype(query.dtype)
-        output = paddle.matmul(probabilities, value).transpose([0, 2, 1, 3])
-        return self.out_proj(output.reshape([batch_size, sequence_length, -1]))
+        query, key = apply_rotary_pos_emb(query, key, cos, sin)
+        output, _ = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation](
+            self,
+            query,
+            key,
+            value,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            scaling=self.scaling,
+            dropout=0.0,
+        )
+        return self.out_proj(output)
 
 
 class Lfm2ShortConv(nn.Layer):
@@ -116,20 +113,37 @@ class Lfm2ShortConv(nn.Layer):
         )
         self.out_proj = nn.Linear(config.hidden_size, config.hidden_size, bias_attr=config.conv_bias)
 
-    def forward(self, hidden_states, attention_mask=None):
+    def forward(self, hidden_states, attention_mask=None, packed_mask=None):
         if attention_mask is not None:
             hidden_states = hidden_states * attention_mask.unsqueeze(-1).astype(hidden_states.dtype)
         projected = self.in_proj(hidden_states).transpose([0, 2, 1])
         b_gate, c_gate, values = paddle.chunk(projected, 3, axis=1)
         values = b_gate * values
         values_dtype = values.dtype
-        values = F.conv1d(
-            values.astype("float32"),
-            self.conv.weight.astype("float32"),
-            None if self.conv.bias is None else self.conv.bias.astype("float32"),
-            padding=self.kernel_size - 1,
-            groups=values.shape[1],
-        )[:, :, : hidden_states.shape[1]].astype(values_dtype)
+        if packed_mask is None:
+            values = F.conv1d(
+                values.astype("float32"),
+                self.conv.weight.astype("float32"),
+                None if self.conv.bias is None else self.conv.bias.astype("float32"),
+                padding=self.kernel_size - 1,
+                groups=values.shape[1],
+            )[:, :, : hidden_states.shape[1]].astype(values_dtype)
+        else:
+            # A causal convolution must obey the same document boundaries as
+            # attention. Mask each of its K lag contributions, including bias
+            # exactly once; do not convolve across concatenated documents.
+            length = values.shape[-1]
+            result = paddle.zeros_like(values, dtype="float32")
+            allowed = packed_mask if packed_mask.dtype == paddle.bool else packed_mask >= 0
+            for lag in range(min(self.kernel_size, length)):
+                valid = paddle.diagonal(allowed[:, 0], offset=-lag, axis1=-2, axis2=-1).unsqueeze(1)
+                shifted = values[:, :, : length - lag].astype("float32") * valid.astype("float32")
+                shifted = F.pad(shifted, [lag, 0])
+                weight = self.conv.weight[:, 0, self.kernel_size - 1 - lag].astype("float32").reshape([1, -1, 1])
+                result = result + shifted * weight
+            if self.conv.bias is not None:
+                result = result + self.conv.bias.astype("float32").reshape([1, -1, 1])
+            values = result.astype(values_dtype)
         output = (c_gate * values).transpose([0, 2, 1]).contiguous()
         return self.out_proj(output)
 
@@ -158,13 +172,22 @@ class Lfm2DecoderLayer(nn.Layer):
             norm_eps=config.norm_eps,
         )
 
-    def forward(self, hidden_states, cos, sin, causal_mask=None, attention_mask=None):
+    def forward(
+        self,
+        hidden_states,
+        cos,
+        sin,
+        causal_mask=None,
+        attention_mask=None,
+        attn_mask_startend_row_indices=None,
+        packed_mask=None,
+    ):
         residual = hidden_states
         normalized = self.operator_norm(hidden_states)
         if self.is_attention_layer:
-            hidden_states = self.self_attn(normalized, cos, sin, causal_mask)
+            hidden_states = self.self_attn(normalized, cos, sin, causal_mask, attn_mask_startend_row_indices)
         else:
-            hidden_states = self.conv(normalized, attention_mask)
+            hidden_states = self.conv(normalized, attention_mask, packed_mask)
         hidden_states = residual + hidden_states
         return hidden_states + self.feed_forward(self.ffn_norm(hidden_states))
 
@@ -206,6 +229,8 @@ class Lfm2PreTrainedModel(PretrainedModel):
         ]
         if prefix and not config.tie_word_embeddings:
             statements.append("lm_head.weight -> lm_head.weight")
+        elif prefix:
+            statements.append("model.embed_tokens.weight -> lm_head.weight")
         return {"aoa_statements": statements}
 
     @classmethod
@@ -217,6 +242,8 @@ class Lfm2PreTrainedModel(PretrainedModel):
         ]
         if prefix and not config.tie_word_embeddings:
             statements.append("lm_head.weight -> lm_head.weight")
+        elif prefix:
+            statements.append("lm_head.weight -> _")
         return {"aoa_statements": statements}
 
 
@@ -233,14 +260,13 @@ class Lfm2Model(Lfm2PreTrainedModel):
             has_bias=False,
             norm_eps=config.norm_eps,
         )
-        head_dim = config.hidden_size // config.num_attention_heads
-        inv_freq = 1.0 / (config.rope_theta ** (paddle.arange(0, head_dim, 2, dtype="float32") / head_dim))
-        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.rotary_emb = LlamaRotaryEmbedding(config)
 
     def forward(
         self,
         input_ids=None,
         attention_mask=None,
+        attn_mask_startend_row_indices=None,
         position_ids=None,
         inputs_embeds=None,
         use_cache=False,
@@ -254,22 +280,31 @@ class Lfm2Model(Lfm2PreTrainedModel):
         batch_size, sequence_length, _ = inputs_embeds.shape
         if position_ids is None:
             position_ids = paddle.arange(sequence_length, dtype="int64").unsqueeze(0).expand([batch_size, -1])
-        frequencies = position_ids.astype("float32").unsqueeze(-1) * self.inv_freq.reshape([1, 1, -1])
-        embeddings = paddle.concat([frequencies, frequencies], axis=-1)
-        cos, sin = embeddings.cos().astype(inputs_embeds.dtype), embeddings.sin().astype(inputs_embeds.dtype)
-        minimum = paddle.finfo(inputs_embeds.dtype).min
-        causal_mask = paddle.triu(
-            paddle.full([sequence_length, sequence_length], minimum, dtype=inputs_embeds.dtype), diagonal=1
+        cos, sin = self.rotary_emb(inputs_embeds, position_ids)
+        packed_mask = None
+        if attn_mask_startend_row_indices is not None:
+            indices = attn_mask_startend_row_indices
+            if indices.ndim == 3:
+                indices = indices.unsqueeze(-1)
+            packed_mask = _gen_from_sparse_attn_mask_indices(indices, inputs_embeds.dtype, is_causal=True)
+        elif attention_mask is not None and attention_mask.ndim == 4:
+            packed_mask = attention_mask
+        causal_mask, row_indices = create_causal_mask_and_row_indices(
+            config=self.config,
+            inputs_embeds=inputs_embeds,
+            batch_size=batch_size,
+            seq_length=sequence_length,
+            cache_length=0,
+            attention_mask=attention_mask,
+            attn_mask_startend_row_indices=attn_mask_startend_row_indices,
+            prepare_decoder_attention_mask=self._prepare_decoder_attention_mask,
         )
-        causal_mask = causal_mask.reshape([1, 1, sequence_length, sequence_length])
-        if attention_mask is not None:
-            padding_mask = (1 - attention_mask.astype(inputs_embeds.dtype))[:, None, None, :] * minimum
-            causal_mask = causal_mask + padding_mask
+        padding_mask = attention_mask if attention_mask is not None and attention_mask.ndim == 2 else None
         hidden_states = inputs_embeds
 
         def create_custom_forward(module):
             def custom_forward(layer_hidden_states):
-                return module(layer_hidden_states, cos, sin, causal_mask, attention_mask)
+                return module(layer_hidden_states, cos, sin, causal_mask, padding_mask, row_indices, packed_mask)
 
             return custom_forward
 
@@ -285,7 +320,7 @@ class Lfm2Model(Lfm2PreTrainedModel):
                     use_reentrant=getattr(self.config, "recompute_use_reentrant", True),
                 )
             else:
-                hidden_states = layer(hidden_states, cos, sin, causal_mask, attention_mask)
+                hidden_states = layer(hidden_states, cos, sin, causal_mask, padding_mask, row_indices, packed_mask)
         hidden_states = self.embedding_norm(hidden_states)
         return BaseModelOutputWithPast(last_hidden_state=hidden_states, past_key_values=None)
 

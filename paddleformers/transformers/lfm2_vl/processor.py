@@ -78,6 +78,8 @@ class Lfm2VlProcessor(ProcessorMixin):
                     use_image_special_tokens,
                 )
                 texts[index] = prompt.replace(self.image_token, replacement)
+        # Chat templates already provide BOS; match HF's processor default.
+        kwargs.setdefault("add_special_tokens", False)
         tokenized = self.tokenizer(texts, return_tensors=return_tensors, **kwargs)
         data = dict(tokenized)
         for key in ["pixel_values", "pixel_attention_mask", "spatial_shapes"]:

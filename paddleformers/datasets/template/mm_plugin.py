@@ -424,6 +424,10 @@ class Lfm2VlPlugin(BasePlugin):
             message["content"] = message["content"].replace(IMAGE_PLACEHOLDER, replacement, 1)
             image_index += 1
 
+        # Expansion-only metadata must not reach the multimodal collator:
+        # image_sizes there denotes model tensors, not this Python size list.
+        for key in ("image_rows", "image_cols", "image_sizes"):
+            mm_inputs.pop(key, None)
         return messages
 
     @override
@@ -466,10 +470,6 @@ class Lfm2VlPlugin(BasePlugin):
 
         processed_images = [self._img_download(image).convert("RGB") for image in images]
         mm_inputs = dict(processor.image_processor(processed_images, return_tensors="pd", return_row_col_info=True))
-        # The common multimodal collator batches these two names. The LFM2-VL
-        # model accepts them as aliases for spatial_shapes and pixel_attention_mask.
-        mm_inputs["image_grid_thw"] = mm_inputs["spatial_shapes"]
-        mm_inputs["feature_attention_mask"] = mm_inputs["pixel_attention_mask"]
         return mm_inputs
 
 

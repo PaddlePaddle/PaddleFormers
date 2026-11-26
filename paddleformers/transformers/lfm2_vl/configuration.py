@@ -67,6 +67,9 @@ class Lfm2Config(PretrainedConfig):
         self.use_cache = use_cache
         self.rope_theta = rope_theta
         self.rope_parameters = rope_parameters or {"rope_type": "default", "rope_theta": rope_theta}
+        self.rope_theta = self.rope_parameters.get("rope_theta", rope_theta)
+        self.rope_parameters.setdefault("rope_theta", self.rope_theta)
+        self.rope_parameters.setdefault("rope_type", "default")
         self.conv_bias = conv_bias
         self.conv_L_cache = conv_L_cache
         self.block_auto_adjust_ff_dim = block_auto_adjust_ff_dim

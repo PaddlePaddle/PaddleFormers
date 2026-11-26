@@ -27,6 +27,7 @@ from paddle.distributed.fleet.utils import recompute
 from safetensors import safe_open
 
 from ...nn.criterion.interface import CriterionLayer
+from ...nn.linear import Linear as GeneralLinear
 from ...nn.lm_head import LMHead
 from ...utils.download import resolve_file_path
 from ...utils.log import logger
@@ -115,9 +116,11 @@ class Lfm2VlCausalLMOutputWithPast(ModelOutput):
 class Siglip2VisionEmbeddings(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.patch_embedding = nn.Linear(
+        self.patch_embedding = GeneralLinear.create(
             config.num_channels * config.patch_size * config.patch_size,
             config.hidden_size,
+            has_bias=True,
+            linear_type="default",
         )
         self.position_embedding_size = int(config.num_patches**0.5)
         self.position_embedding = nn.Embedding(config.num_patches, config.hidden_size)
@@ -153,10 +156,18 @@ class Siglip2Attention(nn.Layer):
         self.num_heads = config.num_attention_heads
         self.head_dim = config.hidden_size // config.num_attention_heads
         self.scale = self.head_dim**-0.5
-        self.q_proj = nn.Linear(config.hidden_size, config.hidden_size)
-        self.k_proj = nn.Linear(config.hidden_size, config.hidden_size)
-        self.v_proj = nn.Linear(config.hidden_size, config.hidden_size)
-        self.out_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        self.q_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.out_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
 
     def forward(self, hidden_states, attention_mask=None):
         batch_size, sequence_length, hidden_size = hidden_states.shape
@@ -175,8 +186,12 @@ class Siglip2Attention(nn.Layer):
 class Siglip2MLP(nn.Layer):
     def __init__(self, config):
         super().__init__()
-        self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
-        self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+        self.fc1 = GeneralLinear.create(
+            config.hidden_size, config.intermediate_size, has_bias=True, linear_type="default"
+        )
+        self.fc2 = GeneralLinear.create(
+            config.intermediate_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
         self.activation = ACT2FN[config.hidden_act]
 
     def forward(self, hidden_states):
@@ -258,11 +273,14 @@ class Lfm2VlMultiModalProjector(nn.Layer):
         in_features = config.vision_config.hidden_size * config.downsample_factor**2
         self.factor = config.downsample_factor
         self.layer_norm = nn.LayerNorm(in_features) if config.projector_use_layernorm else None
-        self.linear_1 = nn.Linear(in_features, config.projector_hidden_size, bias_attr=config.projector_bias)
-        self.linear_2 = nn.Linear(
+        self.linear_1 = GeneralLinear.create(
+            in_features, config.projector_hidden_size, has_bias=config.projector_bias, linear_type="default"
+        )
+        self.linear_2 = GeneralLinear.create(
             config.projector_hidden_size,
             config.text_config.hidden_size,
-            bias_attr=config.projector_bias,
+            has_bias=config.projector_bias,
+            linear_type="default",
         )
         self.activation = ACT2FN[config.projector_hidden_act]
 
@@ -317,15 +335,9 @@ class Lfm2VlModel(Lfm2VlPreTrainedModel):
         pixel_values=None,
         spatial_shapes=None,
         pixel_attention_mask=None,
-        image_grid_thw=None,
-        feature_attention_mask=None,
         inputs_embeds=None,
         **kwargs,
     ):
-        if spatial_shapes is None:
-            spatial_shapes = image_grid_thw
-        if pixel_attention_mask is None:
-            pixel_attention_mask = feature_attention_mask
         if (input_ids is None) == (inputs_embeds is None):
             raise ValueError("Specify exactly one of input_ids and inputs_embeds")
         if inputs_embeds is None:

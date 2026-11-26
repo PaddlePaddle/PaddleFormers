@@ -822,6 +822,7 @@ def mm_collate_fn(
         input_keys.append("audio_embed_sizes")
         input_keys.append("audio_attention_mask")
         input_keys.append("input_mode")
+        input_keys.extend(["spatial_shapes", "pixel_attention_mask"])
 
     mtp_depth = training_args.num_nextn_predict_layers
     use_mtp_attention_flexible = getattr(model_args, "mtp_attention_flexible", False) and mtp_depth > 0
@@ -882,6 +883,8 @@ def mm_collate_fn(
         audio_embed_sizes = []
         audio_attention_mask = []
         input_mode = []
+        spatial_shapes = []
+        pixel_attention_mask = []
         for seq in batch_sequence:
             original_token_ids.append(seq.token_ids)
             mm_inputs = seq.mm_inputs
@@ -897,6 +900,10 @@ def mm_collate_fn(
                 input_features.append(mm_inputs["input_features"])
             if "feature_attention_mask" in mm_inputs:
                 feature_attention_mask.append(mm_inputs["feature_attention_mask"])
+            if "spatial_shapes" in mm_inputs:
+                spatial_shapes.append(mm_inputs["spatial_shapes"])
+            if "pixel_attention_mask" in mm_inputs:
+                pixel_attention_mask.append(mm_inputs["pixel_attention_mask"])
             if "image_pixel_values" in mm_inputs:
                 image_pixel_values.append(mm_inputs["image_pixel_values"])
             if "image_sizes" in mm_inputs:
@@ -961,6 +968,10 @@ def mm_collate_fn(
             input_features = paddle.concat(input_features, axis=0)
         if len(feature_attention_mask) > 0:
             feature_attention_mask = paddle.concat(feature_attention_mask, axis=0)
+        if len(spatial_shapes) > 0:
+            spatial_shapes = paddle.concat(spatial_shapes, axis=0)
+        if len(pixel_attention_mask) > 0:
+            pixel_attention_mask = paddle.concat(pixel_attention_mask, axis=0)
         if len(image_pixel_values) > 0:
             image_pixel_values = _pad_and_concat_multimodal_tensors(image_pixel_values)
         if len(image_sizes) > 0:
@@ -1009,6 +1020,8 @@ def mm_collate_fn(
                     audio_embed_sizes,
                     audio_attention_mask,
                     input_mode,
+                    spatial_shapes,
+                    pixel_attention_mask,
                 ]
             )
 

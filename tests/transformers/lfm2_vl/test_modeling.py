@@ -67,6 +67,72 @@ def get_config():
 
 
 class Lfm2VlModelTest(unittest.TestCase):
+    def test_packed_attention_and_shortconv_match_independent_documents(self):
+        from paddleformers.transformers.lfm2_vl.modeling_lfm2 import Lfm2ForCausalLM
+
+        config = get_config().text_config
+        config._attn_implementation = "eager"
+        config.conv_bias = True
+        model = Lfm2ForCausalLM(config).eval()
+        first = paddle.to_tensor([[5, 6]])
+        second = paddle.to_tensor([[8, 9, 10]])
+        expected = paddle.concat([model(input_ids=first).logits, model(input_ids=second).logits], axis=1)
+        expected.sum().backward()
+        expected_grad = model.model.layers[0].conv.conv.weight.grad.clone()
+        model.clear_gradients()
+        ids = paddle.concat([first, second], axis=1)
+        positions = paddle.to_tensor([[0, 1, 0, 1, 2]])
+        indices = paddle.to_tensor([[[2, 2, 5, 5, 5]]], dtype="int32")
+        allowed = np.zeros([1, 1, 5, 5], dtype=bool)
+        allowed[:, :, :2, :2] = np.tril(np.ones([2, 2], dtype=bool))
+        allowed[:, :, 2:, 2:] = np.tril(np.ones([3, 3], dtype=bool))
+        for mask_args in ({"attn_mask_startend_row_indices": indices}, {"attention_mask": paddle.to_tensor(allowed)}):
+            actual = model(input_ids=ids, position_ids=positions, **mask_args).logits
+            np.testing.assert_allclose(actual.numpy(), expected.numpy(), atol=1e-5, rtol=1e-5)
+            actual.sum().backward()
+            np.testing.assert_allclose(
+                model.model.layers[0].conv.conv.weight.grad.numpy(), expected_grad.numpy(), atol=2e-5, rtol=2e-5
+            )
+            model.clear_gradients()
+            changed = ids.clone()
+            changed[:, :2] = paddle.to_tensor([[13, 14]])
+            changed_logits = model(input_ids=changed, position_ids=positions, **mask_args).logits
+            np.testing.assert_allclose(changed_logits[:, 2:].numpy(), actual[:, 2:].numpy(), atol=1e-6)
+
+    def test_custom_rope_theta_and_head_dim(self):
+        from paddleformers.transformers.lfm2_vl.modeling_lfm2 import Lfm2ForCausalLM
+
+        values = get_config().text_config.to_dict()
+        values["head_dim"] = 12
+        values["rope_parameters"] = {"rope_type": "default", "rope_theta": 12345.0}
+        config = Lfm2Config(**values)
+        model = Lfm2ForCausalLM(config).eval()
+        self.assertEqual(model.model.layers[1].self_attn.head_dim, 12)
+        self.assertEqual(model.model.layers[1].self_attn.q_proj.weight.shape, [32, 48])
+        expected = 1.0 / (12345.0 ** (np.arange(0, 12, 2, dtype="float32") / 12))
+        np.testing.assert_allclose(model.model.rotary_emb.inv_freq.numpy(), expected, rtol=1e-6)
+        self.assertEqual(model(input_ids=paddle.to_tensor([[5, 6, 8]])).logits.shape, [1, 3, 128])
+
+    def test_mlp_calls_wrapped_down_projection(self):
+        from paddleformers.transformers.lfm2_vl.modeling_lfm2 import Lfm2MLP
+
+        mlp = Lfm2MLP(get_config().text_config)
+        original = mlp.w2
+
+        class WrappedProjection(paddle.nn.Layer):
+            def __init__(self):
+                super().__init__()
+                self.base = original
+                self.adapter = self.create_parameter([64, 32], default_initializer=paddle.nn.initializer.Constant(0.1))
+
+            def forward(self, x):
+                return self.base(x) + paddle.matmul(x, self.adapter)
+
+        mlp.w2 = WrappedProjection()
+        mlp(paddle.randn([1, 3, 32])).sum().backward()
+        self.assertIsNotNone(mlp.w2.adapter.grad)
+        self.assertGreater(float(paddle.abs(mlp.w2.adapter.grad).max()), 0)
+
     def test_text_auto_model_loads_hf_linear_weights(self):
         self._check_text_hf_round_trip(tied=True)
 
@@ -151,11 +217,9 @@ class Lfm2VlModelTest(unittest.TestCase):
         outputs = model(**inputs)
         self.assertEqual(list(outputs.logits.shape), [1, 4, 128])
 
-    def test_common_collator_multimodal_aliases(self):
+    def test_native_multimodal_fields(self):
         model = Lfm2VlForConditionalGeneration(get_config())
         inputs = self.get_inputs()
-        inputs["feature_attention_mask"] = inputs.pop("pixel_attention_mask")
-        inputs["image_grid_thw"] = inputs.pop("spatial_shapes")
         outputs = model(**inputs)
         self.assertEqual(list(outputs.logits.shape), [1, 4, 128])
         self.assertEqual(list(outputs.image_hidden_states.shape), [1, 32])
