@@ -47,6 +47,24 @@ from paddleformers.transformers.phi4_multimodal.modeling import (
 
 
 class Phi4MultimodalModelingTest(unittest.TestCase):
+    def test_generation_retains_images_for_empty_cache(self):
+        from paddleformers.transformers.cache_utils import DynamicCache
+
+        ids = paddle.to_tensor([[1, 2, 3]])
+        pixels = paddle.zeros([1, 3, 4, 4])
+        cache = DynamicCache()
+        prepare = Phi4MultimodalForCausalLM.prepare_inputs_for_generation
+        first = prepare(None, ids, past_key_values=cache, image_pixel_values=pixels)
+        np.testing.assert_array_equal(first["input_ids"].numpy(), ids.numpy())
+        self.assertIs(first["image_pixel_values"], pixels)
+        cache.update(paddle.zeros([1, 1, 3, 4]), paddle.zeros([1, 1, 3, 4]), 0)
+        decoded = prepare(None, ids, past_key_values=cache, image_pixel_values=pixels)
+        self.assertEqual(decoded["input_ids"].shape[1], 1)
+        self.assertNotIn("image_pixel_values", decoded)
+        embeds = paddle.zeros([1, 3, 4])
+        first = prepare(None, ids, past_key_values=DynamicCache(), inputs_embeds=embeds)
+        self.assertIs(first["inputs_embeds"], embeds)
+
     def _check_vision_embedding_position_ids(self, use_cinn=False):
         self.addCleanup(paddle.set_device, paddle.get_device())
         paddle.set_device("gpu:0" if use_cinn else "cpu")

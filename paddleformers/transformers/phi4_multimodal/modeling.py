@@ -1931,11 +1931,12 @@ class Phi4MultimodalForCausalLM(Phi4MultimodalPreTrainedModel):
         batch_size, seq_length = input_ids.shape
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").unsqueeze(0).expand([batch_size, -1])
-        if past_key_values:
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
+        if cache_length > 0:
             input_ids = input_ids[:, -1].unsqueeze(axis=-1)
             position_ids = position_ids[:, -1].unsqueeze(axis=-1)
 
-        if inputs_embeds is not None and past_key_values is None:
+        if inputs_embeds is not None and cache_length == 0:
             model_inputs = {"inputs_embeds": inputs_embeds}
         else:
             model_inputs = {"input_ids": input_ids}
@@ -1950,7 +1951,7 @@ class Phi4MultimodalForCausalLM(Phi4MultimodalPreTrainedModel):
             }
         )
 
-        if past_key_values is None:
+        if cache_length == 0:
             model_inputs.update(
                 {
                     "image_pixel_values": image_pixel_values,
