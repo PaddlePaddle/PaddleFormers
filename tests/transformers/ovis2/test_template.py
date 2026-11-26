@@ -35,18 +35,20 @@ class Ovis2TemplateTest(unittest.TestCase):
         self._check_template_processor_agreement("<photo>", prompt_image_token="<photo>")
 
     def test_template_honors_environment_prompt_marker(self):
-        with patch.dict(os.environ, {"IMAGE_PLACEHOLDER": "<env_image>"}), patch(
-            "paddleformers.datasets.template.mm_plugin.IMAGE_PLACEHOLDER", "<env_image>"
-        ):
-            self._check_template_processor_agreement("<env_image>")
+        with patch("paddleformers.datasets.template.mm_plugin.IMAGE_PLACEHOLDER", "<env_image>"):
+            self._check_template_processor_agreement("<image>", template_marker="<env_image>")
 
-    def test_explicit_prompt_marker_overrides_environment(self):
-        with patch.dict(os.environ, {"IMAGE_PLACEHOLDER": "<env_image>"}), patch(
-            "paddleformers.datasets.template.mm_plugin.IMAGE_PLACEHOLDER", "<env_image>"
-        ):
-            self._check_template_processor_agreement("<photo>", prompt_image_token="<photo>")
+    def test_template_marker_does_not_mutate_custom_processor(self):
+        with patch("paddleformers.datasets.template.mm_plugin.IMAGE_PLACEHOLDER", "<env_image>"):
+            self._check_template_processor_agreement(
+                "<photo>", template_marker="<env_image>", prompt_image_token="<photo>"
+            )
 
-    def _check_template_processor_agreement(self, marker, **kwargs):
+    def test_late_environment_changes_do_not_change_template_or_processor(self):
+        with patch.dict(os.environ, {"IMAGE_PLACEHOLDER": "<late_change>"}):
+            self._check_template_processor_agreement("<image>")
+
+    def _check_template_processor_agreement(self, marker, template_marker="<image>", **kwargs):
         plugin = TEMPLATES["ovis2"].mm_plugin
         self.assertIsInstance(plugin, Ovis2Plugin)
         self.assertEqual(plugin.image_token, "<IMG_ATOM>")
@@ -71,19 +73,25 @@ class Ovis2TemplateTest(unittest.TestCase):
                     image.save(path)
                     paths.append(str(path))
                 prompts = [marker + " describe the image" for _ in images]
+                template_prompts = [template_marker + " describe the image" for _ in images]
                 messages = [{"role": "system", "content": "Describe images."}] + [
-                    {"role": "user", "content": prompt} for prompt in prompts
+                    {"role": "user", "content": prompt} for prompt in template_prompts
                 ]
                 mm_inputs = plugin._get_mm_inputs(paths, [], [], processor)
                 expanded = plugin.process_messages(messages, paths, [], [], mm_inputs, processor)
-                self.assertEqual([message["content"] for message in messages[1:]], prompts)
+                self.assertEqual([message["content"] for message in messages[1:]], template_prompts)
                 actual_text = [message["content"] for message in expanded[1:]]
-                self.assertTrue(all(marker not in text for text in actual_text))
+                self.assertTrue(all(template_marker not in text for text in actual_text))
                 self.assertEqual(expanded[0], messages[0])
                 grids = mm_inputs["grids"].numpy().tolist()
                 expected_atoms = sum(4 * (1 + r * c if r * c > 1 else 1) for r, c in grids)
                 self.assertEqual(sum(text.count("<IMG_ATOM>") for text in actual_text), expected_atoms)
+                self.assertEqual(processor.prompt_image_token, marker)
                 self.assertEqual(actual_text, processor.expand_image_placeholders(prompts, grids))
+                self.assertEqual(
+                    actual_text,
+                    processor.expand_image_placeholders(template_prompts, grids, prompt_image_token=template_marker),
+                )
                 expected = processor(images=[[image] for image in images], text=prompts, return_tensors="np")
                 actual = processor.tokenizer(actual_text)
                 np.testing.assert_array_equal(actual["input_ids"], expected["input_ids"])

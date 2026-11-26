@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import re
 import unittest
 from unittest.mock import patch
@@ -147,12 +148,26 @@ class Ovis2ProcessorTest(unittest.TestCase):
         inputs = processor(images=self.image, text="<photo> describe the image", return_tensors="np")
         self.assertEqual(int((inputs["input_ids"] == 3).sum()), 12)
 
+    def test_default_prompt_marker_ignores_environment(self):
+        with patch.dict(os.environ, {"IMAGE_PLACEHOLDER": "<other_pipeline>"}):
+            with patch.object(Ovis2Processor, "check_argument_for_proper_class"):
+                processor = Ovis2Processor(
+                    image_processor=self.processor.image_processor,
+                    tokenizer=DummyTokenizer(),
+                    image_seq_length=4,
+                )
+            self.assertEqual(processor.prompt_image_token, "<image>")
+            inputs = processor(images=self.image, text="<image> describe the image", return_tensors="np")
+            self.assertEqual(int((inputs["input_ids"] == 3).sum()), 12)
+
     def test_expansion_validates_image_grid_count(self):
         with self.assertRaisesRegex(ValueError, "2 image tokens but received 1"):
             self.processor.expand_image_placeholders(["<image>", "<image>"], [[1, 1]])
         with self.assertRaisesRegex(ValueError, "0 image tokens but received 1"):
             self.processor.expand_image_placeholders(["plain text"], [[1, 1]])
         self.assertEqual(self.processor.expand_image_placeholders(["plain text"], []), ["plain text"])
+        with self.assertRaisesRegex(ValueError, "must not be empty"):
+            self.processor.expand_image_placeholders(["plain text"], [], prompt_image_token="")
 
     def test_processor_rejects_empty_prompt_marker(self):
         with patch.object(Ovis2Processor, "check_argument_for_proper_class"):

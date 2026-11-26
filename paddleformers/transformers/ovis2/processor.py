@@ -14,8 +14,6 @@
 
 """Processor for Ovis2."""
 
-import os
-
 import numpy as np
 import paddle
 
@@ -50,16 +48,14 @@ class Ovis2Processor(ProcessorMixin):
         chat_template=None,
         image_token="<IMG_ATOM>",
         image_seq_length=256,
-        prompt_image_token=None,
+        prompt_image_token="<image>",
         **kwargs,
     ):
         self.image_seq_length = image_seq_length
         # HF checkpoints store the internal image token separately from the
         # public prompt marker used before expanding image patches.
         self.image_token = image_token
-        self.prompt_image_token = (
-            os.getenv("IMAGE_PLACEHOLDER", "<image>") if prompt_image_token is None else prompt_image_token
-        )
+        self.prompt_image_token = prompt_image_token
         if not self.prompt_image_token:
             raise ValueError("`prompt_image_token` must not be empty.")
         self.image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
@@ -78,16 +74,21 @@ class Ovis2Processor(ProcessorMixin):
                     placeholder += "<IMG_ROW>"
         return placeholder + "<IMG_END>"
 
-    def expand_image_placeholders(self, text: list[TextInput], grids) -> list[TextInput]:
-        """Expand prompt image markers in order, consuming one patch grid per image."""
+    def expand_image_placeholders(
+        self, text: list[TextInput], grids, *, prompt_image_token: str | None = None
+    ) -> list[TextInput]:
+        """Expand images using the processor marker or an explicit template marker."""
+        prompt_image_token = self.prompt_image_token if prompt_image_token is None else prompt_image_token
+        if not prompt_image_token:
+            raise ValueError("`prompt_image_token` must not be empty.")
         grids = list(_to_list(grids))
-        num_images = sum(prompt.count(self.prompt_image_token) for prompt in text)
+        num_images = sum(prompt.count(prompt_image_token) for prompt in text)
         if num_images != len(grids):
             raise ValueError(f"Prompt contained {num_images} image tokens but received {len(grids)} image grids.")
         image_index = 0
         expanded_text = []
         for prompt in text:
-            parts = prompt.split(self.prompt_image_token)
+            parts = prompt.split(prompt_image_token)
             expanded = parts[0]
             for part in parts[1:]:
                 expanded += self._image_placeholder(grids[image_index]) + part
