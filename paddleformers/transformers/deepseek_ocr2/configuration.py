@@ -16,8 +16,9 @@
 from ...utils.log import logger
 from ..configuration_utils import PretrainedConfig
 from ..deepseek_v3.configuration import DeepseekV3Config
+from .configuration_native import DeepseekOcr2Config
 
-__all__ = ["DeepseekOCR2Config"]
+__all__ = ["DeepseekOCR2Config", "DeepseekOcr2Config"]
 
 
 class DeepseekOCR2VisionConfig(PretrainedConfig):
@@ -120,4 +121,4 @@ class DeepseekOCR2Config(DeepseekV3Config):
             self.model_type = "deepseek_ocr2"
 
 
-__all__ = ["DeepseekOCR2Config"]
+__all__ = ["DeepseekOCR2Config", "DeepseekOcr2Config"]

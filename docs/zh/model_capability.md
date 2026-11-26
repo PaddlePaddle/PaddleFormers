@@ -29,6 +29,8 @@
 |Qwen2.5-VL|x|✓|✓|x|x|
 |Qwen3-VL|x|✓|✓|x|x|
 
+DeepSeek-OCR-2 新增原生 `DeepseekOcr2*` 接口及 `deepseek_ocr2_native` 模板；视觉分支参与反向传播。历史 `DeepseekOCR2*` checkpoint 使用原模板。原生路径的本地回归覆盖小模型 FP32/eager 前向、视觉梯度、缓存生成和权重往返；不能视为完整预训练模型或分布式训练验收。
+
 # 分布式能力支持
 |模型|TP + SP|PP|EP|CP|DP|FSDP|
 |-|-|-|-|-|-|-|

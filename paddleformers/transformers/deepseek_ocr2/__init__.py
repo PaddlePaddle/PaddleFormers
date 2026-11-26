@@ -18,13 +18,25 @@ from typing import TYPE_CHECKING
 from ...utils.lazy_import import _LazyModule
 
 import_structure = {
+    "processor": ["DeepseekOcr2ImageProcessor", "DeepseekOcr2Processor"],
+    "configuration_native": [
+        "DeepseekOcr2Config",
+        "DeepseekOcr2TextConfig",
+        "DeepseekOcr2VisionConfig",
+        "DeepseekOcr2SamVisionConfig",
+        "DeepseekOcr2VisionEncoderConfig",
+    ],
+    "modeling": ["DeepseekOcr2Model", "DeepseekOcr2ForCausalLM", "DeepseekOcr2ForConditionalGeneration"],
     "configuration": ["DeepseekOCR2Config"],
-    "modeling": ["DeepseekOCR2Model", "DeepseekOCR2ForCausalLM", "DeepseekOCR2ForConditionalGeneration"],
+    "modeling_legacy": ["DeepseekOCR2Model", "DeepseekOCR2ForCausalLM", "DeepseekOCR2ForConditionalGeneration"],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
+    from .configuration_native import *
     from .modeling import *
+    from .modeling_legacy import *
+    from .processor import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,

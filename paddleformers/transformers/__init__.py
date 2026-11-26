@@ -98,7 +98,24 @@ import_structure = {
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
     "deepseek_ocr2.configuration": ["DeepseekOCR2Config"],
-    "deepseek_ocr2.modeling": ["DeepseekOCR2Model", "DeepseekOCR2ForCausalLM", "DeepseekOCR2ForConditionalGeneration"],
+    "deepseek_ocr2.processor": ["DeepseekOcr2ImageProcessor", "DeepseekOcr2Processor"],
+    "deepseek_ocr2.configuration_native": [
+        "DeepseekOcr2Config",
+        "DeepseekOcr2TextConfig",
+        "DeepseekOcr2VisionConfig",
+        "DeepseekOcr2SamVisionConfig",
+        "DeepseekOcr2VisionEncoderConfig",
+    ],
+    "deepseek_ocr2.modeling": [
+        "DeepseekOcr2Model",
+        "DeepseekOcr2ForCausalLM",
+        "DeepseekOcr2ForConditionalGeneration",
+    ],
+    "deepseek_ocr2.modeling_legacy": [
+        "DeepseekOCR2Model",
+        "DeepseekOCR2ForCausalLM",
+        "DeepseekOCR2ForConditionalGeneration",
+    ],
     "diff_transformer.configuration": ["DiffTransformerConfig"],
     "diff_transformer.modeling": [
         "DiffTransformerModel",

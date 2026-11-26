@@ -393,6 +393,33 @@ class BasePlugin(MMPluginMixin):
 
 
 @dataclass
+class DeepseekOcr2NativePlugin(BasePlugin):
+    def get_mm_inputs(self, images, videos, audios, processor, **kwargs):
+        self._validate_input(processor, images, videos, audios)
+        if not images:
+            return {}
+        # Keep original resolution so the processor, not the generic 768px cap, decides tiling.
+        images = [image if isinstance(image, Image.Image) else self._img_download(image) for image in images]
+        return processor.image_processor(images, return_tensors="pd")
+
+    def process_messages(self, messages, images, videos, audios, mm_inputs, processor):
+        self._validate_input(processor, images, videos, audios)
+        self._validate_messages(messages, images, videos, audios)
+        messages = deepcopy(messages)
+        if not images:
+            return messages
+        counts = iter(processor.image_token_counts(mm_inputs))
+        for message in messages:
+            parts = message["content"].split(IMAGE_PLACEHOLDER)
+            message["content"] = parts[0] + "".join(self.image_token * next(counts) + part for part in parts[1:])
+        return messages
+
+    def process_tokens(self, tokens, processor, labels=None):
+        labels = deepcopy(tokens) if labels is None else deepcopy(labels)
+        return [-100 if token == processor.image_token_id else label for token, label in zip(tokens, labels)]
+
+
+@dataclass
 class DeepseekOCR2Plugin(BasePlugin):
     def __init__(self, image_token, video_token, audio_token, **kwargs):
         super().__init__(image_token, video_token, audio_token, **kwargs)
@@ -2061,6 +2088,7 @@ class KimiK3Plugin(BasePlugin):
 PLUGINS = {
     "base": BasePlugin,
     "deepseek_ocr2": DeepseekOCR2Plugin,
+    "deepseek_ocr2_native": DeepseekOcr2NativePlugin,
     "phi4_multimodal": Phi4MultimodalPlugin,
     "ernie_vl": ErnieVLPlugin,
     "qwen2_vl": Qwen2VLPlugin,

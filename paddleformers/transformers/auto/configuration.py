@@ -33,7 +33,7 @@ __all__ = [
 
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
-        ("deepseek_ocr2", "DeepseekOCR2Config"),
+        ("deepseek_ocr2", "DeepseekOcr2Config"),
         ("aya_vision", "AyaVisionConfig"),
         ("cohere2", "Cohere2Config"),
         ("deepseek_v3", "DeepseekV3Config"),
@@ -110,7 +110,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("cohere2", "Cohere2"),
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
-        ("deepseek_ocr2", "DeepseekOCR2Model"),
+        ("deepseek_ocr2", "DeepseekOcr2Model"),
         ("paligemma", "PaliGemma2"),
         ("paligemma2", "PaliGemma2"),
         ("diff_transformer", "DiffTransformer"),
@@ -458,6 +458,11 @@ class AutoConfig(PretrainedConfig):
         if resolved_model_type is not None:
             config_dict["model_type"] = resolved_model_type
         if "model_type" in config_dict:
+            # Historical remote-code checkpoints used the same model_type but a flat text config.
+            if config_dict["model_type"] == "deepseek_ocr2" and "text_config" not in config_dict:
+                from ..deepseek_ocr2.configuration import DeepseekOCR2Config
+
+                return DeepseekOCR2Config.from_dict(config_dict, **kwargs)
             try:
                 config_class = CONFIG_MAPPING[config_dict["model_type"]]
             except KeyError:
