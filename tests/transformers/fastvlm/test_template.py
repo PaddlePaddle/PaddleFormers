@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import tempfile
 import unittest
 from types import SimpleNamespace
 
+import numpy as np
+from PIL import Image
+from transformers import CLIPImageProcessor
+
 from paddleformers.datasets.template.mm_plugin import FastVLMPlugin
 from paddleformers.datasets.template.template import TEMPLATES, FastVLMTemplate
+from paddleformers.transformers.fastvlm.image_processor import FastVLMImageProcessor
 
 
 class DummyTokenizer:
@@ -25,6 +32,35 @@ class DummyTokenizer:
 
 
 class FastVLMTemplateTest(unittest.TestCase):
+    def test_non_square_images_are_padded_before_clip_in_processor_and_plugin(self):
+        processor = FastVLMImageProcessor(image_size=12, image_mean=[0.2, 0.3, 0.4])
+        reference = CLIPImageProcessor(**processor.to_dict())
+        plugin = FastVLMPlugin(image_token="<image>", video_token=None, audio_token=None)
+        for width, height in ((10, 4), (4, 10), (10, 10)):
+            with self.subTest(size=(width, height)), tempfile.TemporaryDirectory() as directory:
+                image = Image.fromarray(np.arange(height * width * 3, dtype=np.uint8).reshape(height, width, 3))
+                size = max(width, height)
+                square = Image.new("RGB", (size, size), tuple(int(x * 255) for x in processor.image_mean))
+                square.paste(image, ((size - width) // 2, (size - height) // 2))
+                expected = reference(square, return_tensors="np").pixel_values
+                actual = processor(image, return_tensors="np").pixel_values
+                np.testing.assert_array_equal(actual, expected)
+                array = np.asarray(image).transpose(2, 0, 1)
+                np.testing.assert_array_equal(
+                    processor(array, input_data_format="channels_first", return_tensors="np").pixel_values,
+                    expected,
+                )
+                path = os.path.join(directory, "image.png")
+                image.save(path)
+                output = plugin.get_mm_inputs(
+                    [path], [], [], SimpleNamespace(image_processor=processor, tokenizer=object())
+                )
+                np.testing.assert_array_equal(output["pixel_values"].numpy(), expected)
+                processor.save_pretrained(directory)
+                restored = FastVLMImageProcessor.from_pretrained(directory)
+                self.assertEqual(restored.image_aspect_ratio, "pad")
+                np.testing.assert_array_equal(restored(image, return_tensors="np").pixel_values, expected)
+
     def test_registered_template_injects_negative_image_token(self):
         template = TEMPLATES["fastvlm"]
         self.assertIsInstance(template, FastVLMTemplate)

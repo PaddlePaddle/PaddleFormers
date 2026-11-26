@@ -47,7 +47,9 @@ class FastVLMProcessor(ProcessorMixin):
         except (EnvironmentError, OSError, TypeError, ValueError):
             config = FastVLMConfig.from_pretrained(pretrained_model_name_or_path, subfolder=subfolder, **kwargs)
             image_size = int(config.mm_vision_tower.rsplit("_", 1)[-1])
-            image_processor = FastVLMImageProcessor(image_size=image_size)
+            image_processor = FastVLMImageProcessor(
+                image_size=image_size, image_aspect_ratio=config.image_aspect_ratio
+            )
         return [image_processor, tokenizer]
 
     def _encode_prompt(self, prompt):
