@@ -46,24 +46,26 @@ class Ovis2Processor(ProcessorMixin):
         image_processor=None,
         tokenizer=None,
         chat_template=None,
-        image_token="<image>",
+        image_token="<IMG_ATOM>",
         image_seq_length=256,
+        prompt_image_token="<image>",
         **kwargs,
     ):
         self.image_seq_length = image_seq_length
-        # The public prompt token is deliberately different from the model's
-        # <IMG_ATOM> placeholder token, matching the reference processor.
+        # HF checkpoints store the internal image token separately from the
+        # public prompt marker used before expanding image patches.
         self.image_token = image_token
+        self.prompt_image_token = prompt_image_token
         self.image_token_id = tokenizer.convert_tokens_to_ids(self.image_token)
         super().__init__(image_processor, tokenizer, chat_template=chat_template, **kwargs)
 
     def _image_placeholder(self, grid):
         num_rows, num_columns = [int(value) for value in _to_list(grid)]
-        placeholder = f"<IMG_START>{'<IMG_ATOM>' * self.image_seq_length}<IMG_GRID>"
+        placeholder = f"<IMG_START>{self.image_token * self.image_seq_length}<IMG_GRID>"
         if num_rows * num_columns > 1:
             for row in range(num_rows):
                 for column in range(num_columns):
-                    placeholder += "<IMG_ATOM>" * self.image_seq_length
+                    placeholder += self.image_token * self.image_seq_length
                     if column < num_columns - 1:
                         placeholder += "<IMG_COL>"
                 if row < num_rows - 1:
@@ -94,7 +96,7 @@ class Ovis2Processor(ProcessorMixin):
             images = self.image_processor.fetch_images(images)
             batched_images = make_nested_list_of_images(images)
             if text is None:
-                text = [" ".join([self.image_token] * len(batch)) for batch in batched_images]
+                text = [" ".join([self.prompt_image_token] * len(batch)) for batch in batched_images]
             if len(batched_images) != len(text):
                 raise ValueError(f"Received {len(batched_images)} image batches but {len(text)} text prompts.")
 
@@ -103,12 +105,12 @@ class Ovis2Processor(ProcessorMixin):
             image_index = 0
             expanded_text = []
             for prompt, batch in zip(text, batched_images):
-                if prompt.count(self.image_token) != len(batch):
+                if prompt.count(self.prompt_image_token) != len(batch):
                     raise ValueError(
-                        f"Prompt contained {prompt.count(self.image_token)} image tokens but received {len(batch)} images."
+                        f"Prompt contained {prompt.count(self.prompt_image_token)} image tokens but received {len(batch)} images."
                     )
                 for _ in batch:
-                    prompt = prompt.replace(self.image_token, self._image_placeholder(grids[image_index]), 1)
+                    prompt = prompt.replace(self.prompt_image_token, self._image_placeholder(grids[image_index]), 1)
                     image_index += 1
                 expanded_text.append(prompt)
             text = expanded_text

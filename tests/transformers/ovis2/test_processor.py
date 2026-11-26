@@ -123,10 +123,25 @@ class Ovis2ProcessorTest(unittest.TestCase):
                 image_processor=self.processor.image_processor,
                 tokenizer=DummyTokenizer(),
                 image_seq_length=4,
-                image_token="<photo>",
+                image_token="<IMG_COL>",
             )
-        self.assertEqual(processor.image_token, "<photo>")
-        self.assertEqual(processor.image_token_id, processor.tokenizer.convert_tokens_to_ids("<photo>"))
+        self.assertEqual(processor.image_token, "<IMG_COL>")
+        self.assertEqual(processor.image_token_id, 5)
+        inputs = processor(images=self.image, text="<image> describe the image", return_tensors="np")
+        self.assertEqual(int((inputs["input_ids"] == 5).sum()), 12)
+        self.assertEqual(int((inputs["input_ids"] == 3).sum()), 0)
+
+    def test_processor_honors_custom_prompt_image_token(self):
+        with patch.object(Ovis2Processor, "check_argument_for_proper_class"):
+            processor = Ovis2Processor(
+                image_processor=self.processor.image_processor,
+                tokenizer=DummyTokenizer(),
+                image_seq_length=4,
+                image_token="<IMG_ATOM>",
+                prompt_image_token="<photo>",
+            )
+        self.assertEqual(processor.image_token_id, 3)
+        self.assertEqual(processor.prompt_image_token, "<photo>")
         inputs = processor(images=self.image, text="<photo> describe the image", return_tensors="np")
         self.assertEqual(int((inputs["input_ids"] == 3).sum()), 12)
 
