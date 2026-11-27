@@ -47,7 +47,8 @@ def sft_postprocess_loss(self, masked_lm_loss, labels, loss_mask, **kwargs):
     loss_mask = loss_mask.reshape([-1]).cast(paddle.float32)
     # 逐位对齐, 全精度聚合
     masked_lm_loss = paddle.sum(masked_lm_loss.cast(paddle.float32).reshape([-1]) * loss_mask)
-    loss = masked_lm_loss / loss_mask.sum()
+    loss_mask_sum = loss_mask.sum()
+    loss = masked_lm_loss / paddle.where(loss_mask_sum > 0, loss_mask_sum, paddle.ones_like(loss_mask_sum))
     loss_sum = masked_lm_loss.sum().detach()
 
     if not self.return_tuple:  # only used in pp

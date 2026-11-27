@@ -15,6 +15,7 @@
 import copy
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 import paddle
 
@@ -54,6 +55,46 @@ class TestCriterionLayer(unittest.TestCase):
         layer = CriterionLayer(config=config)
         loss_mask = paddle.randint(0, 2, shape=[self.batch_size, self.seq_len])
         layer(self.logits, self.labels, loss_mask=loss_mask)
+
+    def test_all_ignored_labels_have_zero_loss_and_gradients(self):
+        self.logits.stop_gradient = False
+        layer = CriterionLayer(config=self.config)
+        loss, loss_sum = layer(self.logits, paddle.full_like(self.labels, -100))
+        self.assertEqual(float(loss), 0.0)
+        self.assertEqual(float(loss_sum), 0.0)
+        loss.backward()
+        self.assertTrue(bool(paddle.isfinite(self.logits.grad).all()))
+        self.assertEqual(float(self.logits.grad.abs().sum()), 0.0)
+
+    def test_custom_ignore_index_matches_supervised_tokens(self):
+        config = copy.deepcopy(self.config)
+        config.ignored_index = -1
+        layer = CriterionLayer(config=config)
+        labels = self.labels.clone()
+        labels[:, :2] = -1
+        loss, _ = layer(self.logits, labels)
+        expected = paddle.nn.functional.cross_entropy(
+            self.logits[:, 2:].reshape([-1, self.vocab_size]), labels[:, 2:].reshape([-1])
+        )
+        self.assertTrue(paddle.allclose(loss, expected, atol=1e-6))
+
+    def test_parallel_cross_entropy_receives_custom_ignore_index(self):
+        config = copy.deepcopy(self.config)
+        config.tensor_model_parallel_size = 2
+        config.tensor_parallel_output = True
+        config.ignored_index = -1
+        with mock.patch("paddleformers.nn.criterion.interface.ParallelCrossEntropy") as parallel_loss:
+            layer = CriterionLayer(config=config)
+        self.assertTrue(layer.enable_parallel_cross_entropy)
+        parallel_loss.assert_called_once_with(ignore_index=-1)
+
+    def test_fractional_loss_mask_preserves_weighted_mean(self):
+        layer = CriterionLayer(config=self.config)
+        loss_mask = paddle.zeros_like(self.labels, dtype="float32")
+        loss_mask[0, 0] = 0.25
+        loss, _ = layer(self.logits, self.labels, loss_mask=loss_mask)
+        expected = paddle.nn.functional.cross_entropy(self.logits[0, :1], self.labels[0, :1])
+        self.assertTrue(paddle.allclose(loss, expected, atol=1e-6))
 
     def test_loss_type_selection(self):
         # 测试不同配置下的 loss_type

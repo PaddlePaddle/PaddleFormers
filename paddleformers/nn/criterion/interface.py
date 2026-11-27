@@ -61,9 +61,10 @@ class CriterionLayer(nn.Layer):
 
         if self.enable_parallel_cross_entropy:
             logger.info("using parallel cross entroy, take care")
-            self.loss_func = ParallelCrossEntropy()
+            self.loss_func = ParallelCrossEntropy(ignore_index=self.ignored_index)
         else:
             self.loss_func = nn.CrossEntropyLoss(
+                ignore_index=self.ignored_index,
                 reduction="none",
             )
 
