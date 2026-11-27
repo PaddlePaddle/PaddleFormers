@@ -11,6 +11,7 @@
 |Seed-OSS|✓|✓|✓|x|x|
 |Granite|✓|✓|✓|✓|✓|
 |Hunyuan Dense V1|✓|✓|✓|x|x|
+|Ministral3|✓|✓|✓|x|x|
 |LLaMA3|✓|✓|✓|✓|✓|
 |LLaMA4-Text|✓|✓|✓|x|x|
 |MiniMax-Text-01|✓|✓|✓|x|x|
@@ -43,6 +44,7 @@
 |Seed-OSS|✓|✓|-|x|✓|✓|
 |Granite|✓|✓|-|x|✓|✓|
 |Hunyuan Dense V1|✓|✓|-|x|✓|✓|
+|Ministral3|✓|✓|-|x|✓|✓|
 |LLaMA3|✓|✓|-|x|✓|✓|
 |LLaMA4-Text|x|x|x|x|✓|✓|
 |MiniMax-Text-01|x|x|x|x|✓|✓|

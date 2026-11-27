@@ -502,6 +502,17 @@ import_structure = {
     ],
     "glm_ocr.processor": ["Glm46VProcessor"],
     "glm_ocr.image_processor": ["Glm46VImageProcessor"],
+    "ministral3.configuration": ["Ministral3Config"],
+    "ministral3.modeling": [
+        "Ministral3Attention",
+        "Ministral3DecoderLayer",
+        "Ministral3ForCausalLM",
+        "Ministral3ForCausalLMPipe",
+        "Ministral3Model",
+        "Ministral3PretrainedModel",
+        "Ministral3RotaryEmbedding",
+    ],
+    "ministral3": [],
     "openelm.configuration": ["OpenELMConfig"],
     "openelm.modeling": [
         "OpenELMModel",
@@ -659,6 +670,7 @@ if TYPE_CHECKING:
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .ministral3 import *
     from .openelm import *
     from .stablelm import *
     from .molmo import *

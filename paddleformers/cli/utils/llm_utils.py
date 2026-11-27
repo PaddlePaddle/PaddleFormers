@@ -202,6 +202,16 @@ def get_lora_target_modules(model):
             ".*w2.*",
             ".*w3.*",
         ]
+    elif model.config.model_type == "ministral3":
+        target_modules = [
+            ".*q_proj.*",
+            ".*k_proj.*",
+            ".*v_proj.*",
+            ".*o_proj.*",
+            ".*gate_proj.*",
+            ".*up_proj.*",
+            ".*down_proj.*",
+        ]
     elif model.config.model_type == "qwen2_5_vl":
         target_modules = [
             # Language Model
