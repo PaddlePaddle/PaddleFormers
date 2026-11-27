@@ -110,6 +110,7 @@ MAPPING_NAMES = OrderedDict(
         ("Olmo3", "olmo3"),
         ("InternLM3", "intern_lm3"),
         ("InternLM2", "intern"),
+        ("InternVLChat", "internvl3_5"),
     ]
 )
 

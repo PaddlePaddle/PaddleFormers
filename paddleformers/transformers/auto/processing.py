@@ -65,6 +65,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("glm_ocr", "Glm46VProcessor"),
         ("molmo", "MolmoProcessor"),
         ("paligemma2", "PaliGemmaProcessor"),
+        ("internvl_chat", "InternVLProcessor"),
     ]
 )
 
