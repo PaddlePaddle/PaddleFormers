@@ -776,17 +776,15 @@ class MiniMaxSparseMoeBlock(nn.Layer):
             top_k_pos, token_idx = paddle.where(expert_mask[expert_idx])
             current_state = hidden_states_flat[token_idx]
             current_hidden_states = self.experts[expert_idx](current_state)
-            if token_idx.shape[0] > 0:
-                current_hidden_states = current_hidden_states * routing_weights[token_idx, top_k_pos, None]
-                final_hidden_states = final_hidden_states.index_add_(
-                    axis=0,
-                    index=token_idx,
-                    value=current_hidden_states.astype(final_hidden_states.dtype),
-                )
-            else:
-                final_hidden_states = (
-                    final_hidden_states + current_hidden_states.sum().astype(final_hidden_states.dtype) * 0.0
-                )
+            # Empty expert inputs are valid. Keep accumulation functional and
+            # unconditional so static tracing preserves every expert's gradient.
+            current_hidden_states = current_hidden_states * routing_weights[token_idx, top_k_pos, None]
+            final_hidden_states = paddle.index_add(
+                final_hidden_states,
+                axis=0,
+                index=token_idx,
+                value=current_hidden_states.astype(final_hidden_states.dtype),
+            )
 
         return final_hidden_states.reshape([batch_size, sequence_length, hidden_dim])
 
@@ -1013,6 +1011,9 @@ class MiniMaxPretrainedModel(PretrainedModel):
 
         if not config.tie_word_embeddings and cls != cls.base_model_class:
             aoa_statements.append("lm_head.weight -> lm_head.weight")
+        elif cls != cls.base_model_class:
+            # AOA passes unmapped tensors through: discard the tied alias.
+            aoa_statements.append("lm_head.weight -> _")
 
         return {"aoa_statements": aoa_statements}
 
