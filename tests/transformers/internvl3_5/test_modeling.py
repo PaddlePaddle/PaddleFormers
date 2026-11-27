@@ -2,8 +2,13 @@
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 
+import os
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
+from pathlib import Path
 
 import paddle
 import paddle.nn.functional as F
@@ -245,6 +250,35 @@ class InternVLModelTest(unittest.TestCase):
         self.assertEqual(list(prepared["input_ids"].shape), [1, 1])
         self.assertIsNone(prepared["visual_features"])
         self.assertIs(prepared["past_key_values"], outputs.past_key_values)
+
+    def test_import_without_paddlefleet(self):
+        # PaddleFleet is an optional extra; InternVL3.5 must stay importable without it.
+        script = textwrap.dedent(
+            """
+            import sys
+
+            sys.modules["paddlefleet"] = None  # behave as if PaddleFleet is not installed
+
+            from paddleformers.utils.import_utils import is_paddlefleet_available
+
+            assert not is_paddlefleet_available()
+            try:
+                import paddleformers.transformers.gpt_provider  # noqa: F401
+            except ImportError:
+                pass
+            else:
+                raise AssertionError("PaddleFleet is still importable")
+
+            from paddleformers.transformers import InternVLChatConfig, InternVLChatModel, InternVLProcessor  # noqa: F401
+            """
+        )
+        repo_root = str(Path(__file__).resolve().parents[3])
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join(filter(None, [repo_root, env.get("PYTHONPATH")]))
+        result = subprocess.run(
+            [sys.executable, "-c", script], cwd=repo_root, env=env, capture_output=True, text=True, timeout=600
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
 
     def test_chat_model_rejects_output_hidden_states(self):
         model = InternVLChatModel(self.get_config()).eval()

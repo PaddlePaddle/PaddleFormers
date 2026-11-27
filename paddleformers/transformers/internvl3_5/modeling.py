@@ -20,7 +20,6 @@ from ..model_outputs import (
     CausalLMOutputWithPast,
 )
 from ..model_utils import PretrainedModel
-from ..qwen3.modeling import Qwen3ForCausalLMDeprecated
 from ..qwen3_moe.configuration import Qwen3MoeConfig
 from .configuration import InternVisionConfig, InternVLChatConfig
 
@@ -424,10 +423,14 @@ class InternVLChatModel(InternVLChatPretrainedModel):
 
     @staticmethod
     def _build_language_model(config):
+        # Qwen3 modeling modules import the PaddleFleet provider, an optional extra; import them only when
+        # the language model is built so the InternVL3.5 module itself stays importable without PaddleFleet.
         if isinstance(config.llm_config, Qwen3MoeConfig):
             from ..qwen3_moe.modeling import Qwen3MoeForCausalLMDeprecated
 
             return Qwen3MoeForCausalLMDeprecated(config.llm_config)
+        from ..qwen3.modeling import Qwen3ForCausalLMDeprecated
+
         return Qwen3ForCausalLMDeprecated(config.llm_config)
 
     def pixel_shuffle(self, x, scale_factor=0.5):
