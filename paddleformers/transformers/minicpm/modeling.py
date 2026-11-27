@@ -61,7 +61,7 @@ def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
     if cos.dtype == paddle.float32:
-        # LongRoPE keeps the rotation in FP32 before casting Q/K back.
+        # MiniCPM4.1 supplies FP32 angles and rotates Q/K before casting back.
         q, k = q.astype(paddle.float32), k.astype(paddle.float32)
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
@@ -89,8 +89,6 @@ class MiniCPMAttention(nn.Layer):
             )
 
         self.sequence_parallel = config.sequence_parallel
-        self.gqa_or_mqa = config.num_attention_heads != config.num_key_value_heads
-
         if config.tensor_model_parallel_size > 1:
             assert (
                 self.num_heads % config.tensor_model_parallel_size == 0
@@ -105,9 +103,23 @@ class MiniCPMAttention(nn.Layer):
         kv_hidden_size = self.config.num_key_value_heads * self.head_dim
         q_hidden_size = self.config.num_attention_heads * self.head_dim
 
-        self.qkv_proj = GeneralLinear.create(
+        self.q_proj = GeneralLinear.create(
             config.hidden_size,
-            q_hidden_size + 2 * kv_hidden_size,
+            q_hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
+        )
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size,
+            kv_hidden_size,
+            has_bias=config.attention_bias,
+            config=config,
+            tp_plan="colwise",
+        )
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size,
+            kv_hidden_size,
             has_bias=config.attention_bias,
             config=config,
             tp_plan="colwise",
@@ -133,27 +145,21 @@ class MiniCPMAttention(nn.Layer):
         **kwargs,
     ) -> Tuple[paddle.Tensor, Optional[paddle.Tensor]]:
         """Input shape: Batch x Time x Channel"""
-        mix_layer = self.qkv_proj(hidden_states)
+        query_states = self.q_proj(hidden_states)
+        key_states = self.k_proj(hidden_states)
+        value_states = self.v_proj(hidden_states)
         if self.sequence_parallel:
             max_sequence_length = self.config.max_sequence_length
             bsz = hidden_states.shape[0] * self.config.tensor_model_parallel_size // max_sequence_length
             q_len = max_sequence_length
-            target_shape = [
-                bsz,
-                q_len,
-                self.num_key_value_heads,
-                (self.num_key_value_groups + 2) * self.head_dim,
-            ]
+            query_shape = [bsz, q_len, self.num_heads, self.head_dim]
+            key_value_shape = [bsz, q_len, self.num_key_value_heads, self.head_dim]
         else:
-            target_shape = [0, 0, self.num_key_value_heads, (self.num_key_value_groups + 2) * self.head_dim]
-        mix_layer = paddle.reshape_(mix_layer, target_shape)
-        query_states, key_states, value_states = paddle.split(
-            mix_layer,
-            num_or_sections=[self.num_key_value_groups * self.head_dim, self.head_dim, self.head_dim],
-            axis=-1,
-        )
-        if self.gqa_or_mqa:
-            query_states = paddle.reshape_(query_states, [0, 0, self.num_heads, self.head_dim])
+            query_shape = [0, 0, self.num_heads, self.head_dim]
+            key_value_shape = [0, 0, self.num_key_value_heads, self.head_dim]
+        query_states = query_states.reshape(query_shape)
+        key_states = key_states.reshape(key_value_shape)
+        value_states = value_states.reshape(key_value_shape)
 
         # [bs, seq_len, num_head, head_dim] -> [bs, num_head, seq_len, head_dim]
         query_states = query_states.transpose(1, 2)
@@ -168,20 +174,6 @@ class MiniCPMAttention(nn.Layer):
             key_states, value_states = past_key_values.update(key_states, value_states, self.layer_idx)
 
         attention_interface = ALL_ATTENTION_FUNCTIONS[self.config._attn_implementation]
-
-        # Pipeline stages can receive token IDs without an explicit mask.
-        # Unlike fused attention, the eager backend does not infer causality.
-        if (
-            self.config._attn_implementation == "eager"
-            and attention_mask is None
-            and attn_mask_startend_row_indices is None
-        ):
-            attention_mask = PretrainedModel._prepare_decoder_attention_mask(
-                attention_mask=None,
-                input_shape=(query_states.shape[0], query_states.shape[-2]),
-                past_key_values_length=key_states.shape[-2] - query_states.shape[-2],
-                dtype=query_states.dtype,
-            )
 
         attn_output, attn_weights = attention_interface(
             self,
@@ -211,7 +203,7 @@ class MiniCPMDecoderLayer(nn.Layer):
 
         self.self_attn = MiniCPMAttention(config, layer_idx)
 
-        self.mlp = MiniCPMMLP(config, fuse_up_gate=True)
+        self.mlp = MiniCPMMLP(config, fuse_up_gate=False)
         self.input_layernorm = GeneralNorm.create(
             config=config,
             norm_type="rms_norm",
@@ -244,6 +236,25 @@ class MiniCPMDecoderLayer(nn.Layer):
         batch_size: Optional[int] = None,
         **kwargs,
     ) -> paddle.Tensor:
+        # PP can call the decoder directly without going through MiniCPMModel.
+        if (
+            self.config._attn_implementation == "eager"
+            and attention_mask is None
+            and attn_mask_startend_row_indices is None
+        ):
+            if self.config.sequence_parallel:
+                seq_length = self.config.max_sequence_length
+                batch_size = hidden_states.shape[0] * self.config.tensor_model_parallel_size // seq_length
+            else:
+                batch_size, seq_length = hidden_states.shape[:2]
+            attention_mask, attn_mask_startend_row_indices = create_causal_mask_and_row_indices(
+                config=self.config,
+                inputs_embeds=hidden_states,
+                batch_size=batch_size,
+                seq_length=seq_length,
+                cache_length=past_key_values.get_seq_length(self.self_attn.layer_idx) if past_key_values else 0,
+                prepare_decoder_attention_mask=PretrainedModel._prepare_decoder_attention_mask,
+            )
         # [bs * seq_len, embed_dim] -> [seq_len * bs / n, embed_dim] (sequence_parallel)
         residual = hidden_states
         hidden_states = self.input_layernorm(hidden_states)
@@ -303,19 +314,18 @@ class MiniCPMPretrainedModel(PretrainedModel):
                 f"model.embed_tokens.weight -> {model_prefix}embed_tokens.weight",
             ]
 
-        # attention qkv
-        aoa_config["aoa_statements"] += [
-            f"model.layers.$LAYER_ID.self_attn.q_proj.weight^T, model.layers.$LAYER_ID.self_attn.k_proj.weight^T, model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}",
-        ]
-        if config.attention_bias:
+        for name in ("q_proj", "k_proj", "v_proj"):
             aoa_config["aoa_statements"] += [
-                f"model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias -> {model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                f"model.layers.$LAYER_ID.self_attn.{name}.weight^T -> {model_prefix}layers.$LAYER_ID.self_attn.{name}.weight",
             ]
-
-        # FFN
-        aoa_config["aoa_statements"] += [
-            f"model.layers.$LAYER_ID.mlp.gate_proj.weight^T, model.layers.$LAYER_ID.mlp.up_proj.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
-        ]
+            if config.attention_bias:
+                aoa_config["aoa_statements"] += [
+                    f"model.layers.$LAYER_ID.self_attn.{name}.bias -> {model_prefix}layers.$LAYER_ID.self_attn.{name}.bias",
+                ]
+        for name in ("gate_proj", "up_proj"):
+            aoa_config["aoa_statements"] += [
+                f"model.layers.$LAYER_ID.mlp.{name}.weight^T -> {model_prefix}layers.$LAYER_ID.mlp.{name}.weight",
+            ]
 
         # lm_head
         if config.tie_word_embeddings:
@@ -353,26 +363,17 @@ class MiniCPMPretrainedModel(PretrainedModel):
                 f"{model_prefix}embed_tokens.weight -> model.embed_tokens.weight",
             ]
 
-        aoa_statements += [
-            f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.weight -> model.layers.$LAYER_ID.self_attn.q_proj.weight, model.layers.$LAYER_ID.self_attn.k_proj.weight, model.layers.$LAYER_ID.self_attn.v_proj.weight , fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups = {config.num_key_value_heads}",
-        ]
-        for layer_id in range(config.num_hidden_layers):
-            for x in ("q", "k", "v"):
-                aoa_statements += [
-                    f"model.layers.{layer_id}.self_attn.{x}_proj.weight^T -> model.layers.{layer_id}.self_attn.{x}_proj.weight"
-                ]
-        if config.attention_bias:
+        for name in ("q_proj", "k_proj", "v_proj"):
             aoa_statements += [
-                f"{model_prefix}layers.$LAYER_ID.self_attn.qkv_proj.bias -> model.layers.$LAYER_ID.self_attn.q_proj.bias, model.layers.$LAYER_ID.self_attn.k_proj.bias, model.layers.$LAYER_ID.self_attn.v_proj.bias, fused_qkv, num_heads={config.num_attention_heads}, num_key_value_groups={config.num_key_value_heads}, axis=0",
+                f"{model_prefix}layers.$LAYER_ID.self_attn.{name}.weight^T -> model.layers.$LAYER_ID.self_attn.{name}.weight",
             ]
-
-        aoa_statements += [
-            f"{model_prefix}layers.$LAYER_ID.mlp.up_gate_proj.weight -> model.layers.$LAYER_ID.mlp.gate_proj.weight, model.layers.$LAYER_ID.mlp.up_proj.weight, fused_ffn",
-        ]
-        for layer_id in range(config.num_hidden_layers):
+            if config.attention_bias:
+                aoa_statements += [
+                    f"{model_prefix}layers.$LAYER_ID.self_attn.{name}.bias -> model.layers.$LAYER_ID.self_attn.{name}.bias",
+                ]
+        for name in ("gate_proj", "up_proj"):
             aoa_statements += [
-                f"model.layers.{layer_id}.mlp.gate_proj.weight^T -> model.layers.{layer_id}.mlp.gate_proj.weight",
-                f"model.layers.{layer_id}.mlp.up_proj.weight^T -> model.layers.{layer_id}.mlp.up_proj.weight",
+                f"{model_prefix}layers.$LAYER_ID.mlp.{name}.weight^T -> model.layers.$LAYER_ID.mlp.{name}.weight",
             ]
 
         if config.tie_word_embeddings:
@@ -402,15 +403,23 @@ class MiniCPMRotaryEmbedding(nn.Layer):
         if self.rope_type != "default":
             rope_init_fn = ROPE_INIT_FUNCTIONS[self.rope_type]
         inv_freq, self.attention_scaling = rope_init_fn(self.config)
-
-        self.register_buffer("inv_freq", inv_freq, persistable=False)
-        self.original_inv_freq = inv_freq
         if self.rope_type == "longrope":
             self.original_max_seq_len = getattr(
                 config, "original_max_position_embeddings", config.max_position_embeddings
             )
-            long_inv_freq, _ = rope_init_fn(config, seq_len=self.original_max_seq_len + 1)
-            self.register_buffer("long_inv_freq", long_inv_freq, persistable=False)
+            inv_freq, _ = self.compute_default_rope_parameters(config)
+            self.register_buffer(
+                "short_inv_factor",
+                1.0 / paddle.to_tensor(rope_parameters["short_factor"], dtype="float32"),
+                persistable=False,
+            )
+            self.register_buffer(
+                "long_inv_factor",
+                1.0 / paddle.to_tensor(rope_parameters["long_factor"], dtype="float32"),
+                persistable=False,
+            )
+        self.register_buffer("inv_freq", inv_freq, persistable=False)
+        self.original_inv_freq = inv_freq
 
     @staticmethod
     def compute_default_rope_parameters(
@@ -448,20 +457,21 @@ class MiniCPMRotaryEmbedding(nn.Layer):
 
     def forward(self, x, position_ids):
         if self.rope_type == "longrope":
-            # Select precomputed frequencies without mutating buffers in a static graph.
-            inv_freq = paddle.where(
-                paddle.max(position_ids) + 1 > self.original_max_seq_len, self.long_inv_freq, self.inv_freq
+            # Preserve the official (position / factor) * base_frequency order.
+            inv_factor = paddle.where(
+                paddle.max(position_ids) + 1 > self.original_max_seq_len, self.long_inv_factor, self.short_inv_factor
             )
-            return self._forward(x, position_ids, inv_freq)
+            return self._forward(x, position_ids, self.inv_freq, inv_factor)
         return self._dynamic_forward(x, position_ids)
 
-    def _forward(self, x, position_ids, inv_freq):
+    def _forward(self, x, position_ids, inv_freq, inv_factor=None):
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
-
-            position_ids_expanded = position_ids[:, None, :].float()
-
-            freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
+            if inv_factor is not None:
+                freqs = (position_ids.unsqueeze(-1).float() * inv_factor.float()) * inv_freq.float()
+            else:
+                inv_freq_expanded = inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
+                position_ids_expanded = position_ids[:, None, :].float()
+                freqs = (inv_freq_expanded.float() @ position_ids_expanded.float()).transpose(1, 2)
 
             emb = paddle.concat((freqs, freqs), axis=-1)
 
@@ -697,6 +707,9 @@ class MiniCPMForCausalLM(MiniCPMPretrainedModel):
         ```"""
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if kwargs.get("attn_mask_start_row_indices") is not None and attn_mask_startend_row_indices is None:
+            attn_mask_startend_row_indices = kwargs.pop("attn_mask_start_row_indices")
 
         if attn_mask_startend_row_indices is not None and attention_mask is not None:
             logger.warning(

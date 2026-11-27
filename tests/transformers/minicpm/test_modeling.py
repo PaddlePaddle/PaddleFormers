@@ -18,10 +18,12 @@ import json
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import paddle
 
+from paddleformers.nn.linear import Linear
 from paddleformers.nn.pp_model import (
     EmbeddingPipe,
     RMSNormPipe,
@@ -38,6 +40,7 @@ from paddleformers.transformers import (
     MiniCPMModel,
 )
 from paddleformers.transformers.minicpm.modeling import (
+    MiniCPMAttention,
     MiniCPMForCausalLMPipe,
     MiniCPMLMHeadPipe,
     MiniCPMRotaryEmbedding,
@@ -71,10 +74,7 @@ class MiniCPMModelTester:
         num_key_value_heads=2,
         intermediate_size=37,
         hidden_act="silu",
-        hidden_dropout_prob=0.1,
-        attention_probs_dropout_prob=0.1,
         max_position_embeddings=512,
-        type_vocab_size=16,
         type_sequence_label_size=2,
         initializer_range=0.02,
         num_labels=3,
@@ -97,10 +97,7 @@ class MiniCPMModelTester:
         self.num_key_value_heads = num_key_value_heads
         self.intermediate_size = intermediate_size
         self.hidden_act = hidden_act
-        self.hidden_dropout_prob = hidden_dropout_prob
-        self.attention_probs_dropout_prob = attention_probs_dropout_prob
         self.max_position_embeddings = max_position_embeddings
-        self.type_vocab_size = type_vocab_size
         self.type_sequence_label_size = type_sequence_label_size
         self.initializer_range = initializer_range
         self.num_labels = num_labels
@@ -137,11 +134,7 @@ class MiniCPMModelTester:
             num_key_value_heads=self.num_key_value_heads,
             intermediate_size=self.intermediate_size,
             hidden_act=self.hidden_act,
-            hidden_dropout_prob=self.hidden_dropout_prob,
-            attention_probs_dropout_prob=self.attention_probs_dropout_prob,
             max_position_embeddings=self.max_position_embeddings,
-            type_vocab_size=self.type_vocab_size,
-            is_decoder=False,
             initializer_range=self.initializer_range,
             pad_token_id=self.pad_token_id,
             bos_token_id=self.bos_token_id,
@@ -177,29 +170,6 @@ class MiniCPMModelTester:
         self.parent.assertTrue((result_2d[attn_mask_2d] == result_3d[attn_mask_2d]).all())
         self.parent.assertTrue((result_2d[attn_mask_2d] == result_4d[attn_mask_2d]).all())
         self.parent.assertTrue((result_2d[attn_mask_2d] == result_no_attention_mask[attn_mask_2d]).all())
-
-    def create_and_check_model_as_decoder(
-        self,
-        config,
-        input_ids,
-        input_mask,
-        sequence_labels,
-        token_labels,
-        choice_labels,
-    ):
-        config.add_cross_attention = True
-        model = MiniCPMModel(config)
-        model.eval()
-        result = model(
-            input_ids,
-            attention_mask=input_mask,
-        )
-        result = model(
-            input_ids,
-            attention_mask=input_mask,
-        )
-        result = model(input_ids, attention_mask=input_mask)
-        self.parent.assertEqual(result[0].shape, [self.batch_size, self.seq_length, self.hidden_size])
 
     def create_and_check_for_causal_lm(
         self,
@@ -319,10 +289,6 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_cached_forward(*config_and_inputs)
 
-    def test_model_decoder_model(self):
-        config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        self.model_tester.create_and_check_model_as_decoder(*config_and_inputs)
-
     def test_model_lm_head_model(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_lm_head_model(*config_and_inputs)
@@ -330,12 +296,6 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
     def test_model_causal_lm(self):
         config_and_inputs = self.model_tester.prepare_config_and_inputs()
         self.model_tester.create_and_check_for_causal_lm(*config_and_inputs)
-
-    def test_model_various_embeddings(self):
-        config_and_inputs = self.model_tester.prepare_config_and_inputs()
-        for type in ["absolute", "relative_key", "relative_key_query"]:
-            config_and_inputs[0].position_embedding_type = type
-            self.model_tester.create_and_check_model(*config_and_inputs)
 
     def test_MiniCPM_sequence_classification_model(self):
         config, input_dict = self.model_tester.prepare_config_and_inputs_for_common()
@@ -374,14 +334,6 @@ class MiniCPMModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestCas
         model.eval()
         result = model(input_ids, attention_mask=attention_mask, labels=sequence_labels, return_dict=True)
         self.assertEqual(result.logits.shape, [self.model_tester.batch_size, self.model_tester.num_labels])
-
-    @unittest.skip("MiniCPM buffers include complex numbers, which breaks this test")
-    def test_save_load_fast_init_from_base(self):
-        pass
-
-    @unittest.skip("MiniCPM uses GQA on all models so the KV cache is a non standard format")
-    def test_past_key_values_format(self):
-        pass
 
     def test_minicpm_scaling_config(self):
         config = self.model_tester.get_config()
@@ -477,6 +429,45 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
         self.assertEqual((config.scale_emb, config.dim_model_base, config.scale_depth), (1, 1, 1))
         self.assertFalse(hasattr(config, "sliding_window"))
 
+    def test_packed_mask_legacy_alias_matches_explicit_mask(self):
+        model = MiniCPMForCausalLM(self.config).eval()
+        ids = paddle.to_tensor([[1, 2, 3, 4]])
+        # Two documents of length 2: the second must not attend to the first.
+        indices = paddle.to_tensor([[[2, 2, 4, 4]]], dtype="int32")
+        mask = paddle.to_tensor([[[[1, 0, 0, 0], [1, 1, 0, 0], [0, 0, 1, 0], [0, 0, 1, 1]]]], dtype="float32")
+        expected = model(ids, attention_mask=mask)[0].numpy()
+        canonical = model(ids, attn_mask_startend_row_indices=indices)[0].numpy()
+        legacy = model(ids, attn_mask_start_row_indices=indices)[0].numpy()
+        np.testing.assert_array_equal(legacy, canonical)
+        np.testing.assert_allclose(legacy, expected, rtol=1e-6, atol=1e-7)
+        self.assertGreater(float(np.max(np.abs(legacy[:, 2:] - model(ids)[0].numpy()[:, 2:]))), 1e-5)
+
+    def test_tensor_parallel_attention_uses_local_query_and_kv_heads(self):
+        config = MiniCPMConfig(
+            hidden_size=32,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            tensor_model_parallel_size=2,
+            _attn_implementation="eager",
+        )
+
+        # Exercise local shard shapes without requiring a distributed process group.
+        def local_linear(in_features, out_features, **kwargs):
+            if kwargs["tp_plan"] == "colwise":
+                out_features //= config.tensor_model_parallel_size
+            else:
+                in_features //= config.tensor_model_parallel_size
+            return paddle.nn.Linear(in_features, out_features, bias_attr=False)
+
+        with patch.object(Linear, "create", side_effect=local_linear):
+            attention = MiniCPMAttention(config)
+        hidden = paddle.randn([2, 3, 32])
+        positions = paddle.arange(3)[None].tile([2, 1])
+        rotary = MiniCPMRotaryEmbedding(config)(hidden, positions)
+        mask = paddle.triu(paddle.full([2, 1, 3, 3], paddle.finfo(hidden.dtype).min), diagonal=1)
+        output, _ = attention(hidden, position_embeddings=rotary, attention_mask=mask)
+        self.assertEqual(list(output.shape), [2, 3, 32])
+
     def _get_longrope_config(self):
         config = self.config.to_dict()
         config.update(
@@ -546,11 +537,10 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
         key = paddle.randn([1, 1, 2, 8]).astype("bfloat16")
         cos, sin = rotary(query, positions)
         self.assertEqual(cos.dtype, paddle.float32)
-        inv_freq = 1.0 / (
-            paddle.to_tensor(config.rope_scaling["short_factor"])
-            * config.rope_theta ** (paddle.arange(0, 8, 2).astype("float32") / 8)
-        )
-        freqs = positions.astype("float32").unsqueeze(-1) * inv_freq
+        inv_freq = 1.0 / config.rope_theta ** (paddle.arange(0, 8, 2).astype("float32") / 8)
+        freqs = (
+            positions.astype("float32").unsqueeze(-1) * (1.0 / paddle.to_tensor(config.rope_scaling["short_factor"]))
+        ) * inv_freq
         angles = paddle.concat([freqs, freqs], axis=-1)
         np.testing.assert_allclose(cos.numpy(), angles.cos().numpy(), rtol=1e-6, atol=1e-6)
         np.testing.assert_allclose(sin.numpy(), angles.sin().numpy(), rtol=1e-6, atol=1e-6)
@@ -575,10 +565,9 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
         ):
             positions = paddle.to_tensor([[position]])
             cos, sin = rotary(paddle.zeros([1, 1, 16]), positions)
-            inv_freq = 1.0 / (
-                paddle.to_tensor(factors) * config.rope_theta ** (paddle.arange(0, 8, 2).astype("float32") / 8)
-            )
-            angles = paddle.concat([position * inv_freq, position * inv_freq])[None, None]
+            inv_freq = 1.0 / config.rope_theta ** (paddle.arange(0, 8, 2).astype("float32") / 8)
+            freqs = (position * (1.0 / paddle.to_tensor(factors))) * inv_freq
+            angles = paddle.concat([freqs, freqs])[None, None]
             np.testing.assert_allclose(cos.numpy(), angles.cos().numpy(), rtol=1e-6, atol=1e-6)
             np.testing.assert_allclose(sin.numpy(), angles.sin().numpy(), rtol=1e-6, atol=1e-6)
             static_cos, static_sin = static_rotary(paddle.zeros([1, 1, 16]), positions)
