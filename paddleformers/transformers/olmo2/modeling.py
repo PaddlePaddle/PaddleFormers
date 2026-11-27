@@ -52,11 +52,14 @@ class Olmo2RMSNorm(nn.Layer):
             mark_as_sequence_parallel_parameter(self.weight)
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
+        input_shape = hidden_states.shape
         input_dtype = hidden_states.dtype
-        hidden_states_fp32 = hidden_states.astype("float32")
+        # Each token is normalized independently. An explicit row layout also
+        # avoids ambiguous reduction/broadcast layouts when CINN fuses RoPE.
+        hidden_states_fp32 = hidden_states.reshape([-1, input_shape[-1]]).astype("float32")
         variance = hidden_states_fp32.pow(2).mean(-1, keepdim=True)
         hidden_states_fp32 = hidden_states_fp32 * paddle.rsqrt(variance + self.variance_epsilon)
-        return (self.weight.astype("float32") * hidden_states_fp32).astype(input_dtype)
+        return (self.weight.astype("float32") * hidden_states_fp32).astype(input_dtype).reshape(input_shape)
 
 
 def rotate_half(x: paddle.Tensor) -> paddle.Tensor:
@@ -374,6 +377,9 @@ class Olmo2PretrainedModel(PretrainedModel):
 
         if not config.tie_word_embeddings and cls != cls.base_model_class:
             aoa_statements.append("lm_head.weight -> lm_head.weight")
+        elif cls != cls.base_model_class:
+            # AOA passes unmapped tensors through: discard the tied alias.
+            aoa_statements.append("lm_head.weight -> _")
 
         return {"aoa_statements": aoa_statements}
 
