@@ -101,6 +101,10 @@ class InternVLModelTest(unittest.TestCase):
                 "output_router_logits": False,
             }
         )
+        return self.get_config_with_llm_config(config, llm_config)
+
+    @staticmethod
+    def get_config_with_llm_config(config, llm_config):
         return InternVLChatConfig(
             vision_config=config.vision_config.to_dict(),
             llm_config=llm_config,
@@ -125,6 +129,25 @@ class InternVLModelTest(unittest.TestCase):
             img_context_token_id=config.img_context_token_id,
         )
         config_tester.create_and_test_config_from_and_save_pretrained()
+
+    def test_config_save_load_keeps_llm_config_class(self):
+        for config in (self.get_config(), self.get_moe_config()):
+            serialized = config.to_dict()
+            self.assertIsInstance(serialized["llm_config"], dict)
+            self.assertIsInstance(serialized["vision_config"], dict)
+            self.assertNotIn("_unsavable_keys", serialized)
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                config.save_pretrained(tmp_dir)
+                loaded = InternVLChatConfig.from_pretrained(tmp_dir)
+            self.assertIs(type(loaded.llm_config), type(config.llm_config))
+            self.assertEqual(loaded.llm_config.to_dict(), config.llm_config.to_dict())
+
+    def test_config_rejects_unsupported_llm_type(self):
+        config = self.get_config()
+        llm_config = config.llm_config.to_dict()
+        llm_config.update({"model_type": "gpt_oss", "architectures": ["GptOssForCausalLM"]})
+        with self.assertRaises(ValueError):
+            self.get_config_with_llm_config(config, llm_config)
 
     def test_forward_and_loss(self):
         model = InternVLChatModel(self.get_config()).eval()
@@ -286,6 +309,20 @@ class InternVLModelTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             model(**self.get_inputs(), use_cache=False, output_hidden_states=True)
 
+    def test_chat_model_rejects_output_attentions(self):
+        model = InternVLChatModel(self.get_config()).eval()
+
+        with self.assertRaises(TypeError):
+            model(**self.get_inputs(), use_cache=False, output_attentions=True)
+
+    def test_precomputed_visual_features_are_used_as_is(self):
+        model = InternVLChatModel(self.get_config()).eval()
+        visual_features = paddle.randn([1, 1, 16])
+        image_flags = paddle.to_tensor([[0]], dtype="int64")
+
+        self.assertIs(model._get_visual_features(None, visual_features, image_flags), visual_features)
+        self.assertIsNone(model._get_visual_features(None, None, image_flags))
+
     def test_vision_model_output_hidden_states(self):
         config = self.get_config()
         model = InternVisionModel(config.vision_config).eval()
@@ -312,6 +349,17 @@ class InternVLModelTest(unittest.TestCase):
         self.assertEqual(list(model.get_output_embeddings().weight.shape), [205, 16])
         paddle.testing.assert_close(model.get_input_embeddings().weight[:200], old_input_embeddings)
         paddle.testing.assert_close(model.get_output_embeddings().weight[:200], old_output_embeddings)
+
+    def test_resize_tokens_embeddings_keeps_tied_weights(self):
+        config = self.get_config()
+        llm_config = config.llm_config.to_dict()
+        llm_config["tie_word_embeddings"] = True
+        model = InternVLChatModel(self.get_config_with_llm_config(config, llm_config)).eval()
+
+        model.resize_token_embeddings(205)
+
+        self.assertEqual(list(model.get_output_embeddings().weight.shape), [205, 16])
+        self.assertIs(model.get_output_embeddings().weight, model.get_input_embeddings().weight)
 
     def test_greedy_generate(self):
         model = InternVLChatModel(self.get_config()).eval()

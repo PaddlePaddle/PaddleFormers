@@ -20,17 +20,17 @@ IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
-def _to_pil_image(image):
-    if isinstance(image, Image.Image):
-        return image.convert("RGB")
-    array = to_numpy_array(image)
-    if array.ndim == 3 and array.shape[0] in [1, 3]:
-        array = np.transpose(array, (1, 2, 0))
-    if array.dtype != np.uint8:
-        if array.max() <= 1.0:
-            array = array * 255
-        array = array.astype("uint8")
-    return Image.fromarray(array).convert("RGB")
+def _to_pil_image(image, do_convert_rgb=True):
+    if not isinstance(image, Image.Image):
+        array = to_numpy_array(image)
+        if array.ndim == 3 and array.shape[0] in [1, 3]:
+            array = np.transpose(array, (1, 2, 0))
+        if array.dtype != np.uint8:
+            if array.max() <= 1.0:
+                array = array * 255
+            array = array.astype("uint8")
+        image = Image.fromarray(array)
+    return image.convert("RGB") if do_convert_rgb else image
 
 
 class InternVLImageProcessor(BaseImageProcessor):
@@ -145,8 +145,9 @@ class InternVLImageProcessor(BaseImageProcessor):
         max_patches = kwargs.pop("max_patches", self.max_patches)
         image_size = kwargs.pop("image_size", self.size["height"])
         use_thumbnail = kwargs.pop("use_thumbnail", self.use_thumbnail)
+        do_convert_rgb = kwargs.pop("do_convert_rgb", self.do_convert_rgb)
         for image in images:
-            pil_image = _to_pil_image(image)
+            pil_image = _to_pil_image(image, do_convert_rgb)
             tiles = self.dynamic_preprocess(
                 pil_image,
                 min_num=min_patches,

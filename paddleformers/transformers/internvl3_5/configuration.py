@@ -3,8 +3,6 @@
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 
-import copy
-
 from ..configuration_utils import PretrainedConfig
 from ..qwen3.configuration import Qwen3Config
 from ..qwen3_moe.configuration import Qwen3MoeConfig
@@ -15,11 +13,22 @@ __all__ = ["InternVisionConfig", "InternVLChatConfig"]
 def _get_llm_config_class(llm_config):
     if isinstance(llm_config, (Qwen3Config, Qwen3MoeConfig)):
         return llm_config.__class__
-    model_type = llm_config.get("model_type") if isinstance(llm_config, dict) else None
-    architectures = llm_config.get("architectures", []) if isinstance(llm_config, dict) else []
+    if isinstance(llm_config, dict):
+        model_type = llm_config.get("model_type")
+        architectures = llm_config.get("architectures") or []
+    else:
+        model_type = getattr(llm_config, "model_type", None)
+        architectures = getattr(llm_config, "architectures", None) or []
     if model_type == "qwen3_moe" or any(architecture.startswith("Qwen3Moe") for architecture in architectures):
         return Qwen3MoeConfig
-    return Qwen3Config
+    if model_type == "qwen3" or any(architecture.startswith("Qwen3") for architecture in architectures):
+        return Qwen3Config
+    if model_type is None and not architectures:
+        return Qwen3Config
+    raise ValueError(
+        f"Unsupported InternVL3.5 llm_config (model_type={model_type!r}, architectures={architectures}); "
+        "only Qwen3 (model_type 'qwen3') and Qwen3-MoE (model_type 'qwen3_moe') language models are supported."
+    )
 
 
 class InternVisionConfig(PretrainedConfig):
@@ -120,10 +129,3 @@ class InternVLChatConfig(PretrainedConfig):
         self.pad_token_id = getattr(self.llm_config, "pad_token_id", getattr(self, "pad_token_id", None))
         self.eos_token_id = getattr(self.llm_config, "eos_token_id", getattr(self, "eos_token_id", None))
         self.bos_token_id = getattr(self.llm_config, "bos_token_id", getattr(self, "bos_token_id", None))
-
-    def to_dict(self, *args, **kwargs):
-        output = copy.deepcopy(self.__dict__)
-        output["vision_config"] = self.vision_config.to_dict()
-        output["llm_config"] = self.llm_config.to_dict()
-        output["model_type"] = self.__class__.model_type
-        return output

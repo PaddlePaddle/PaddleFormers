@@ -327,10 +327,16 @@ class InternVLChatPretrainedModel(PretrainedModel):
         return statement.replace("model.", "language_model.model.").replace("lm_head.", "language_model.lm_head.")
 
     @classmethod
-    def _get_qwen3_moe_aoa_statements(cls, llm_config):
-        from ..qwen3_moe.modeling import Qwen3MoeForCausalLMDeprecated
+    def _get_language_model_aoa_statements(cls, llm_config):
+        # Reuse the Qwen3 / Qwen3-MoE conversion rules so they stay in sync with the language model implementations.
+        if isinstance(llm_config, Qwen3MoeConfig):
+            from ..qwen3_moe.modeling import Qwen3MoeForCausalLMDeprecated
 
-        aoa_config = Qwen3MoeForCausalLMDeprecated._gen_aoa_config(llm_config)
+            aoa_config = Qwen3MoeForCausalLMDeprecated._gen_aoa_config(llm_config)
+        else:
+            from ..qwen3.modeling import Qwen3ForCausalLMDeprecated
+
+            aoa_config = Qwen3ForCausalLMDeprecated._gen_aoa_config(llm_config)
         return [
             cls._prefix_language_model_aoa_statement(statement) for statement in aoa_config.get("aoa_statements", [])
         ]
@@ -364,32 +370,7 @@ class InternVLChatPretrainedModel(PretrainedModel):
             "mlp1.3.weight^T -> mlp1.3.weight",
             "mlp1.3.bias -> mlp1.3.bias",
         ]
-        if isinstance(llm_config, Qwen3MoeConfig):
-            statements.extend(cls._get_qwen3_moe_aoa_statements(llm_config))
-            return {"aoa_statements": statements}
-
-        statements.extend(
-            [
-                "language_model.model.embed_tokens.weight -> language_model.model.embed_tokens.weight",
-                "language_model.model.layers.$LAYER_ID.self_attn.o_proj.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.o_proj.weight",
-                "language_model.model.layers.$LAYER_ID.self_attn.q_norm.weight -> language_model.model.layers.$LAYER_ID.self_attn.q_norm.weight",
-                "language_model.model.layers.$LAYER_ID.self_attn.k_norm.weight -> language_model.model.layers.$LAYER_ID.self_attn.k_norm.weight",
-                "language_model.model.layers.$LAYER_ID.input_layernorm.weight -> language_model.model.layers.$LAYER_ID.input_layernorm.weight",
-                "language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight -> language_model.model.layers.$LAYER_ID.post_attention_layernorm.weight",
-                "language_model.model.layers.$LAYER_ID.mlp.down_proj.weight^T -> language_model.model.layers.$LAYER_ID.mlp.down_proj.weight",
-                "language_model.model.norm.weight -> language_model.model.norm.weight",
-                f"language_model.model.layers.$LAYER_ID.self_attn.q_proj.weight^T, language_model.model.layers.$LAYER_ID.self_attn.k_proj.weight^T, language_model.model.layers.$LAYER_ID.self_attn.v_proj.weight^T -> language_model.model.layers.$LAYER_ID.self_attn.qkv_proj.weight, fused_qkv, num_heads={llm_config.num_attention_heads}, num_key_value_groups={llm_config.num_key_value_heads}",
-                "language_model.model.layers.$LAYER_ID.mlp.gate_proj.weight^T, language_model.model.layers.$LAYER_ID.mlp.up_proj.weight^T -> language_model.model.layers.$LAYER_ID.mlp.up_gate_proj.weight, fused_ffn",
-            ]
-        )
-        if llm_config.attention_bias:
-            statements.append(
-                f"language_model.model.layers.$LAYER_ID.self_attn.q_proj.bias, language_model.model.layers.$LAYER_ID.self_attn.k_proj.bias, language_model.model.layers.$LAYER_ID.self_attn.v_proj.bias -> language_model.model.layers.$LAYER_ID.self_attn.qkv_proj.bias, fused_qkv, num_heads={llm_config.num_attention_heads}, num_key_value_groups={llm_config.num_key_value_heads}, axis=0"
-            )
-        if llm_config.tie_word_embeddings:
-            statements.append("language_model.model.embed_tokens.weight -> language_model.lm_head.weight")
-        else:
-            statements.append("language_model.lm_head.weight -> language_model.lm_head.weight")
+        statements.extend(cls._get_language_model_aoa_statements(llm_config))
         return {"aoa_statements": statements}
 
 
@@ -495,6 +476,17 @@ class InternVLChatModel(InternVLChatPretrainedModel):
             chunks.extend([sample_features] * expand_size)
         return paddle.concat(chunks, axis=0) if chunks else visual_features
 
+    def _get_visual_features(self, pixel_values=None, visual_features=None, image_flags=None):
+        # Precomputed visual_features are used as-is; image_flags only filters features extracted from pixel_values.
+        if visual_features is not None:
+            return visual_features
+        if pixel_values is None:
+            return None
+        vit_embeds = self.extract_feature(pixel_values)
+        if image_flags is not None:
+            vit_embeds = vit_embeds[image_flags.squeeze(-1).astype("bool")]
+        return vit_embeds
+
     def forward(
         self,
         pixel_values: Optional[paddle.Tensor] = None,
@@ -506,17 +498,13 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         past_key_values=None,
         labels: Optional[paddle.Tensor] = None,
         use_cache: Optional[bool] = None,
-        output_attentions: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ):
         return_dict = True if return_dict is None else return_dict
         input_embeds = self.language_model.get_input_embeddings()(input_ids)
 
-        if pixel_values is not None or visual_features is not None:
-            vit_embeds = visual_features if visual_features is not None else self.extract_feature(pixel_values)
-            if image_flags is not None:
-                image_flags = image_flags.squeeze(-1).astype("bool")
-                vit_embeds = vit_embeds[image_flags]
+        vit_embeds = self._get_visual_features(pixel_values, visual_features, image_flags)
+        if vit_embeds is not None:
             input_embeds = self._merge_visual_embeds(input_ids, input_embeds, vit_embeds)
 
         language_model_kwargs = {
@@ -588,11 +576,7 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         visual_features: Optional[paddle.Tensor] = None,
         **generate_kwargs,
     ):
-        if visual_features is None and pixel_values is not None:
-            visual_features = self.extract_feature(pixel_values)
-            if image_flags is not None:
-                image_flags = image_flags.squeeze(-1).astype("bool")
-                visual_features = visual_features[image_flags]
+        visual_features = self._get_visual_features(pixel_values, visual_features, image_flags)
         if "decode_strategy" not in generate_kwargs:
             if generate_kwargs.get("num_beams", 1) > 1:
                 generate_kwargs["decode_strategy"] = "beam_search"
@@ -631,6 +615,9 @@ class InternVLChatModel(InternVLChatPretrainedModel):
         self.config.vocab_size = new_num_tokens
         self.config.llm_config.vocab_size = new_num_tokens
         self.language_model.config.vocab_size = new_num_tokens
+        if self.config.tie_word_embeddings:
+            # super().resize_token_embeddings() already re-tied lm_head to the resized input embeddings.
+            return new_input_embeddings
         new_output_embeddings = GeneralLMHead(self.language_model.config)
         if new_output_embeddings.weight.dtype != old_output_embeddings.weight.dtype:
             new_output_embeddings.to(dtype=old_output_embeddings.weight.dtype)

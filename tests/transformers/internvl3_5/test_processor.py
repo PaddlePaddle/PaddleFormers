@@ -20,6 +20,7 @@ from paddleformers.transformers import (
     InternVLImageProcessor,
     InternVLProcessor,
 )
+from paddleformers.transformers.internvl3_5.image_processor import _to_pil_image
 
 
 class InternVLProcessorTest(unittest.TestCase):
@@ -62,6 +63,16 @@ class InternVLProcessorTest(unittest.TestCase):
         self.assertEqual(outputs["num_patches_list"], [3])
         self.assertEqual(list(outputs["pixel_values"].shape), [3, 3, 28, 28])
         self.assertEqual(list(outputs["image_flags"].shape), [3, 1])
+
+    def test_do_convert_rgb(self):
+        gray_image = Image.new("L", (20, 20), 128)
+
+        self.assertEqual(_to_pil_image(gray_image).mode, "RGB")
+        self.assertEqual(_to_pil_image(gray_image, do_convert_rgb=False).mode, "L")
+        outputs = InternVLImageProcessor(size={"height": 28, "width": 28}, max_patches=1)(
+            images=gray_image, return_tensors="pd"
+        )
+        self.assertEqual(list(outputs["pixel_values"].shape), [1, 3, 28, 28])
 
     def test_multi_image_call_kwargs_apply_to_every_image(self):
         image_processor = InternVLImageProcessor(size={"height": 28, "width": 28}, max_patches=12, use_thumbnail=True)
