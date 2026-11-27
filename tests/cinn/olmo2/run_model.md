@@ -1,116 +1,166 @@
-# OLMo2 CINN training and inference smoke test
+# OLMo2 CINN: original-width, depth-only FP32 test
 
-This test imports PaddleFormers from this checkout, not an external source snapshot.
-It uses a random tiny model: 2 layers, hidden size 64, FFN size 128, 4 query heads,
-2 KV heads, head dimension 16, original tokenizer/vocabulary, 12,919,296 parameters.
-It is not a pretrained reduced-depth checkpoint or full-model quality benchmark.
+This entry imports model code from this checkout. It compares **Paddle dynamic**
+with **paddle.jit.to_static + CINN**, not Transformers.
 
-## Environment and external assets
+## Frozen configuration
 
-Reference environment: V100S 32GB, Python 3.10.20, Paddle 3.5.0.dev20260722
-(commit 08de6be508389d5277b02e78fbc8742f1ed78160), CUDA 12.6, transformers 5.3.0,
-tokenizers 0.22.2, numpy 1.26.4, plus this repository's requirements.
-FP32, TF32 disabled, batch 1, sequence length 64, eager attention, no AMP or distributed execution.
+- OLMo-2-0425-1B configuration, **16 → 2 layers only**; hidden 2048, FFN 8192,
+  Q/KV heads 16/16, vocabulary 100352, 545,277,952 parameters.
+- Shared **random initial** FP32 checkpoint, seed 20261116; not pretrained weights.
+  This is a framework test, not a production-model quality/speed claim.
+- V100S 32GB, batch 1, sequence 128, eager attention, TF32 off; no AMP or distributed training.
+- AdamW: lr=2e-5, weight_decay=0.01; all parameters trainable.
+- Full forward wrapper compiled through AST. Loss and optimizer remain outside;
+  backward is generated through the compiled forward. No manually selected layers
+  or operator blacklist. Tensor input/output are explicit; config.get stays Python-only.
+- Model code includes the tested RMSNorm row-layout reshape. This adaptation keeps
+  tokenwise FP32 normalization/cast order and restores the original shape. It requires
+  the accompanying model patch; a clean upstream checkout without the patch is NOT equivalent.
 
-Weights and matching test assets are hosted on AI Studio (download instructions below):
+The old hidden-64 tiny checkpoint, old 30,000-step curve and old performance
+percentages do **not** reproduce this entry.
 
-- CHECKPOINT_DIR: initial.pdparams (shared random initial state), inference.pdparams
-  (the dynamic model's historical 30000-step checkpoint).
-- CINN_ASSET_DIR: config.json, tokenizer.json, tokenizer_config.json,
-  special_tokens_map.json, vocab.json, merges.txt from the recorded OLMo2 asset bundle.
+## Environment
 
-All assets must match asset_manifest.json. The test fails on missing/mismatched assets;
-it does not silently regenerate weights. The public resource archive supplies the non-weight files.
+Python 3.10.20; Paddle GPU 3.5.0.dev20260722, commit
+08de6be508389d5277b02e78fbc8742f1ed78160; CUDA runtime 12.6, cuDNN 9.5.1.
+Reference driver 580.105.08 (driver-reported CUDA 13.0 is not the runtime version).
 
-Each manifest entry declares its root explicitly: `checkpoint` means `CHECKPOINT_DIR`,
-`assets` means `CINN_ASSET_DIR`, and `repo` means this `tests/cinn/olmo2` directory.
-The `file` path is relative to that root; directory selection does not depend on a filename prefix.
+Additional installed versions: paddlefleet 0.4.0.post20260808+054c7a9b0a8,
+paddlefleet-ops 0.3.0.dev20260604+5ef7e52a, transformers 5.3.0,
+tokenizers 0.22.2, numpy 1.26.4, safetensors 0.8.0, matplotlib 3.10.9.
+Install this checkout's requirements and the matching Paddle build. These are
+tested versions, not a claim that an arbitrary latest wheel will behave identically.
+The installed paddlefleet-ops requires a visible CUDA device during import.
+
+## Assets and checkpoint
+
+Download the pinned assets below, or use the matching delivery bundle:
+
+- checkpoint/initial.pdparams (2,181,114,513 bytes): **the only required weight file**.
+  Both training and independent inference load this same file.
+- assets/: config.json, original_config.json and tokenizer files.
+- asset_manifest.json pins exact sizes and SHA256. Missing/mismatched files fail;
+  the runner never silently regenerates weights.
+- data/gsm8k_24.jsonl is included in this test directory. Source:
+  [GSM8K](https://github.com/openai/grade-school-math), MIT.
+  The first 20 examples are used cyclically; remaining 4 are not used in this run.
+  Tokenize question + newline + answer, truncate to 129 tokens, shift one token
+  for 128-token prefix-language-model labels, ignore padded labels. This is not answer-only SFT.
+
+The initial checkpoint is publicly available in the existing
+[AI Studio model library](https://aistudio.baidu.com/modelsdetail/53383/space).
+It was anonymously streamed in full (2,181,114,513 bytes) and SHA256-verified on
+2026-11-27. `checkpoint_source.json` pins the immutable repository revision,
+path, size and hash; the downloader does not require an AI Studio token or SDK.
+Do **not** use the historical `cinn/olmo2/checkpoint/` tiny/final weight files.
+
+From this checkout, prepare a new asset directory and download the initial checkpoint:
+
+```bash
+export PYTHON_BIN=/path/to/python
+export CHECKPOINT_DIR=/path/to/olmo2/checkpoint
+export CINN_ASSET_DIR=/path/to/new/olmo2/assets
+"$PYTHON_BIN" tests/cinn/olmo2/download_assets.py --output "$CINN_ASSET_DIR" --no-proxy
+"$PYTHON_BIN" tests/cinn/olmo2/download_checkpoint.py --output "$CHECKPOINT_DIR/initial.pdparams" --no-proxy
+"$PYTHON_BIN" tests/cinn/olmo2/verify_assets.py "$CHECKPOINT_DIR"
+```
+
+Both downloaders use only Python's standard library. Remove `--no-proxy` if your
+network requires a proxy. Existing checkpoint files are verified, never overwritten.
+The resource downloader reuses the public tokenizer archive, verifies its size/SHA256,
+retains the original 16-layer configuration and creates the exact 2-layer configuration;
+all final files must match `asset_manifest.json`. It copies only explicitly named regular
+archive members, not arbitrary paths. Dataset and license notices are retained.
+The original archive config is **not** the final experimental config; use the prepared assets.
+
+Maintainers can recreate the candidate using prepare_assets.py with the original
+config/tokenizer directory; export fails if the parameter hash differs from the
+measured initialization. Third-party acceptance should load the delivered checkpoint.
 
 ## Run from the repository root
 
+Use a checkout containing this entry and its RMSNorm patch.
+
 ```bash
-export CHECKPOINT_DIR=/path/to/weights
-export CINN_ASSET_DIR=/path/to/olmo2/assets
 export PYTHON_BIN=/path/to/python
+export CHECKPOINT_DIR=/path/to/olmo2-bundle/checkpoint
+export CINN_ASSET_DIR=/path/to/olmo2-bundle/assets
+export RESULTS_DIR=/path/to/new/olmo2-smoke
 bash tests/cinn/olmo2/run_model.sh
 bash tests/cinn/olmo2/run_model_cinn.sh
-"$PYTHON_BIN" tests/cinn/olmo2/compare_results.py tests/cinn/olmo2/results
-# Longer training, same initial state for both modes:
-MODE=dynamic STEPS=30000 RESULTS_DIR=/path/to/new/full bash tests/cinn/olmo2/train.sh
-MODE=cinn STEPS=30000 RESULTS_DIR=/path/to/new/full bash tests/cinn/olmo2/train.sh
+"$PYTHON_BIN" tests/cinn/olmo2/compare_results.py "$RESULTS_DIR"
+
+# Final training and inference, sequentially, from the SAME initial checkpoint:
+export RESULTS_DIR=/path/to/new/olmo2-convergence
+STEPS=1000 bash tests/cinn/olmo2/run_model.sh
+STEPS=1000 bash tests/cinn/olmo2/run_model_cinn.sh
+"$PYTHON_BIN" tests/cinn/olmo2/compare_results.py "$RESULTS_DIR" --convergence
+
+# Reproduce the reference protocol: 3 serial independent repeats, both tasks;
+# r1 trains 1000 steps per mode; r2/r3 train 150 steps; every inference run is 150 calls.
+"$PYTHON_BIN" tests/cinn/olmo2/run_suite.py --output /path/to/new/olmo2-three-repeats
 ```
 
-Quick entry points each perform 20 training steps and independent-process inference.
-GPU_ID defaults to 0. Repeated runs require a new RESULTS_DIR; existing results are never overwritten.
-Optional RESUME supplies a trusted full training-state checkpoint from the same mode/source.
-Model, optimizer and RNG state are saved every 500 steps and at completion.
+GPU_ID defaults to 0. Each shell entry trains and then launches a separate inference
+process. train.sh/infer.sh select one task; MODE selects dynamic/cinn.
+Outputs must be new directories and are never overwritten. No final trained weights
+or optimizer snapshots are saved: only the shared initial checkpoint is needed to
+reproduce these fixed-initialization experiments.
 
-Data: the first 24 GSM8K training examples, included as data/gsm8k_24.jsonl
-([source](https://github.com/openai/grade-school-math), MIT).
-The first 20 examples train and the last 4 are held out. Tokenize question, newline and answer,
-truncate to 65 tokens, form 64-token next-token labels and ignore padding labels.
-This is prefix language modeling, not answer-only SFT. AdamW lr=2e-5, weight_decay=0.01,
-seed 20261007, cyclic sample order.
+Smoke defaults: 20 training steps and 150 inference calls. Performance excludes
+the first 50 steps, including compilation/gradient audit; 20-step training is
+numerical-only and has no reported steady-state timing.
+Inference is fixed 128-token forward, **not cache decode or text generation**.
+Time is CUDA-synchronized forward/loss/backward/AdamW for training and forward-only
+for inference; excludes input loading. Independent repeats use new RESULTS_DIRs.
 
-## Compilation, outputs and acceptance scope
+## Evidence and acceptance
 
-CINN compiles the full forward wrapper with explicit tensor arguments and tensor output.
-Loss and optimizer execute dynamically. Configuration get remains Python-only;
-there is no operator blacklist or model formula change. A CINN compile log marker is required.
+Every run records framework/source hashes, checkpoint/input hashes, full per-step
+loss/timing, initial logits, first-step gradient presence/finiteness and sampled
+gradient values. Loss, final parameters and optimizer state must stay finite.
+The shell verifies actual CINN compilation logs; flags alone are insufficient.
 
-Each output directory records source/framework commits, hashes, configuration, every-step
-loss, held-out loss, first-step gradients and checkpoints. Inference reloads the same trained
-checkpoint in both modes, warms up 10 times and times 30 synchronized fixed forward calls;
-it does not benchmark generation. Compare logits.npy and inference.json across modes.
-Training throughput excludes startup (first 100 steps per process for long runs).
-Throughput improvement = (dynamic milliseconds / CINN milliseconds - 1) * 100%.
+acceptance.json fixes internal test criteria **before** long training:
+initial logits max absolute difference <=1e-4; first 20 losses <=1e-4; sampled
+gradients <=1e-4. Long-run acceptance requires at least 1000 steps on both sides,
+last-100 mean loss <=0.02, >=99% reduction from the first-100 mean, and last-100
+loss MAE <=max(0.001, 5% of the dynamic last-100 mean).
+These are framework/subset-fit criteria, **not universal official thresholds or
+evidence of held-out task generalization**. A failure requires investigation,
+not relaxing thresholds after inspecting results.
 
-Smoke success requires finite losses/gradients, no missing trainable gradients, identical
-starting weights/inputs and compiled execution. Twenty steps do not prove convergence.
-The short-entry comparison additionally enforces absolute error limits: loss `1e-5`,
-first-step gradients `1e-4`, and logits `1e-4` (all with zero relative tolerance).
-These leave margin over the recorded FP32 smoke results below. Overrides are explicit
-`--loss-atol`, `--grad-atol`, and `--logits-atol` arguments and are recorded in the output.
-These short-entry thresholds are not acceptance criteria for pointwise agreement of
-long training trajectories or for convergence.
-Historical source snapshot 44c39fe19f7bc0b3c45c59562038c0b2706d4624 completed
-30000 steps per mode with last-500 mean losses 0.003588/0.003526, demonstrating training-subset
-fitting only. Those historical timings are not measurements of this checkout.
-The original full 1B compilation failure is outside the scope of this tiny test.
+compare_results.py writes comparison.json and the unscaled loss_raw.png.
+Final performance should use 3 serial independent repeats, the same step 50–149
+window, and the mean of each repeat's median. Throughput improvement:
+(dynamic_ms / cinn_ms - 1) × 100%; batch-1 training FPS = 1000 / step_ms.
+No speedup guarantee is made for other GPUs, shapes, or full-depth models.
 
-Local entry regression on develop f7fa77f02ec637441e1a4fad1f9066b228774fb6
-(2026-11-05): both modes completed 20 training steps and independent inference.
-All 25 parameter gradients were retained and finite; first-step gradient max absolute
-difference was 7.39e-6, loss max difference 9.54e-7, same-checkpoint inference logits
-max difference 1.38e-5. This is short-entry validation, not a new convergence run.
+## Reference results (2026-11-26)
 
-## Download configuration, tokenizer and data
+| Inference dynamic ms | Inference CINN ms | Throughput gain | Training dynamic samples/s | Training CINN samples/s | Throughput gain |
+|---:|---:|---:|---:|---:|---:|
+| 8.839 | 7.864 | +12.40% | 23.131 | 24.634 | +6.50% |
 
-The matching [resource archive](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fresources.tar.gz) includes the existing configuration, tokenizer,
-24 GSM8K examples, source notices and licenses. It does not include checkpoint files.
-Extract into a **new empty directory**; do not replace assets in an existing experiment.
+Training: 43.232 / 40.594 ms per step. These are means of three independent process
+medians over steps 50–149; startup and compilation are excluded, not end-to-end runtime.
+Both modes completed 1000 steps: last-100 loss 0.0043608625 / 0.0043608452,
+tail MAE 4.85e-8; step 400–499 means 0.0086279724 / 0.0086278500 (zero-based).
+Initial logits max absolute difference 1.86e-5; sampled first-step gradients 5.12e-8.
+
+![Unscaled, unsmoothed 1000-step loss curves](reference/loss_raw.png)
+
+Reference code was `565ad12feb6f5715ba7824b7cad5e9e03423ac9e` plus the delivered
+OLMo2 RMSNorm/test-entry changes. These numbers belong to that frozen experiment,
+not an automatic claim about every later source revision or a fresh software installation.
+The initial checkpoint, model math and acceptance criteria are retained in this update.
+
+CPU entry/helper tests are collected through `tests/cinn` in `pyproject.toml`;
+they do not download model weights or start the GPU benchmark automatically:
 
 ```bash
-export CINN_RESOURCE_DIR=/path/to/new-olmo2-resources
-mkdir "$CINN_RESOURCE_DIR"
-curl -fL 'https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fresources.tar.gz' -o "$CINN_RESOURCE_DIR/resources.tar.gz"
-printf '1a51eeea0892f7ca10faf7317277b38c797bfa08a51fd81dc9ea4e5bd182d5d4  %s\n' "$CINN_RESOURCE_DIR/resources.tar.gz" | sha256sum -c -
-tar -xzf "$CINN_RESOURCE_DIR/resources.tar.gz" -C "$CINN_RESOURCE_DIR"
-export CINN_ASSET_DIR="$CINN_RESOURCE_DIR/assets"
-# Set CHECKPOINT_DIR to the two downloaded .pdparams files.
-python tests/cinn/olmo2/verify_assets.py "$CHECKPOINT_DIR"
+python -m pytest tests/cinn/olmo2 tests/cinn/test_checkpoint_utils.py
+python -m pytest tests/transformers/olmo2/test_rms_norm.py tests/transformers/olmo2/test_tied_checkpoint.py
 ```
-
-The archive and its members were downloaded anonymously into a fresh local directory
-and checked with this entry's asset verifier. This verifies resource availability and
-identity, not a new GPU training/performance run.
-
-## CINN checkpoint downloads
-
-Model library: [PaddleClas/olmo2](https://aistudio.baidu.com/modelsdetail/53383/space).
-
-- [initial.pdparams](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fcheckpoint%2Finitial.pdparams): common training initialization for dynamic and CINN runs.
-- [inference.pdparams](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fcheckpoint%2Finference.pdparams): the same checkpoint must be used for both independent inference runs.
-- [checkpoint_manifest.json](https://git.aistudio.baidu.com/api/v1/repos/PaddleClas/olmo2/media/cinn%2Folmo2%2Fcheckpoint_manifest.json): file sizes, SHA256 and test scope.
-
-Save the two weight files under `CHECKPOINT_DIR`. The existing `asset_manifest.json` pins their hashes; do not substitute other weights from the model library. These are framework-test checkpoints, not a new task-quality evaluation. Configuration/tokenizer/data assets are separate and are not supplied by these weight downloads.

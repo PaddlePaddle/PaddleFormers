@@ -1,0 +1,8 @@
+{
+  "model_url": "https://aistudio.baidu.com/modelsdetail/53383/space",
+  "repo_id": "PaddleClas/olmo2",
+  "revision": "3a3979fa98bda807902b349bd59c1827a06f00ad",
+  "remote_path": "cinn/olmo2/depth_only_fp32_20261118/initial.pdparams",
+  "bytes": 2181114513,
+  "sha256": "2a5e472db2c70772d3671fbc84735e20f1e23e53d401ee70fc6d4b5bb409ff42"
+}

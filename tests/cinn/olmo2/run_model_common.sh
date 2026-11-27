@@ -11,7 +11,7 @@
 # limitations under the License.
 set -euo pipefail
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-: "${CHECKPOINT_DIR:?Provide initial.pdparams and inference.pdparams}"
+: "${CHECKPOINT_DIR:?Provide the depth-only initial.pdparams}"
 : "${CINN_ASSET_DIR:?Provide matching OLMo2 config and tokenizer assets}"
 export CINN_ASSET_DIR
 export CUDA_VISIBLE_DEVICES=${GPU_ID:-0}
@@ -26,14 +26,19 @@ mkdir -p "$output_root"
 run_task() {
     local task=$1 output="$output_root/$MODE-$1"
     [[ ! -e "$output" ]] || { echo "Refusing to overwrite $output" >&2; exit 3; }
-    local args=(--mode "$MODE" --output "$output" --static-config-get --extended --probe-gradients)
+    local args=(--mode "$MODE" --task "$task" --output "$output" --assets "$CINN_ASSET_DIR"
+        --initial-checkpoint "$CHECKPOINT_DIR/initial.pdparams" --warmup "${WARMUP:-50}")
     if [[ "$task" = infer ]]; then
-        args+=(--inference-only --initial-checkpoint "$CHECKPOINT_DIR/inference.pdparams")
+        args+=(--steps "${INFER_STEPS:-150}")
     else
-        args+=(--steps "${STEPS:-20}" --initial-checkpoint "$CHECKPOINT_DIR/initial.pdparams")
-        if [[ -n ${RESUME:-} ]]; then args+=(--resume "$RESUME"); fi
+        args+=(--steps "${STEPS:-20}")
     fi
     "$PYTHON_BIN" "$here/run_model.py" "${args[@]}" 2>&1 | tee "$output.log"
-    if [[ "$MODE" = cinn ]]; then grep -q 'Compiling subgraph with CINN backend' "$output.log"; fi
+    if [[ "$MODE" = cinn ]]; then
+        grep -q 'Compiling subgraph with CINN backend' "$output.log"
+    elif grep -q 'Compiling subgraph with CINN backend' "$output.log"; then
+        echo 'Unexpected CINN compilation in dynamic baseline' >&2
+        exit 4
+    fi
 }
 if [[ "$TASK" = all ]]; then run_task train; run_task infer; else run_task "$TASK"; fi

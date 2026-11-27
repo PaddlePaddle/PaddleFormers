@@ -1,0 +1,13 @@
+{
+  "scope": "Internal preregistered framework-test criteria; not universal official thresholds",
+  "initial_logits_atol": 0.0001,
+  "first20_loss_atol": 0.0001,
+  "gradient_sample_atol": 0.0001,
+  "convergence": {
+    "minimum_steps": 1000,
+    "tail_mean_max": 0.02,
+    "minimum_loss_reduction": 0.99,
+    "tail_mae_absolute_floor": 0.001,
+    "tail_mae_relative": 0.05
+  }
+}
