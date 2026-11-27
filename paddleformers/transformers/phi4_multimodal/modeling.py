@@ -173,8 +173,12 @@ class Phi4MultimodalVisionMLP(nn.Layer):
         super().__init__()
         self.config = config
         self.activation_fn = ACT2FN[config.hidden_act]
-        self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
-        self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+        self.fc1 = GeneralLinear.create(
+            config.hidden_size, config.intermediate_size, has_bias=True, linear_type="default"
+        )
+        self.fc2 = GeneralLinear.create(
+            config.intermediate_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
         hidden_states = self.fc1(hidden_states)
@@ -195,10 +199,18 @@ class Phi4MultimodalVisionAttention(nn.Layer):
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.attention_dropout
 
-        self.k_proj = nn.Linear(config.hidden_size, config.hidden_size)
-        self.v_proj = nn.Linear(config.hidden_size, config.hidden_size)
-        self.q_proj = nn.Linear(config.hidden_size, config.hidden_size)
-        self.out_proj = nn.Linear(config.hidden_size, config.hidden_size)
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.q_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.out_proj = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
 
     def forward(
         self,
@@ -311,17 +323,13 @@ class Phi4MultimodalVisionEmbeddings(nn.Layer):
         self.position_embedding = nn.Embedding(self.num_patches_per_side**2, config.hidden_size)
 
     def forward(self, pixel_values: paddle.Tensor, patch_attention_mask: paddle.Tensor) -> paddle.Tensor:
-        batch_size, _, max_im_h, max_im_w = pixel_values.shape
+        batch_size = pixel_values.shape[0]
 
         patch_embeds = self.patch_embedding(pixel_values)
         embeddings = patch_embeds.flatten(2).transpose([0, 2, 1])
 
-        max_nb_patches_h, max_nb_patches_w = max_im_h // self.patch_size, max_im_w // self.patch_size
         boundaries = paddle.arange(1 / self.num_patches_per_side, 1.0, 1 / self.num_patches_per_side).astype(
             pixel_values.dtype
-        )
-        position_ids = paddle.full(
-            shape=[batch_size, max_nb_patches_h * max_nb_patches_w], fill_value=0, dtype="int64"
         )
 
         nb_patches_h = patch_attention_mask[:, :, 0].astype("int64").sum(axis=1)
@@ -351,9 +359,9 @@ class Phi4MultimodalVisionEmbeddings(nn.Layer):
         pos_ids = pos_ids.reshape([batch_size, -1])
 
         flat_mask = patch_attention_mask.reshape([batch_size, -1]).astype("bool")
-        for i in range(batch_size):
-            mask_i = flat_mask[i]
-            position_ids[i][mask_i] = pos_ids[i][mask_i]
+        # Chained indexed assignment may update a temporary when traced.
+        # Select all positions functionally, preserving zero IDs for padding.
+        position_ids = paddle.where(flat_mask, pos_ids, paddle.zeros_like(pos_ids))
 
         embeddings = embeddings + self.position_embedding(position_ids)
         return embeddings
@@ -463,8 +471,12 @@ class Phi4MultimodalImageEmbedding(nn.Layer):
         self.drop = nn.Dropout(config.embd_pdrop)
         self.img_processor = Phi4MultimodalVisionModel(config.vision_config)
         self.image_token_compression = nn.AvgPool2D(kernel_size=2, stride=2)
-        self.img_projection_up = nn.Linear(self.image_dim_out, config.hidden_size)
-        self.img_projection_down = nn.Linear(config.hidden_size, config.hidden_size)
+        self.img_projection_up = GeneralLinear.create(
+            self.image_dim_out, config.hidden_size, has_bias=True, linear_type="default"
+        )
+        self.img_projection_down = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
         self.global_img_feature_extensor = self.create_parameter(
             shape=[1, 1, self.image_dim_out],
             default_initializer=nn.initializer.Constant(0.0),
@@ -593,8 +605,12 @@ class Phi4MultimodalAudioMLP(nn.Layer):
         super().__init__()
         self.layer_norm = nn.LayerNorm(config.hidden_size)
         self.act_fn = ACT2FN[config.activation]
-        self.gate_up_proj = nn.Linear(config.hidden_size, config.intermediate_size * 2)
-        self.down_proj = nn.Linear(config.intermediate_size, config.hidden_size)
+        self.gate_up_proj = GeneralLinear.create(
+            config.hidden_size, config.intermediate_size * 2, has_bias=True, linear_type="default"
+        )
+        self.down_proj = GeneralLinear.create(
+            config.intermediate_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
         self.dropout = nn.Dropout(config.dropout_rate)
 
     def forward(self, hidden_states: paddle.Tensor) -> paddle.Tensor:
@@ -620,10 +636,18 @@ class Phi4MultimodalAudioAttention(nn.Layer):
         self.scaling = self.head_dim**-0.5
         self.attention_dropout = config.dropout_rate
 
-        self.q_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim)
-        self.k_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim)
-        self.v_proj = nn.Linear(config.hidden_size, config.num_attention_heads * self.head_dim)
-        self.o_proj = nn.Linear(config.num_attention_heads * self.head_dim, config.hidden_size)
+        self.q_proj = GeneralLinear.create(
+            config.hidden_size, config.num_attention_heads * self.head_dim, has_bias=True, linear_type="default"
+        )
+        self.k_proj = GeneralLinear.create(
+            config.hidden_size, config.num_attention_heads * self.head_dim, has_bias=True, linear_type="default"
+        )
+        self.v_proj = GeneralLinear.create(
+            config.hidden_size, config.num_attention_heads * self.head_dim, has_bias=True, linear_type="default"
+        )
+        self.o_proj = GeneralLinear.create(
+            config.num_attention_heads * self.head_dim, config.hidden_size, has_bias=True, linear_type="default"
+        )
 
     @staticmethod
     def _masked_softmax(attn_weights):
@@ -775,7 +799,9 @@ class Phi4MultimodalAudioNemoConvSubsampling(nn.Layer):
             )
 
         self.conv = nn.Sequential(*layers)
-        self.out = nn.Linear(conv_channels * config.nemo_final_size, config.hidden_size)
+        self.out = GeneralLinear.create(
+            conv_channels * config.nemo_final_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
 
     def forward(self, hidden_states: paddle.Tensor, mask: Optional[paddle.Tensor]):
         hidden_states = hidden_states.unsqueeze(1)
@@ -1004,14 +1030,24 @@ class Phi4MultimodalAudioEmbedding(nn.Layer):
 
         self.drop = nn.Dropout(config.embd_pdrop)
         self.encoder = Phi4MultimodalAudioModel(config.audio_config)
-        self.up_proj_for_speech = nn.Linear(
-            config.audio_config.hidden_size * config.audio_config.downsample_rate, config.hidden_size
+        self.up_proj_for_speech = GeneralLinear.create(
+            config.audio_config.hidden_size * config.audio_config.downsample_rate,
+            config.hidden_size,
+            has_bias=True,
+            linear_type="default",
         )
-        self.down_proj_for_speech = nn.Linear(config.hidden_size, config.hidden_size)
-        self.up_proj_for_vision_speech = nn.Linear(
-            config.audio_config.hidden_size * config.audio_config.downsample_rate, config.hidden_size
+        self.down_proj_for_speech = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
         )
-        self.down_proj_for_vision_speech = nn.Linear(config.hidden_size, config.hidden_size)
+        self.up_proj_for_vision_speech = GeneralLinear.create(
+            config.audio_config.hidden_size * config.audio_config.downsample_rate,
+            config.hidden_size,
+            has_bias=True,
+            linear_type="default",
+        )
+        self.down_proj_for_vision_speech = GeneralLinear.create(
+            config.hidden_size, config.hidden_size, has_bias=True, linear_type="default"
+        )
 
     def forward(
         self,
@@ -1895,11 +1931,12 @@ class Phi4MultimodalForCausalLM(Phi4MultimodalPreTrainedModel):
         batch_size, seq_length = input_ids.shape
         if position_ids is None:
             position_ids = paddle.arange(seq_length, dtype="int64").unsqueeze(0).expand([batch_size, -1])
-        if past_key_values:
+        cache_length = past_key_values.get_seq_length() if past_key_values is not None else 0
+        if cache_length > 0:
             input_ids = input_ids[:, -1].unsqueeze(axis=-1)
             position_ids = position_ids[:, -1].unsqueeze(axis=-1)
 
-        if inputs_embeds is not None and past_key_values is None:
+        if inputs_embeds is not None and cache_length == 0:
             model_inputs = {"inputs_embeds": inputs_embeds}
         else:
             model_inputs = {"input_ids": input_ids}
@@ -1914,7 +1951,7 @@ class Phi4MultimodalForCausalLM(Phi4MultimodalPreTrainedModel):
             }
         )
 
-        if past_key_values is None:
+        if cache_length == 0:
             model_inputs.update(
                 {
                     "image_pixel_values": image_pixel_values,
