@@ -1,0 +1,50 @@
+[
+  {
+    "kind": "weight",
+    "file": "initial.pdparams",
+    "bytes": 103995309,
+    "sha256": "a108abc45a0049e1fe585e098cb54a1ff988bfbf74af390ed140461684686183"
+  },
+  {
+    "kind": "weight",
+    "file": "inference.pdparams",
+    "bytes": 103995309,
+    "sha256": "28fa6b09a591d5d73d715d70081e96dbcec8f274d58ed60cd7c9fceea830ad65"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/config.json",
+    "bytes": 2364,
+    "sha256": "77b34708897ab4346ba77e72d7a77fa53b214754f7f659dc871a785c0a8c7f42"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/special_tokens_map.json",
+    "bytes": 451,
+    "sha256": "3484f80da421ad864f1646dd563b8b772ebc9666c34a19d199d6d481c96d1eda"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/tokenizer.json",
+    "bytes": 27948580,
+    "sha256": "22e009b4fcb58eddbabf347e71b9881ea1e6eb72d44e5ea9477c7587df68fd8d"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/tokenizer_config.json",
+    "bytes": 235854,
+    "sha256": "13bb887373efca2fea1225d3051500e7b0b215824eeaa5d0ba7c2ce85985ff7f"
+  },
+  {
+    "kind": "asset",
+    "file": "data/images24.npz",
+    "bytes": 3613374,
+    "sha256": "37ada9317bb4676633e6e4da9df5cdfd9c66e882fbcb2192cf95c405ffb2e3d5"
+  },
+  {
+    "kind": "asset",
+    "file": "data/images_manifest.json",
+    "bytes": 1655,
+    "sha256": "784f3ae0ed49f00e284557d2a21a6b92829e6963ccc0d32df47cbc2b0a467267"
+  }
+]

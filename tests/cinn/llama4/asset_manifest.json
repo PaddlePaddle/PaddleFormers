@@ -1,0 +1,44 @@
+[
+  {
+    "kind": "weight",
+    "file": "initial.pdparams",
+    "bytes": 614870,
+    "sha256": "b7ebf5e7d74c265f89c0c6fc3e77dca6edb7c9b5a10d1a84aab701c52d8bd380"
+  },
+  {
+    "kind": "weight",
+    "file": "inference.pdparams",
+    "bytes": 614870,
+    "sha256": "0e86e32ee511974be430d206ad7ca03c9063fde35d502c78e055bc5a1f6c6cc0"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/chat_template.jinja",
+    "bytes": 279,
+    "sha256": "776f74701685328d15ae4f991c62023b18d41d06ae09dd7c6ea29daaff0173fd"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/config.json",
+    "bytes": 1371,
+    "sha256": "1e0d17af7eb9ff51358846d60b7fec8fcc97eef1312034a1270cf788cc79842d"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/tokenizer.json",
+    "bytes": 129017,
+    "sha256": "71a2a668cad445e0729a40f1904be3e6ea4acd373c127011963fbd971c0fe0f4"
+  },
+  {
+    "kind": "asset",
+    "file": "assets/tokenizer_config.json",
+    "bytes": 350,
+    "sha256": "80f42cba7d9babf95e97b86ffdb9bd5481894e00491e03d4196b2a735d0ce3c0"
+  },
+  {
+    "kind": "asset",
+    "file": "data/gsm8k_24.jsonl",
+    "bytes": 13854,
+    "sha256": "5133d8683c45e32d90e5ba83836e61216abeaaabf6ef630b770a59b575ae7be2"
+  }
+]
