@@ -736,11 +736,17 @@ class Florence2LanguageForConditionalGeneration(Florence2LanguagePretrainedModel
         logits = paddle.matmul(hidden_states, self.model.shared.weight, transpose_y=True) + self.final_logits_bias
         loss = None
         if labels is not None:
-            loss = F.cross_entropy(
+            flat_labels = labels.reshape([-1])
+            token_loss = F.cross_entropy(
                 logits.reshape([-1, self.config.vocab_size]),
-                labels.reshape([-1]),
+                flat_labels,
                 ignore_index=-100,
-            )
+                reduction="none",
+            ).reshape([-1])
+            # Average over supervised tokens only: reduction="mean" also counts ignore_index positions
+            # in the denominator, which dilutes the loss whenever labels are padded with -100.
+            valid = (flat_labels != -100).astype("float32")
+            loss = (token_loss.astype("float32") * valid).sum() / valid.sum().clip(min=1.0)
         if not return_dict:
             return ((loss, logits) if loss is not None else (logits,)) + outputs[1:]
         return Seq2SeqLMOutput(
@@ -906,6 +912,17 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
         )
         return paddle.concat([image_features, inputs_embeds], axis=1), paddle.concat([image_mask, text_mask], axis=1)
 
+    @staticmethod
+    def _is_sft_inputs(input_ids, labels):
+        # PaddleFormers SFT batches carry the whole sequence with labels shifted left once
+        # (labels[:, i] == input_ids[:, i + 1] wherever supervised). Seq2seq batches carry encoder ids
+        # and decoder labels, which can have the same length by coincidence, so length alone is not enough.
+        if input_ids is None or labels is None or labels.shape != input_ids.shape:
+            return False
+        shifted_labels = labels[:, :-1].astype(input_ids.dtype)
+        consistent = paddle.logical_or(shifted_labels == -100, shifted_labels == input_ids[:, 1:])
+        return bool(consistent.all())
+
     def _split_sft_inputs(self, input_ids, labels, attention_mask):
         source_rows, label_rows = [], []
         max_source = 1
@@ -948,7 +965,7 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
         return_dict=True,
         **kwargs,
     ):
-        if labels is not None and input_ids is not None and labels.shape == input_ids.shape:
+        if self._is_sft_inputs(input_ids, labels):
             input_ids, labels, attention_mask = self._split_sft_inputs(input_ids, labels, attention_mask)
         image_features = None
         if encoder_output is None and encoder_outputs is None and inputs_embeds is None:

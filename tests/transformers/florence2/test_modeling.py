@@ -338,6 +338,27 @@ class Florence2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         self.assertEqual(source_ids.tolist(), [[10, 11, 12]])
         self.assertEqual(decoder_labels.tolist(), [[20, 21, 2]])
         self.assertEqual(source_mask.tolist(), [[1, 1, 1]])
+        self.assertTrue(model._is_sft_inputs(input_ids, labels))
+
+    def test_seq2seq_labels_with_source_length_are_not_resplit(self):
+        model = Florence2ForConditionalGeneration(self.model_tester.get_config())
+        model.eval()
+        input_ids = paddle.to_tensor([[10, 11, 12, 13]])
+        labels = paddle.to_tensor([[0, 20, 21, 2]])
+        loss = model(input_ids=input_ids, labels=labels).loss
+        expected = model.language_model(
+            inputs_embeds=model.get_input_embeddings()(input_ids), labels=labels, return_dict=True
+        ).loss
+        paddle.testing.assert_close(loss, expected, atol=1e-6, rtol=1e-6)
+        self.assertFalse(model._is_sft_inputs(input_ids, labels))
+
+    def test_loss_ignores_padded_labels(self):
+        model = Florence2ForConditionalGeneration(self.model_tester.get_config())
+        model.eval()
+        input_ids = paddle.to_tensor([[10, 11, 12, 13]])
+        loss = model(input_ids=input_ids, labels=paddle.to_tensor([[0, 20, 2]])).loss
+        padded_loss = model(input_ids=input_ids, labels=paddle.to_tensor([[0, 20, 2, -100, -100]])).loss
+        paddle.testing.assert_close(padded_loss, loss, atol=1e-6, rtol=1e-6)
 
 
 class Florence2ModelIntegrationTest(unittest.TestCase):
