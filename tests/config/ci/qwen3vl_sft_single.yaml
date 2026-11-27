@@ -57,3 +57,11 @@ freeze_config: freeze_vision freeze_aligner
 processor_use_fast: false
 high_precision_rope: true
 moe_deep_gemm: false
+moe_token_dispatcher_type: deepep
+# 显式固定历史默认值；避免新默认值改变此配置行为。
+weight_decay: 0.0
+adam_beta2: 0.999
+moe_router_bias_update_rate: 0.0
+save_safetensors: false
+overlap_p2p_comm: false
+batch_p2p_comm: true

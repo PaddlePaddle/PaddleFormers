@@ -22,6 +22,7 @@ import dataclasses
 import json
 import os
 import random
+import sys
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Union
@@ -969,6 +970,7 @@ class InternalMedicineCallback(TrainerCallback):
         monitor_interval=0,
         verbose: bool = True,
         qk_row_stride: int = 1,
+        debug_mode: bool = False,
         log_dir: str = "",
     ):
         super().__init__()
@@ -976,6 +978,7 @@ class InternalMedicineCallback(TrainerCallback):
         self.monitor_interval = int(monitor_interval) if monitor_interval else 0
         self.verbose = verbose
         self.qk_row_stride = qk_row_stride
+        self.debug_mode = bool(debug_mode)
         self.log_dir = log_dir or ""
         self.log_path = os.path.join(self.log_dir, "internal_medicine.jsonl") if self.log_dir else ""
         self._monitor_dict = {}
@@ -1006,16 +1009,34 @@ class InternalMedicineCallback(TrainerCallback):
 
         self._maybe_truncate_on_resume(state)
 
-        try:
-            from internal_medicine.backends.paddlefleet import setup_monitors
-            from internal_medicine.core.training_logs import training_logs
-        except ImportError:
-            logger.exception(
-                "[InternalMedicine/pfleet] internal_medicine_monitors is enabled, but the optional "
-                "internal_medicine package is not importable. Add third_party/llm-internal-medicine/src "
-                "to PYTHONPATH or disable internal_medicine_monitors."
+        # internal_medicine declares requires-python >= 3.10.
+        if sys.version_info < (3, 10):
+            logger.warning(
+                "[InternalMedicine/pfleet] internal_medicine requires Python >= 3.10 but this "
+                "interpreter is %d.%d; skipping monitor setup. Disable internal_medicine_monitors "
+                "to silence this warning.",
+                sys.version_info[0],
+                sys.version_info[1],
             )
             return
+
+        try:
+            from internal_medicine.backends.paddlefleet import setup_monitors
+            from internal_medicine.core.metric_families import exclusions_for
+            from internal_medicine.core.training_logs import training_logs
+        except (ImportError, TypeError, SyntaxError) as exc:
+            logger.warning(
+                "[InternalMedicine/pfleet] internal_medicine_monitors is enabled, but the optional "
+                "internal_medicine package is not importable. Add third_party/llm-internal-medicine/src "
+                "to PYTHONPATH or disable internal_medicine_monitors. (%s: %s)",
+                type(exc).__name__,
+                exc,
+            )
+            return
+
+        # Which families a non-debug run leaves out is the library's call, not a
+        # yaml string: one bit here, the set itself lives next to the taxonomy.
+        exclude_families = exclusions_for(self.debug_mode)
 
         try:
             setup_monitors(
@@ -1025,8 +1046,10 @@ class InternalMedicineCallback(TrainerCallback):
                 monitor_interval=self.monitor_interval,
                 verbose=self.verbose,
                 qk_stats={"row_stride": self.qk_row_stride},
+                exclude_families=exclude_families,
             )
             self._training_logs = training_logs
+            self._skip_first_step_on_resume(state)
             self._setup_done = True
             logger.info("[InternalMedicine/pfleet] Monitors registered: %s" % list(self._monitor_dict.keys()))
         except Exception:
@@ -1045,6 +1068,24 @@ class InternalMedicineCallback(TrainerCallback):
             if collect is not None:
                 collect()
 
+    def on_optimizer_begin(self, args, state, control, scaler=None, **kwargs):
+        if not self._setup_done:
+            return
+
+        for monitor in self._monitor_dict.values():
+            finalize = getattr(monitor, "finalize_scaled_grad_metrics", None)
+            if finalize is not None:
+                finalize(scaler)
+
+    def on_substep_end(self, args, state, control, **kwargs):
+        if not self._setup_done:
+            return
+
+        for monitor in self._monitor_dict.values():
+            finalize = getattr(monitor, "finalize_composite_microbatch", None)
+            if finalize is not None:
+                finalize()
+
     def on_step_end(self, args, state, control, **kwargs):
         if not self._setup_done:
             return
@@ -1056,10 +1097,44 @@ class InternalMedicineCallback(TrainerCallback):
         if not self._setup_done or self._training_logs is None:
             return
 
+        if not self._sampled_this_step():
+            return
+
         aggregated = self._training_logs.gather_and_aggregate()
         if aggregated:
             self._training_logs.reset()
             self._maybe_write_jsonl(state, aggregated)
+
+    def _sampled_this_step(self):
+        """Whether any monitor sampled during the step that just finished."""
+        monitors = list(self._monitor_dict.values())
+        if not monitors:
+            return True
+        return any(getattr(m, "sampled_this_step", True) for m in monitors)
+
+    def _skip_first_step_on_resume(self, state):
+        """Suppress probe work on the first step after checkpoint restoration."""
+        resume_step = int(getattr(state, "global_step", 0) or 0)
+        if resume_step <= 0:
+            return
+
+        skipped = 0
+        for monitor in self._monitor_dict.values():
+            skip = getattr(monitor, "skip_next_steps", None)
+            if skip is not None:
+                skip(1)
+                skipped += 1
+
+        if skipped:
+            logger.info(
+                f"[InternalMedicine/pfleet] Resume detected at global_step={resume_step}; "
+                "skipping internal-medicine collection on the first resumed step."
+            )
+        elif self._monitor_dict:
+            logger.warning(
+                f"[InternalMedicine/pfleet] Resume detected at global_step={resume_step}, but the installed "
+                "internal_medicine package cannot skip the first resumed step."
+            )
 
     def _resolve_writer(self):
         """Decide once whether this process should write the jsonl file.
@@ -1162,7 +1237,7 @@ class InternalMedicineCallback(TrainerCallback):
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         except Exception:
             # Never let logging IO crash training.
-            logger.exception("[InternalMedicine] failed to append jsonl record")
+            logger.warning("[InternalMedicine] failed to append jsonl record")
 
 
 class EMAStateAssemblerCallback(TrainerCallback):
@@ -1171,7 +1246,7 @@ class EMAStateAssemblerCallback(TrainerCallback):
 
     def on_step_end(self, args, state, control, **kwargs):
         start = time.time()
-        self.ema_state_assembler.run()
+        self.ema_state_assembler.run(state.global_step)
         duration = time.time() - start
         logger.info(f"[EMAStateAssembler] Assembling EMA state took {duration:.3f} seconds.")
 
