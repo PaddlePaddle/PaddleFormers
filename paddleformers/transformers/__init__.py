@@ -514,6 +514,13 @@ import_structure = {
     ],
     "ministral3.tokenizer": ["Ministral3Tokenizer"],
     "ministral3": [],
+    "openelm.configuration": ["OpenELMConfig"],
+    "openelm.modeling": [
+        "OpenELMModel",
+        "OpenELMForCausalLM",
+        "OpenELMForCausalLMPipe",
+    ],
+    "openelm": [],
     "stablelm": [],
     "stablelm.configuration": ["StableLmConfig"],
     "stablelm.modeling": [
@@ -528,6 +535,17 @@ import_structure = {
     "olmo2.configuration": ["Olmo2Config"],
     "olmo2.modeling": ["Olmo2DecoderLayer", "Olmo2Model", "Olmo2ForCausalLM", "Olmo2ForCausalLMPipe"],
     "olmo2": [],
+    "olmo3": [],
+    "olmo3.configuration": ["Olmo3Config"],
+    "olmo3.modeling": [
+        "Olmo3ModelProvider",
+        "Olmo3Model",
+        "Olmo3PretrainedModel",
+        "Olmo3ForCausalLM",
+        "Olmo3ForCausalLMPipe",
+        "Olmo3ForCausalLMDeprecated",
+        "Olmo3ForCausalLMPipeDeprecated",
+    ],
     "intern_lm3.configuration": ["InternLM3Config"],
     "intern_lm3.modeling": [
         "InternLM3Model",
@@ -654,9 +672,11 @@ if TYPE_CHECKING:
     from .shieldgemma2 import *
     from .glm_ocr import *
     from .ministral3 import *
+    from .openelm import *
     from .stablelm import *
     from .molmo import *
     from .olmo2 import *
+    from .olmo3 import *
     from .intern_lm3 import *
     from .intern_lm2_5 import *
     from .intern import *
