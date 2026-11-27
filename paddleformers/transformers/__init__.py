@@ -512,7 +512,6 @@ import_structure = {
         "Ministral3PretrainedModel",
         "Ministral3RotaryEmbedding",
     ],
-    "ministral3.tokenizer": ["Ministral3Tokenizer"],
     "ministral3": [],
     "openelm.configuration": ["OpenELMConfig"],
     "openelm.modeling": [

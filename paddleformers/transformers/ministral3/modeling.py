@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
-from functools import partial
 from typing import Optional, Tuple, Union
 
 import paddle
@@ -34,7 +33,6 @@ from ...nn.norm import Norm as GeneralNorm
 from ...nn.pp_model import EmbeddingPipe, GeneralModelForCausalLMPipe, parse_args
 from ...utils.log import logger
 from ..cache_utils import Cache, DynamicCache
-from ..conversion_utils import split_or_merge_func
 from ..masking_utils import (
     create_causal_mask_and_row_indices,
     create_sliding_window_causal_mask_and_row_indices,
@@ -279,26 +277,6 @@ class Ministral3PretrainedModel(PretrainedModel):
     base_model_prefix = "model"
     _keys_to_ignore_on_load_unexpected = [r"self_attn.rotary_emb.inv_freq"]
     transpose_weight_keys = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-
-    @classmethod
-    def _get_tensor_parallel_mappings(cls, config: Ministral3Config, is_split=True):
-        fn = split_or_merge_func(
-            is_split=is_split,
-            tensor_model_parallel_size=config.tensor_model_parallel_size,
-            tensor_parallel_rank=getattr(config, "tensor_parallel_rank", 0),
-            num_attention_heads=config.num_attention_heads,
-        )
-        actions = {
-            "embed_tokens.weight": partial(fn, is_column=False),
-            "lm_head.weight": partial(fn, is_column=False),
-        }
-        for index in range(config.num_hidden_layers):
-            prefix = f"layers.{index}."
-            for name in ("q_proj", "k_proj", "v_proj", "o_proj"):
-                actions[prefix + f"self_attn.{name}.weight"] = partial(fn, is_column=name != "o_proj")
-            for name in ("gate_proj", "up_proj", "down_proj"):
-                actions[prefix + f"mlp.{name}.weight"] = partial(fn, is_column=name != "down_proj")
-        return actions
 
     @classmethod
     def _gen_aoa_config(cls, config: Ministral3Config):
@@ -745,7 +723,6 @@ class Ministral3ForCausalLMPipe(GeneralModelForCausalLMPipe):
     _embedding_pipe_cls = Ministral3EmbeddingPipe
     _criterion_pipe_cls = Ministral3CriterionLayerPipe
     _rotary_emb_cls = Ministral3RotaryEmbedding
-    _get_tensor_parallel_mappings = Ministral3PretrainedModel._get_tensor_parallel_mappings
     _init_weights = Ministral3PretrainedModel._init_weights
     _keep_in_fp32_modules = Ministral3PretrainedModel._keep_in_fp32_modules
     _tied_weights_keys = ["lm_head.weight"]

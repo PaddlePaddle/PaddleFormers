@@ -28,13 +28,11 @@ import_structure = {
         "Ministral3PretrainedModel",
         "Ministral3RotaryEmbedding",
     ],
-    "tokenizer": ["Ministral3Tokenizer"],
 }
 
 if TYPE_CHECKING:
     from .configuration import *
     from .modeling import *
-    from .tokenizer import *
 else:
     sys.modules[__name__] = _LazyModule(
         __name__,
