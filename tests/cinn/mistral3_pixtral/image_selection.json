@@ -1,0 +1,35 @@
+{
+  "source": "ImageNet100/ILSVRC2012 local classification subset; not original image-caption dataset",
+  "train": [
+    "imagenet100/n01558993/n01558993_11413.JPEG",
+    "imagenet100/n01692333/n01692333_10062.JPEG",
+    "imagenet100/n01729322/n01729322_12690.JPEG",
+    "imagenet100/n01735189/n01735189_1005.JPEG",
+    "imagenet100/n01749939/n01749939_10549.JPEG",
+    "imagenet100/n01773797/n01773797_1050.JPEG",
+    "imagenet100/n01820546/n01820546_1263.JPEG",
+    "imagenet100/n01855672/n01855672_1076.JPEG",
+    "imagenet100/n01978455/n01978455_10276.JPEG",
+    "imagenet100/n01980166/n01980166_1051.JPEG",
+    "imagenet100/n01983481/n01983481_11196.JPEG",
+    "imagenet100/n02009229/n02009229_16619.JPEG",
+    "imagenet100/n02018207/n02018207_10402.JPEG",
+    "imagenet100/n02085620/n02085620_10058.JPEG",
+    "imagenet100/n02086240/n02086240_10104.JPEG",
+    "imagenet100/n02086910/n02086910_10147.JPEG",
+    "imagenet100/n02087046/n02087046_11019.JPEG",
+    "imagenet100/n02089867/n02089867_1326.JPEG",
+    "imagenet100/n02089973/n02089973_11.JPEG",
+    "imagenet100/n02090622/n02090622_10589.JPEG"
+  ],
+  "validation": [
+    "ILSVRC2012_val_00000006.JPEG",
+    "ILSVRC2012_val_00000009.JPEG",
+    "ILSVRC2012_val_00000028.JPEG",
+    "ILSVRC2012_val_00000030.JPEG"
+  ],
+  "prompt": "<image> Image class ID: {original_imagenet_label}.",
+  "scope": "real images with generated class-ID text, 20 train + 4 official-validation images",
+  "preprocess": "existing RGB short-edge224 center crop; PIL resize28; original Phi4 processor; pad sequence32",
+  "license_note": "ImageNet access and redistribution terms apply; no blanket open license assigned"
+}

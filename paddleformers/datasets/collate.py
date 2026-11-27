@@ -410,6 +410,7 @@ def mm_dpo_collate_fn(
         input_dict["grid_thw"] = []
     else:
         input_dict["pixel_values"] = []
+        input_dict["image_sizes"] = []
         input_dict["image_grid_thw"] = []
         input_dict["pixel_values_videos"] = []
         input_dict["video_grid_thw"] = []
@@ -480,6 +481,7 @@ def mm_dpo_collate_fn(
         # 3.4 vl-parameters & vl-position_ids
         original_position_ids = []
         pixel_values = []
+        image_sizes = []
         image_grid_thw = []
         pixel_values_videos = []
         video_grid_thw = []
@@ -487,6 +489,8 @@ def mm_dpo_collate_fn(
             mm_inputs = seq.mm_inputs
             if "pixel_values" in mm_inputs:
                 pixel_values.append(mm_inputs["pixel_values"])
+            if "image_sizes" in mm_inputs:
+                image_sizes.extend(mm_inputs["image_sizes"])
             if "image_grid_thw" in mm_inputs:
                 image_grid_thw.extend(mm_inputs["image_grid_thw"])
             if "pixel_values_videos" in mm_inputs:
@@ -550,6 +554,7 @@ def mm_dpo_collate_fn(
         else:
             input_dict["position_ids"].append(padded_position_ids)
             input_dict["pixel_values"].append(pixel_values)
+            input_dict["image_sizes"].append(image_sizes)
             input_dict["image_grid_thw"].append(image_grid_thw)
             input_dict["pixel_values_videos"].append(pixel_values_videos)
             input_dict["video_grid_thw"].append(video_grid_thw)
@@ -954,7 +959,10 @@ def mm_collate_fn(
             ]
         )
         if len(pixel_values) > 0:
-            pixel_values = paddle.concat(pixel_values, axis=0)
+            if len(pixel_values[0].shape) == 4:
+                pixel_values = _pad_and_concat_multimodal_tensors(pixel_values)
+            else:
+                pixel_values = paddle.concat(pixel_values, axis=0)
         if len(pixel_values_videos) > 0:
             pixel_values_videos = paddle.concat(pixel_values_videos, axis=0)
         if len(input_features) > 0:
@@ -1082,6 +1090,8 @@ def mm_collate_fn(
                 value = paddle.concat(filtered_tensors, axis=bs_idx_in_rope)
             elif key == "image_attention_mask":
                 value = _pad_and_concat_multimodal_tensors(filtered_tensors, pad_value=True)
+            elif key == "pixel_values" and len(filtered_tensors[0].shape) == 4:
+                value = _pad_and_concat_multimodal_tensors(filtered_tensors)
             elif key in {"image_pixel_values", "audio_input_features", "audio_attention_mask"}:
                 value = _pad_and_concat_multimodal_tensors(filtered_tensors)
             else:

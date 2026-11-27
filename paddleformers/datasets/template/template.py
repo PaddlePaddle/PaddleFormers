@@ -816,6 +816,17 @@ register_template(
 )
 
 register_template(
+    name="mistral3",
+    format_user=StringFormatter(slots=["[INST]{{content}}[/INST]"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["[SYSTEM_PROMPT]{{content}}[/SYSTEM_PROMPT]"]),
+    format_prefix=EmptyFormatter(slots=["<s>"]),
+    chat_sep="</s>",
+    suffix=["</s>"],
+    mm_plugin=get_mm_plugin(name="pixtral", image_token="[IMG]"),
+)
+
+register_template(
     name="aya_vision",
     format_user=StringFormatter(
         slots=[
