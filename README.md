@@ -126,6 +126,11 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
       <td>llama4</td>
     </tr>
     <tr>
+      <td>MiniCPM</td>
+      <td>openbmb/MiniCPM-1B-sft-bf16、openbmb/MiniCPM4.1-8B</td>
+      <td>jinja</td>
+    </tr>
+    <tr>
       <td>MiniMax-Text-01</td>
       <td>MiniMaxAI/MiniMax-Text-01</td>
       <td>minimax</td>

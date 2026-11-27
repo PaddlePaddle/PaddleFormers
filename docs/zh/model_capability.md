@@ -13,6 +13,7 @@
 |Hunyuan Dense V1|✓|✓|✓|x|x|
 |LLaMA3|✓|✓|✓|✓|✓|
 |LLaMA4-Text|✓|✓|✓|x|x|
+|MiniCPM|—|✓|—|—|—|
 |MiniMax-Text-01|✓|✓|✓|x|x|
 |OpenELM|✓|✓|✓|✓|✓|
 |OLMo2|✓|✓|✓|✓|✓|
@@ -29,6 +30,8 @@
 |Molmo|x|✓|✓|x|x|
 |Qwen2.5-VL|x|✓|✓|x|x|
 |Qwen3-VL|x|✓|✓|x|x|
+
+MiniCPM 的训练验证基于 MiniCPM-1B；`✓` 表示已完成训练验证，`—` 表示尚未验证。MiniCPM4.1-8B 共用 `minicpm` 组网，支持加载官方配置和权重。
 
 # 分布式能力支持
 |模型|TP + SP|PP|EP|CP|DP|FSDP|
