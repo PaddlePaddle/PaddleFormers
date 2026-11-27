@@ -14,6 +14,8 @@
 # limitations under the License.
 from __future__ import annotations
 
+import json
+import os
 import tempfile
 import unittest
 
@@ -26,6 +28,10 @@ from paddleformers.nn.pp_model import (
     make_decoder_layer_pipe,
 )
 from paddleformers.transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoModelForCausalLM,
+    AutoModelForCausalLMPipe,
     MiniCPMConfig,
     MiniCPMForCausalLM,
     MiniCPMForSequenceClassification,
@@ -34,7 +40,9 @@ from paddleformers.transformers import (
 from paddleformers.transformers.minicpm.modeling import (
     MiniCPMForCausalLMPipe,
     MiniCPMLMHeadPipe,
+    MiniCPMRotaryEmbedding,
     _create_scaled_embedding,
+    apply_rotary_pos_emb,
 )
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
@@ -468,6 +476,124 @@ class MiniCPMCompatibilityTest(unittest.TestCase):
         self.assertEqual(config.num_key_value_heads, config.num_attention_heads)
         self.assertEqual((config.scale_emb, config.dim_model_base, config.scale_depth), (1, 1, 1))
         self.assertFalse(hasattr(config, "sliding_window"))
+
+    def _get_longrope_config(self):
+        config = self.config.to_dict()
+        config.update(
+            _name_or_path="openbmb/MiniCPM4.1-8B",
+            architectures=["MiniCPMForCausalLM"],
+            max_position_embeddings=65536,
+            scale_emb=12,
+            scale_depth=1.4,
+            dim_model_base=8,
+            tie_word_embeddings=False,
+            rope_scaling={
+                "rope_type": "longrope",
+                "short_factor": [1.0, 2.0, 4.0, 8.0],
+                "long_factor": [1.0, 2.0, 4.0, 8.0],
+                "original_max_position_embeddings": 65536,
+            },
+        )
+        config.pop("rope_parameters", None)
+        return MiniCPMConfig.from_dict(config)
+
+    def test_minicpm4_1_auto_loading_preserves_original_model_type(self):
+        config = self._get_longrope_config()
+        ids = paddle.to_tensor([[1, 2, 3]])
+        model = AutoModelForCausalLM.from_config(config, dtype="float32")
+        self.assertIs(type(model), MiniCPMForCausalLM)
+        self.assertIs(type(AutoModel.from_config(config, dtype="float32")), MiniCPMModel)
+        self.assertIs(
+            AutoModelForCausalLMPipe._get_model_class_from_config(None, None, config), MiniCPMForCausalLMPipe
+        )
+        model.eval()
+        expected = model(ids)[0].numpy()
+        with tempfile.TemporaryDirectory() as root:
+            directory = os.path.join(root, "MiniCPM4.1-8B")
+            model.save_pretrained(directory, safe_serialization=True)
+            loaded_config = AutoConfig.from_pretrained(directory)
+            self.assertIs(type(loaded_config), MiniCPMConfig)
+            self.assertEqual(loaded_config.model_type, "minicpm")
+            restored = AutoModelForCausalLM.from_pretrained(directory, load_checkpoint_format="flex_checkpoint")
+            restored.eval()
+            self.assertIs(type(restored), MiniCPMForCausalLM)
+            np.testing.assert_array_equal(expected, restored(ids)[0].numpy())
+            with open(os.path.join(directory, "config.json")) as handle:
+                saved = json.load(handle)
+            self.assertEqual(saved["model_type"], "minicpm")
+            self.assertEqual(saved["architectures"], ["MiniCPMForCausalLM"])
+            self.assertEqual(saved["rope_scaling"]["short_factor"], config.rope_scaling["short_factor"])
+
+    def test_longrope_cached_forward_matches_full_forward(self):
+        model = MiniCPMForCausalLM(self._get_longrope_config())
+        model.eval()
+        ids = paddle.to_tensor([[1, 2, 3, 4]])
+        positions = paddle.to_tensor([[65000, 65001, 65002, 65003]])
+        full = model(ids, position_ids=positions, use_cache=False)[0]
+        prefix = model(ids[:, :3], position_ids=positions[:, :3], use_cache=True, return_dict=True)
+        cached = model(
+            ids[:, 3:], position_ids=positions[:, 3:], past_key_values=prefix.past_key_values, use_cache=True
+        )[0]
+        np.testing.assert_allclose(cached.numpy(), full[:, 3:].numpy(), rtol=1e-5, atol=1e-6)
+        generated = model.generate(ids, max_new_tokens=3, decode_strategy="greedy_search")[0]
+        self.assertEqual(generated.shape[-1], 3)
+
+    def test_longrope_keeps_bfloat16_rotation_in_float32(self):
+        config = self._get_longrope_config()
+        rotary = MiniCPMRotaryEmbedding(config)
+        positions = paddle.to_tensor([[0, 65000]])
+        query = paddle.randn([1, 2, 2, 8]).astype("bfloat16")
+        key = paddle.randn([1, 1, 2, 8]).astype("bfloat16")
+        cos, sin = rotary(query, positions)
+        self.assertEqual(cos.dtype, paddle.float32)
+        inv_freq = 1.0 / (
+            paddle.to_tensor(config.rope_scaling["short_factor"])
+            * config.rope_theta ** (paddle.arange(0, 8, 2).astype("float32") / 8)
+        )
+        freqs = positions.astype("float32").unsqueeze(-1) * inv_freq
+        angles = paddle.concat([freqs, freqs], axis=-1)
+        np.testing.assert_allclose(cos.numpy(), angles.cos().numpy(), rtol=1e-6, atol=1e-6)
+        np.testing.assert_allclose(sin.numpy(), angles.sin().numpy(), rtol=1e-6, atol=1e-6)
+        actual = apply_rotary_pos_emb(query, key, cos, sin)
+        for original, rotated in zip((query, key), actual):
+            value = original.astype("float32")
+            half = paddle.concat([-value[..., 4:], value[..., :4]], axis=-1)
+            expected = (value * cos.unsqueeze(1) + half * sin.unsqueeze(1)).astype("bfloat16")
+            self.assertEqual(rotated.dtype, paddle.bfloat16)
+            np.testing.assert_array_equal(rotated.astype("float32").numpy(), expected.astype("float32").numpy())
+
+    def test_longrope_selects_frequencies_without_mutating_buffers(self):
+        config = self._get_longrope_config()
+        config.rope_parameters["long_factor"] = [2.0, 4.0, 8.0, 16.0]
+        rotary = MiniCPMRotaryEmbedding(config)
+        static_rotary = paddle.jit.to_static(MiniCPMRotaryEmbedding(config), full_graph=True)
+        original = rotary.inv_freq.numpy().copy()
+        for position, factors in (
+            (65536, config.rope_parameters["long_factor"]),
+            (7, config.rope_parameters["short_factor"]),
+            (65537, config.rope_parameters["long_factor"]),
+        ):
+            positions = paddle.to_tensor([[position]])
+            cos, sin = rotary(paddle.zeros([1, 1, 16]), positions)
+            inv_freq = 1.0 / (
+                paddle.to_tensor(factors) * config.rope_theta ** (paddle.arange(0, 8, 2).astype("float32") / 8)
+            )
+            angles = paddle.concat([position * inv_freq, position * inv_freq])[None, None]
+            np.testing.assert_allclose(cos.numpy(), angles.cos().numpy(), rtol=1e-6, atol=1e-6)
+            np.testing.assert_allclose(sin.numpy(), angles.sin().numpy(), rtol=1e-6, atol=1e-6)
+            static_cos, static_sin = static_rotary(paddle.zeros([1, 1, 16]), positions)
+            np.testing.assert_allclose(static_cos.numpy(), cos.numpy(), rtol=1e-6, atol=1e-6)
+            np.testing.assert_allclose(static_sin.numpy(), sin.numpy(), rtol=1e-6, atol=1e-6)
+            np.testing.assert_array_equal(rotary.inv_freq.numpy(), original)
+
+    def test_longrope_config_normalization_preserves_caller_and_saved_parameters(self):
+        config = self._get_longrope_config()
+        self.assertNotIn("factor", config.rope_scaling)
+        self.assertEqual(config.rope_parameters["factor"], 1.0)
+        restored = MiniCPMConfig.from_dict(config.to_dict())
+        self.assertEqual(restored.rope_scaling, config.rope_scaling)
+        self.assertEqual(restored.rope_parameters, config.rope_parameters)
+        self.assertEqual(restored.model_type, "minicpm")
 
     def test_pp_scaling_components(self):
         embedding = _create_scaled_embedding(self.config)

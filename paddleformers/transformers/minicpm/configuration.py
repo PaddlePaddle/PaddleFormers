@@ -13,6 +13,8 @@
 # limitations under the License.
 """MiniCPM model configuration."""
 
+from copy import deepcopy
+
 from ..configuration_utils import PretrainedConfig
 from ..modeling_rope_utils import rope_config_validation, standardize_rope_params
 
@@ -99,9 +101,14 @@ class MiniCPMConfig(PretrainedConfig):
 
         self.layer_types = ["full_attention"] * num_hidden_layers
 
-        if self.rope_scaling is not None and "type" in self.rope_scaling:
-            self.rope_scaling["rope_type"] = self.rope_scaling["type"]
-        self.rope_parameters = self.rope_scaling
+        self.rope_parameters = deepcopy(kwargs.pop("rope_parameters", None) or self.rope_scaling)
+        if self.rope_parameters is not None and "type" in self.rope_parameters:
+            self.rope_parameters["rope_type"] = self.rope_parameters["type"]
+        if self.rope_parameters is not None and self.rope_parameters.get("rope_type") == "longrope":
+            original_max = self.rope_parameters.get("original_max_position_embeddings", max_position_embeddings)
+            self.rope_parameters.setdefault("factor", float(max_position_embeddings / original_max))
+            if original_max != max_position_embeddings:
+                self.original_max_position_embeddings = original_max
 
         standardize_rope_params(self, rope_theta=rope_theta)
         rope_config_validation(self)

@@ -57,11 +57,15 @@ def rotate_half(x):
 
 def apply_rotary_pos_emb(q, k, cos, sin, position_ids=None, unsqueeze_dim=1):
     """Applies Rotary Position Embedding to the query and key tensors."""
+    q_dtype, k_dtype = q.dtype, k.dtype
     cos = cos.unsqueeze(unsqueeze_dim)
     sin = sin.unsqueeze(unsqueeze_dim)
+    if cos.dtype == paddle.float32:
+        # LongRoPE keeps the rotation in FP32 before casting Q/K back.
+        q, k = q.astype(paddle.float32), k.astype(paddle.float32)
     q_embed = (q * cos) + (rotate_half(q) * sin)
     k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed.astype(q.dtype), k_embed.astype(k.dtype)
+    return q_embed.astype(q_dtype), k_embed.astype(k_dtype)
 
 
 class MiniCPMAttention(nn.Layer):
@@ -401,6 +405,12 @@ class MiniCPMRotaryEmbedding(nn.Layer):
 
         self.register_buffer("inv_freq", inv_freq, persistable=False)
         self.original_inv_freq = inv_freq
+        if self.rope_type == "longrope":
+            self.original_max_seq_len = getattr(
+                config, "original_max_position_embeddings", config.max_position_embeddings
+            )
+            long_inv_freq, _ = rope_init_fn(config, seq_len=self.original_max_seq_len + 1)
+            self.register_buffer("long_inv_freq", long_inv_freq, persistable=False)
 
     @staticmethod
     def compute_default_rope_parameters(
@@ -433,9 +443,21 @@ class MiniCPMRotaryEmbedding(nn.Layer):
         return inv_freq, attention_factor
 
     @dynamic_rope_update
+    def _dynamic_forward(self, x, position_ids):
+        return self._forward(x, position_ids, self.inv_freq)
+
     def forward(self, x, position_ids):
+        if self.rope_type == "longrope":
+            # Select precomputed frequencies without mutating buffers in a static graph.
+            inv_freq = paddle.where(
+                paddle.max(position_ids) + 1 > self.original_max_seq_len, self.long_inv_freq, self.inv_freq
+            )
+            return self._forward(x, position_ids, inv_freq)
+        return self._dynamic_forward(x, position_ids)
+
+    def _forward(self, x, position_ids, inv_freq):
         with paddle.amp.auto_cast(enable=False):
-            inv_freq_expanded = self.inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
+            inv_freq_expanded = inv_freq[None, :, None].float().expand([position_ids.shape[0], -1, 1])
 
             position_ids_expanded = position_ids[:, None, :].float()
 
@@ -446,7 +468,8 @@ class MiniCPMRotaryEmbedding(nn.Layer):
             cos = emb.cos() * self.attention_scaling
             sin = emb.sin() * self.attention_scaling
 
-        return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
+        dtype = paddle.float32 if self.rope_type == "longrope" else x.dtype
+        return cos.to(dtype=dtype), sin.to(dtype=dtype)
 
 
 @register_base_model
