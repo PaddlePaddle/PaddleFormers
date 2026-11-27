@@ -272,7 +272,14 @@ def resolve_minicpm4_1_model_type(config_dict, model_type_override=None):
             )
         return model_type_override
 
-    if not isinstance(config_dict, dict) or config_dict.get("model_type") != "minicpm":
+    if not isinstance(config_dict, (dict, PretrainedConfig)):
+        return None
+
+    # AutoConfig has already resolved the upstream MiniCPM family in this case.
+    # Do not let its legacy architectures entry route AutoModel back to MiniCPM.
+    if config_dict.get("model_type") == "minicpm4_1":
+        return "minicpm4_1"
+    if config_dict.get("model_type") != "minicpm":
         return None
 
     original_name = str(config_dict.get("_name_or_path", ""))

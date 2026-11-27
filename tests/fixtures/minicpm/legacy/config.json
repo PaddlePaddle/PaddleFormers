@@ -1,0 +1,37 @@
+{
+    "_name_or_path": "openbmb/MiniCPM4-0.5B",
+    "architectures": [
+        "MiniCPMForCausalLM"
+    ],
+    "auto_map": {
+        "AutoConfig": "configuration_minicpm.MiniCPMConfig",
+        "AutoModel": "modeling_minicpm.MiniCPMModel",
+        "AutoModelForCausalLM": "modeling_minicpm.MiniCPMForCausalLM",
+        "AutoModelForSeq2SeqLM": "modeling_minicpm.MiniCPMForCausalLM",
+        "AutoModelForSequenceClassification": "modeling_minicpm.MiniCPMForSequenceClassification"
+    },
+    "bos_token_id": 1,
+    "eos_token_id": [2, 73440],
+    "hidden_act": "silu",
+    "hidden_size": 1024,
+    "initializer_range": 0.1,
+    "intermediate_size": 4096,
+    "max_position_embeddings": 32768,
+    "num_attention_heads": 16,
+    "num_hidden_layers": 24,
+    "num_key_value_heads": 2,
+    "rms_norm_eps": 1e-05,
+    "rope_scaling": {
+        "rope_type": "longrope", 
+        "long_factor": [1.0004360675811768, 1.0668443441390991, 1.1631425619125366, 1.3025742769241333, 1.5040205717086792, 1.7941505908966064, 2.2101221084594727, 2.802666664123535, 3.6389970779418945, 4.804192543029785, 6.39855432510376, 8.527148246765137, 11.277542114257812, 14.684998512268066, 18.69317054748535, 23.13019371032715, 27.72362518310547, 32.1606559753418, 36.168827056884766, 39.57627868652344, 42.32667541503906, 44.45526885986328, 46.04962921142578, 47.21482849121094, 48.05115509033203, 48.64370346069336, 49.05967712402344, 49.34980392456055, 49.551246643066406, 49.69068145751953, 49.78697967529297, 49.85338592529297],
+        "short_factor": [1.0004360675811768, 1.0668443441390991, 1.1631425619125366, 1.3025742769241333, 1.5040205717086792, 1.7941505908966064, 2.2101221084594727, 2.802666664123535, 3.6389970779418945, 4.804192543029785, 6.39855432510376, 8.527148246765137, 11.277542114257812, 14.684998512268066, 18.69317054748535, 23.13019371032715, 27.72362518310547, 32.1606559753418, 36.168827056884766, 39.57627868652344, 42.32667541503906, 44.45526885986328, 46.04962921142578, 47.21482849121094, 48.05115509033203, 48.64370346069336, 49.05967712402344, 49.34980392456055, 49.551246643066406, 49.69068145751953, 49.78697967529297, 49.85338592529297],
+        "original_max_position_embeddings": 32768
+    },    
+    "torch_dtype": "bfloat16",
+    "transformers_version": "4.46.3",
+    "use_cache": true,
+    "vocab_size": 73448,
+    "scale_emb": 12,
+    "dim_model_base": 256,
+    "scale_depth": 1.4
+}
