@@ -574,6 +574,29 @@ class MolmoModelTest(ModelTesterMixin, unittest.TestCase):
 
         self.assertEqual(output[0].shape, [self.model_tester.batch_size, 2])
 
+    def test_empty_cache_keeps_multimodal_prefill(self):
+        from paddleformers.transformers.cache_utils import DynamicCache
+
+        config = self.model_tester.get_config(with_vision=True)
+        model = MolmoForCausalLM(config).eval()
+        ids = ids_tensor(
+            [self.model_tester.batch_size, self.model_tester.seq_length], config.vocab_size, dtype=paddle.int64
+        )
+        images, masks, indices = self.model_tester.get_vision_inputs()
+        inputs = dict(input_ids=ids, images=images, image_masks=masks, image_input_idx=indices)
+        cache = DynamicCache(config=config)
+        prepared = model.prepare_inputs_for_generation(**inputs, past_key_values=cache, use_cache=True)
+        self.assertIs(prepared["images"], images)
+        self.assertEqual(prepared["input_ids"].shape, ids.shape)
+        with paddle.no_grad():
+            expected = model(**inputs, use_cache=False, return_dict=True).logits
+            actual = model(**prepared)
+        np.testing.assert_allclose(actual.logits.numpy(), expected.numpy(), atol=1e-6, rtol=1e-6)
+        decoded = model.prepare_inputs_for_generation(**inputs, past_key_values=cache, use_cache=True)
+        self.assertEqual(decoded["input_ids"].shape[1], 1)
+        for key in ("images", "image_masks", "image_input_idx"):
+            self.assertIsNone(decoded[key])
+
     def test_inverse_aoa_config_contains_vision_weights(self):
         config = self.model_tester.get_config(with_vision=True)
         statements = MolmoForCausalLM._gen_inv_aoa_config(config)["aoa_statements"]
