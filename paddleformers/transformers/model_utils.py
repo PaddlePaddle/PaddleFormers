@@ -105,6 +105,7 @@ from .utils import (  # convert_ndarray_dtype,
 )
 
 VLMS = [
+    "ayavision",
     "qwen2vl",
     "qwen2_5_vl",
 ]
@@ -2765,6 +2766,7 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
         subfolder = kwargs.pop("subfolder", None)
         load_via_cpu = kwargs.pop("load_via_cpu", False)
         load_checkpoint_format = kwargs.pop("load_checkpoint_format", "flex_checkpoint")
+        flex_ckpt_comm_method = kwargs.pop("flex_ckpt_comm_method", None)
         if subfolder is None:
             subfolder = ""
         variant = kwargs.pop("variant", None)
@@ -2929,13 +2931,63 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     else:
                         aoa_config["aoa_statements"].append(f"{key} -> {key}, dtype='{dtype}'")
 
-            dist.load_state_dict(
-                sharded_state_dict,
+            worker_groups = None
+            flex_ckpt_comm_method_resolved = flex_ckpt_comm_method
+
+            # Only configure parallel worker_groups when fleet is initialized with hybrid parallelism
+            if (
+                paddle.distributed.get_world_size() > 1
+                and hasattr(dist, "fleet")
+                and hasattr(dist.fleet, "_hcg")
+                and dist.fleet._hcg is not None
+            ):
+                hcg = dist.fleet.get_hybrid_communicate_group()
+
+                pp_group = None
+                try:
+                    pp_group = hcg.get_pipe_parallel_group()
+                    if pp_group is not None and pp_group.nranks < 1:
+                        pp_group = None
+                except Exception:
+                    pp_group = None
+
+                moe_group = None
+                if hasattr(hcg, "get_expert_parallel_group"):
+                    try:
+                        moe_group = hcg.get_expert_parallel_group()
+                        if moe_group is not None and moe_group.nranks < 1:
+                            moe_group = None
+                    except Exception:
+                        moe_group = None
+
+                moe_sharding_group = None
+                if hasattr(hcg, "get_moe_sharding_parallel_group"):
+                    try:
+                        moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+                    except Exception:
+                        moe_sharding_group = None
+
+                if pp_group is not None and moe_group is not None:
+                    if pp_group.nranks > 1:
+                        worker_groups = [moe_group, pp_group, moe_sharding_group]
+                    else:
+                        worker_groups = [moe_group, moe_sharding_group, pp_group]
+
+                from ..trainer.trainer_utils import select_flex_ckpt_comm_method
+
+                if flex_ckpt_comm_method_resolved is None:
+                    flex_ckpt_comm_method_resolved = select_flex_ckpt_comm_method()
+
+            load_kwargs = dict(
                 path=ckpt_path,
                 aoa_config=aoa_config,
                 safetensors=True,
                 offload=load_via_cpu,
             )
+            if worker_groups is not None:
+                load_kwargs["comm_method"] = flex_ckpt_comm_method_resolved
+                load_kwargs["worker_groups"] = worker_groups
+            dist.load_state_dict(sharded_state_dict, **load_kwargs)
 
             for v in sharded_state_dict.values():
                 if hasattr(v.local_tensor, "target_tensor"):
@@ -3246,9 +3298,55 @@ class PretrainedModel(Layer, GenerationMixin, ConversionMixin):
                     model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
                 ).save_checkpoint(save_dir, max_shard_size)
             else:
-                HFFormatFullParamSaver(
-                    model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
-                ).save_checkpoint(save_dir, max_shard_size)
+                pp_group = None
+                moe_group = None
+                moe_sharding_group = None
+
+                if (
+                    paddle.distributed.get_world_size() > 1
+                    and hasattr(dist, "fleet")
+                    and hasattr(dist.fleet, "_hcg")
+                    and dist.fleet._hcg is not None
+                ):
+                    hcg = dist.fleet.get_hybrid_communicate_group()
+                    try:
+                        pp_group = hcg.get_pipe_parallel_group()
+                    except Exception:
+                        pp_group = None
+                    if hasattr(hcg, "get_expert_parallel_group"):
+                        try:
+                            moe_group = hcg.get_expert_parallel_group()
+                        except Exception:
+                            moe_group = None
+                    if hasattr(hcg, "get_moe_sharding_parallel_group"):
+                        try:
+                            moe_sharding_group = hcg.get_moe_sharding_parallel_group()
+                        except Exception:
+                            moe_sharding_group = None
+
+                use_parallel_save = (
+                    pp_group is not None
+                    and pp_group.nranks > 1
+                    and moe_group is not None
+                    and moe_group.nranks > 1
+                    and moe_sharding_group is not None
+                )
+
+                if use_parallel_save:
+                    moe_sharding_rank = moe_sharding_group.rank if moe_sharding_group.nranks > 1 else 0
+                    HFFormatFullParamSaver(
+                        model=model_to_save,
+                        aoa_config=aoa_config,
+                        h_group=moe_group,
+                        v_group=pp_group,
+                        num_splits=moe_sharding_group.nranks,
+                        shard_idx=moe_sharding_rank,
+                        memory_growth_threshold=memory_growth_threshold,
+                    ).save_checkpoint(save_dir, max_shard_size)
+                else:
+                    HFFormatFullParamSaver(
+                        model_to_save, aoa_config, memory_growth_threshold=memory_growth_threshold
+                    ).save_checkpoint(save_dir, max_shard_size)
 
             dtype = get_parameter_dtype(model_to_save)
             if dtype is not None:

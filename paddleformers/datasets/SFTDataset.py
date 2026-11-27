@@ -16,11 +16,13 @@ import multiprocessing as mp
 import os
 import time
 from dataclasses import dataclass, field
+from io import BytesIO
 from itertools import chain
 from typing import Dict, List, Literal, Optional
 
 import numpy as np
 from paddle.io import Dataset, IterableDataset
+from PIL import Image
 
 from paddleformers.datasets.data_utils import (
     calculate_matched_group,
@@ -114,7 +116,12 @@ class BaseSFTDataset:
 
         # The number of reserved tokens for each dialog
         self.num_reserved_tokens_for_each_dialog = 0
-        if self.use_template:
+        # Only reserve room for the dynamic EOS when it is actually appended
+        # later (see ``self.efficient_eos`` below). Templates whose assistant
+        # slot already emits the EOS inline (e.g. ``"{{content}}<|im_end|>\n"``)
+        # declare ``efficient_eos=False``; reserving for a suffix that never gets
+        # added just over-truncates the dialog.
+        if self.use_template and self.efficient_eos:
             # add dynamic eos
             suffix_ids = (
                 self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(self.template.suffix[-1]))
@@ -612,9 +619,8 @@ class BaseSFTDataset:
                 # Truncate the sequence to the maximum length
                 tokens = tokens[: self.max_seq_len + 1]
 
-            labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
-
             # label shift
+            labels = self.template.mm_plugin.process_tokens(tokens, self.processor)
             labels = labels[1:] + [-100]
 
             pos_ids = list(range(len(tokens)))  # only pure text, mm_position_ids will be reconstructed in collate.py
@@ -654,6 +660,22 @@ class BaseSFTDataset:
                 mm_inputs=mm_inputs,
             )
 
+    @staticmethod
+    def _get_image_size(image):
+        """Return the ``(width, height)`` of a dataset image entry.
+
+        Accepts the same shapes as ``BasePlugin._regularize_images``: a path, a
+        ``{"path"|"bytes": ...}`` dict, raw bytes, or an already loaded image.
+        """
+        if hasattr(image, "width") and hasattr(image, "height"):
+            return image.width, image.height
+        if isinstance(image, dict):
+            image = image["path"] if image.get("path") is not None else image["bytes"]
+        if isinstance(image, bytes):
+            image = BytesIO(image)
+        with Image.open(image) as opened_image:
+            return opened_image.width, opened_image.height
+
     def _process_sft_sequence(self, example, actual_example_num):
         """Process code completion examples into token sequences.
 
@@ -670,7 +692,7 @@ class BaseSFTDataset:
         videos = example.get("videos", [])
         audios = example.get("audios", [])
         objects = example.get("objects", {})
-        mm_inputs = None
+        mm_inputs = {}
 
         if self.use_template:
             if self.template_backend == "jinja":
@@ -681,6 +703,13 @@ class BaseSFTDataset:
                 else:
                     encoded_pairs = self.tokenizer.encode_chat_inputs(example, encode_one_turn=self.encode_one_turn)
             else:
+                if objects.get("bbox") and images and self.template.grounding_plugin.norm_bbox != "none":
+                    # Normalized bbox coordinates are relative to the image they
+                    # belong to, so the plugin needs the source resolutions.
+                    sizes = [self._get_image_size(image) for image in images]
+                    objects = dict(objects)
+                    objects["width"] = [size[0] for size in sizes]
+                    objects["height"] = [size[1] for size in sizes]
                 messages = self.template.grounding_plugin.process_messages(
                     example["messages"],
                     objects,
@@ -806,6 +835,7 @@ class BaseSFTDataset:
 
         # label shift
         labels = labels[1:] + [-100]
+        labels = self._mask_mm_token_labels(tokens, labels)
 
         pos_ids = list(range(len(tokens)))
 
@@ -884,6 +914,16 @@ class BaseSFTDataset:
         labels = [labels[i] for i in keep_idx]
 
         return input_ids, labels
+
+    def _mask_mm_token_labels(self, tokens, labels):
+        if not self.use_template or self.template_backend == "jinja" or self.template is None:
+            return labels
+
+        mm_plugin = getattr(self.template, "mm_plugin", None)
+        if not getattr(mm_plugin, "mask_mm_token_labels", False):
+            return labels
+
+        return mm_plugin.process_tokens(tokens, self.processor, labels=labels)
 
     def _encode_truncated(self, input_ids, labels):
         length = self._get_length(input_ids, labels)
