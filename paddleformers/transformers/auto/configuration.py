@@ -33,6 +33,7 @@ __all__ = [
 
 CONFIG_MAPPING_NAMES = OrderedDict(
     [
+        ("deepseek_ocr2", "DeepseekOcr2Config"),
         ("aya_vision", "AyaVisionConfig"),
         ("cohere2", "Cohere2Config"),
         ("deepseek_v3", "DeepseekV3Config"),
@@ -40,6 +41,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("paligemma", "PaliGemma2Config"),
         ("paligemma2", "PaliGemma2Config"),
         ("diff_transformer", "DiffTransformerConfig"),
+        ("deepseek_vl_v2", "DeepseekOCR2Config"),
         ("ernie4_5", "Ernie4_5Config"),
         ("ernie4_5_moe", "Ernie4_5_MoeConfig"),
         ("ernie4_5_moe_vl", "Ernie4_5_VLConfig"),
@@ -110,6 +112,7 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("cohere2", "Cohere2"),
         ("deepseek_v2", "DeepseekV2"),
         ("deepseek_v3", "DeepseekV3"),
+        ("deepseek_ocr2", "DeepseekOcr2Model"),
         ("paligemma", "PaliGemma2"),
         ("paligemma2", "PaliGemma2"),
         ("diff_transformer", "DiffTransformer"),
@@ -181,6 +184,7 @@ SPECIAL_MODEL_TYPE_TO_MODULE_NAME = OrderedDict(
         ("phi4mm", "phi4_multimodal"),
         ("qwen3_vl_text", "qwen3_vl"),
         ("qwen3_vl_moe_text", "qwen3_vl_moe"),
+        ("deepseek_vl_v2", "deepseek_ocr2"),
         ("internlm3", "intern_lm3"),
         ("internlm2", "intern"),
         # TODO(VL): Remove these when Gemma4 VL module (gemma4/) is created
@@ -458,6 +462,11 @@ class AutoConfig(PretrainedConfig):
         if resolved_model_type is not None:
             config_dict["model_type"] = resolved_model_type
         if "model_type" in config_dict:
+            # Historical remote-code checkpoints used the same model_type but a flat text config.
+            if config_dict["model_type"] == "deepseek_ocr2" and "text_config" not in config_dict:
+                from ..deepseek_ocr2.configuration import DeepseekOCR2Config
+
+                return DeepseekOCR2Config.from_dict(config_dict, **kwargs)
             try:
                 config_class = CONFIG_MAPPING[config_dict["model_type"]]
             except KeyError:

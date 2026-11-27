@@ -51,6 +51,7 @@ from .factory import _LazyAutoMapping
 
 IMAGE_PROCESSOR_MAPPING_NAMES.update(
     {
+        "deepseek_ocr2": ("DeepseekOcr2ImageProcessor",),
         "ernie4_5_moe_vl": ("Ernie4_5_VLImageProcessor"),
         "glm4v_moe": ("Glm4vImageProcessor", "Glm4vImageProcessorFast"),
         "kimi_k25": ("KimiK25VisionProcessor"),

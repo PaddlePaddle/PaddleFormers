@@ -97,6 +97,25 @@ import_structure = {
     "auto.tokenizer": ["AutoTokenizer", "TOKENIZER_MAPPING"],
     "auto.video_processing": ["AutoVideoProcessor", "VIDEO_PROCESSOR_MAPPING"],
     "auto.feature_extraction": ["AutoFeatureExtractor"],
+    "deepseek_ocr2.configuration": ["DeepseekOCR2Config"],
+    "deepseek_ocr2.processor": ["DeepseekOcr2ImageProcessor", "DeepseekOcr2Processor"],
+    "deepseek_ocr2.configuration_native": [
+        "DeepseekOcr2Config",
+        "DeepseekOcr2TextConfig",
+        "DeepseekOcr2VisionConfig",
+        "DeepseekOcr2SamVisionConfig",
+        "DeepseekOcr2VisionEncoderConfig",
+    ],
+    "deepseek_ocr2.modeling": [
+        "DeepseekOcr2Model",
+        "DeepseekOcr2ForCausalLM",
+        "DeepseekOcr2ForConditionalGeneration",
+    ],
+    "deepseek_ocr2.modeling_legacy": [
+        "DeepseekOCR2Model",
+        "DeepseekOCR2ForCausalLM",
+        "DeepseekOCR2ForConditionalGeneration",
+    ],
     "diff_transformer.configuration": ["DiffTransformerConfig"],
     "diff_transformer.modeling": [
         "DiffTransformerModel",
@@ -413,6 +432,7 @@ import_structure = {
     "qwen2": [],
     "glm_ocr": [],
     "qwen3": [],
+    "deepseek_ocr2": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
     "ernie4_5_moe": ["Ernie4_5_MoeDecoderLayer", "Ernie4_5_MoeModel", "Ernie4_5_MoeForCausalLM"],
@@ -617,6 +637,7 @@ if TYPE_CHECKING:
     from .auto.processing import *
     from .auto.tokenizer import *
     from .auto.video_processing import *
+    from .deepseek_ocr2 import *
     from .diff_transformer import *
     from .deepseek_v3 import *
     from .ernie4_5 import *

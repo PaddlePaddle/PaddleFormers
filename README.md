@@ -172,7 +172,12 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     </tr>
     <!-- VLM 分类 - 跨行合并开始 -->
     <tr>
-      <td rowspan="6" style="vertical-align: top;">VLM</td>
+      <td rowspan="8" style="vertical-align: top;">VLM</td>
+      <td>DeepSeek-OCR-2</td>
+      <td>deepseek-community/DeepSeek-OCR-2（Transformers 原生格式）；deepseek-ai/DeepSeek-OCR-2（旧格式）</td>
+      <td>deepseek_ocr2_native；deepseek_ocr2（旧格式）</td>
+    </tr>
+    <tr>
       <td>Llama Guard 4</td>
       <td>meta-llama/Llama-Guard-4-12B</td>
       <td>llama4_vl</td>
@@ -214,6 +219,10 @@ PaddleFormers 是基于百度深度学习框架 PaddlePaddle 搭建的 Transform
     </tr>
   </tbody>
 </table>
+
+DeepSeek-OCR-2 原生接口为 `DeepseekOcr2ForConditionalGeneration` / `DeepseekOcr2Processor`，使用嵌套的 `text_config`、`vision_config` 和 `deepseek_ocr2_native` 模板。支持全局图像、局部切片、视觉梯度和 KV cache，loss 的 labels 沿用 PaddleFormers 的预先 shift 约定。
+
+原生权重需包含 `model.language_model`、`model.vision_tower` 和 `model.multi_modal_projector` 前缀。新版 Transformers 默认保存可能还原旧 remote-code 的命名，请用 `hf_model.save_pretrained(output_dir, save_original_format=False)` 导出原生权重，再用 PaddleFormers Auto 类加载。旧的平铺配置、`DeepseekOCR2*` 接口及 `deepseek_ocr2` 模板保留给历史 checkpoint/CINN 资源；两种格式不可混用。原生 MoE 当前限定单设备，未声明 TP/SP 支持。
 
 * 更多关于模型训练能力的支持细节，请参考：[PaddleFormers 模型能力矩阵](./docs/zh/model_capability.md)
 * 带有🏛️标签的模型是 PaddleFormers 官方维护的模型
