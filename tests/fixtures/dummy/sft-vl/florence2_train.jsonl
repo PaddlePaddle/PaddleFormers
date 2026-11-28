@@ -1,0 +1,4 @@
+{"messages": [{"role": "user", "content": "<image><CAPTION>"}, {"role": "assistant", "content": "A gray square."}], "images": ["images/florence2/gray.png"]}
+{"messages": [{"role": "user", "content": "<image><DETAILED_CAPTION>"}, {"role": "assistant", "content": "The image is a plain gray square with no objects in it."}], "images": ["images/florence2/gray.png"]}
+{"messages": [{"role": "user", "content": "<image><OD>"}, {"role": "assistant", "content": "square<loc_0><loc_0><loc_999><loc_999>"}], "images": ["images/florence2/gray.png"]}
+{"messages": [{"role": "user", "content": "<image><CAPTION_TO_PHRASE_GROUNDING>a gray square"}, {"role": "assistant", "content": "a gray square<loc_0><loc_0><loc_999><loc_999>"}], "images": ["images/florence2/gray.png"]}

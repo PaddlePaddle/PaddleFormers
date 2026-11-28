@@ -369,6 +369,14 @@ import_structure = {
     "qwen2_vl.processor": ["Qwen2VLProcessor"],
     "qwen2_vl.video_processor": ["Qwen2VLVideoProcessor"],
     "qwen2_vl.vision_process": ["process_vision_info"],
+    "florence2.configuration": ["Florence2Config", "Florence2LanguageConfig", "Florence2VisionConfig"],
+    "florence2.image_processor": ["Florence2ImageProcessor"],
+    "florence2.modeling": [
+        "Florence2ForConditionalGeneration",
+        "Florence2LanguageForConditionalGeneration",
+        "Florence2VisionModel",
+    ],
+    "florence2.processor": ["Florence2Processor"],
     "qwen3.configuration": ["Qwen3Config"],
     "qwen3.modeling": [
         "Qwen3Model",
@@ -412,6 +420,7 @@ import_structure = {
     "llama4": [],
     "qwen2": [],
     "glm_ocr": [],
+    "florence2": [],
     "qwen3": [],
     "deepseek_v3": [],
     "ernie4_5": ["Ernie4_5DecoderLayer", "Ernie4_5Model", "Ernie4_5_ForCausalLM"],
@@ -659,6 +668,7 @@ if TYPE_CHECKING:
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .florence2 import *
     from .openelm import *
     from .stablelm import *
     from .molmo import *

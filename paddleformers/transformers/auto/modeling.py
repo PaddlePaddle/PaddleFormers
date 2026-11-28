@@ -101,6 +101,7 @@ MAPPING_NAMES = OrderedDict(
         ("Gemma3Text", "gemma3_text"),
         ("SiglipVision", "siglip_vision_model"),
         ("Gemma4Moe", "gemma4_moe"),
+        ("Florence2", "florence2"),
         ("Glm4vMoe", "glm4v_moe"),
         ("GlmOcr", "glm_ocr"),
         ("OpenELM", "openelm"),
