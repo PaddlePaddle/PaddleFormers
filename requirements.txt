@@ -1,4 +1,5 @@
 colorlog
+einops>=0.8,<0.9
 scikit-learn
 multiprocess
 datasets >= 3.0.0

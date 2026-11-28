@@ -1,0 +1,265 @@
+{
+  "date": "2026-10-19",
+  "base_commit": "f7fa77f02e",
+  "model_directory": "/sda/ggbond/backup-from-10.112.4.160-2026-10-04/data/ggbond/Falcon_Perception",
+  "paddle_environment": "/sda/ggbond/miniconda3/envs/paddle_falcon",
+  "torch_environment": "/sda/ggbond/miniconda3/envs/falcon",
+  "gpu": {
+    "paddle": 6,
+    "torch": 7,
+    "hardware": "NVIDIA GeForce RTX 3090"
+  },
+  "precision": "float32",
+  "weight_mapping": {
+    "loaded": 231,
+    "transposed_linear_weights": 125,
+    "missing_keys": [],
+    "unexpected_keys": []
+  },
+  "cases": [
+    {
+      "name": "final_cat_1024",
+      "query": "cat",
+      "image": "/sda/ggbond/falcon-perception-run/sample_cats.png",
+      "dtype": "float32",
+      "min_dimension": 256,
+      "max_dimension": 1024,
+      "forward_steps": 9,
+      "instances": 2,
+      "max_logits_abs": 0.0003204345703125,
+      "max_hidden_relative_l2": 3.940958955318729e-05,
+      "mask_ious": [
+        1.0,
+        0.999877713237542
+      ],
+      "max_geometry_abs": 0.0,
+      "report": "/sda/ggbond/falcon-perception-run/alignment/final_cat_1024/report.json",
+      "overlay": "/sda/ggbond/falcon-perception-run/alignment/final_cat_1024/paddle/overlay.png",
+      "historical_diagnostics_passed": true,
+      "acceptance_status": "Not evaluated against full prefill logits and ten actual generated tokens in this historical report."
+    },
+    {
+      "name": "final_remote_256",
+      "query": "remote control",
+      "image": "/sda/ggbond/falcon-perception-run/sample_cats.png",
+      "dtype": "float32",
+      "min_dimension": 128,
+      "max_dimension": 256,
+      "forward_steps": 9,
+      "instances": 2,
+      "max_logits_abs": 0.0002593994140625,
+      "max_hidden_relative_l2": 3.8345474240604015e-06,
+      "mask_ious": [
+        0.9986199575371549,
+        0.9994685797794606
+      ],
+      "max_geometry_abs": 0.0,
+      "report": "/sda/ggbond/falcon-perception-run/alignment/final_remote_256/report.json",
+      "overlay": "/sda/ggbond/falcon-perception-run/alignment/final_remote_256/paddle/overlay.png",
+      "historical_diagnostics_passed": true,
+      "acceptance_status": "Not evaluated against full prefill logits and ten actual generated tokens in this historical report."
+    },
+    {
+      "name": "final_elephant_256",
+      "query": "elephant",
+      "image": "/sda/ggbond/falcon-perception-run/sample_cats.png",
+      "dtype": "float32",
+      "min_dimension": 128,
+      "max_dimension": 256,
+      "forward_steps": 3,
+      "instances": 0,
+      "max_logits_abs": 0.00020599365234375,
+      "max_hidden_relative_l2": 3.3390589554638986e-06,
+      "mask_ious": [],
+      "max_geometry_abs": 0,
+      "report": "/sda/ggbond/falcon-perception-run/alignment/final_elephant_256/report.json",
+      "overlay": "/sda/ggbond/falcon-perception-run/alignment/final_elephant_256/paddle/overlay.png",
+      "historical_diagnostics_passed": true,
+      "acceptance_status": "Not evaluated against full prefill logits and ten actual generated tokens in this historical report."
+    },
+    {
+      "name": "final_portrait_512",
+      "query": "cat",
+      "image": "/sda/ggbond/falcon-perception-run/sample_cats_portrait.png",
+      "dtype": "float32",
+      "min_dimension": 256,
+      "max_dimension": 512,
+      "forward_steps": 9,
+      "instances": 2,
+      "max_logits_abs": 0.000133514404296875,
+      "max_hidden_relative_l2": 6.851373625352213e-06,
+      "mask_ious": [
+        0.9999305386725941,
+        0.9999210032586155
+      ],
+      "max_geometry_abs": 0.0,
+      "report": "/sda/ggbond/falcon-perception-run/alignment/final_portrait_512/report.json",
+      "overlay": "/sda/ggbond/falcon-perception-run/alignment/final_portrait_512/paddle/overlay.png",
+      "historical_diagnostics_passed": true,
+      "acceptance_status": "Not evaluated against full prefill logits and ten actual generated tokens in this historical report."
+    }
+  ],
+  "unit_tests": {
+    "passed": 19,
+    "path": "tests/transformers/falcon_perception"
+  },
+  "bfloat16": {
+    "passed": false,
+    "status": "Not accepted: diagnostic last-position logits max_abs=1.0 exceeds 0.01; full-forward and ten-token acceptance not completed.",
+    "mask_ious": [
+      0.9592715282336239,
+      0.9607330643189044
+    ],
+    "report": "/sda/ggbond/falcon-perception-run/alignment/report_bf16_256_rounded.json"
+  },
+  "limits": [
+    "Single image and query per call; dynamic Paddle inference",
+    "Explicit model class and Auto entry points with strict local safetensors loading; training extensions removed",
+    "Small numerical regression suite, not dataset quality evaluation"
+  ],
+  "repeated_calls": {
+    "passed": true,
+    "queries": [
+      "cat",
+      "elephant",
+      "cat"
+    ],
+    "counts": [
+      2,
+      0,
+      2
+    ],
+    "repeated_prediction_exact": true,
+    "gpu": 6,
+    "dtype": "float32"
+  },
+  "diagnostic_thresholds": {
+    "logits_atol": 0.001,
+    "hidden_relative_l2": 5e-05,
+    "upsampler_relative_l2": 0.002,
+    "geometry_atol": 1e-06,
+    "min_mask_iou": 0.99
+  },
+  "acceptance": {
+    "criteria": {
+      "forward": "Conservative maximum absolute diff <= 0.01 over every prompt position and vocabulary entry",
+      "generation": "Normal outputs and first ten actual generated token IDs exactly equal to Transformers",
+      "additional_diagnostics": "Informational unless --strict-diagnostics is provided"
+    },
+    "passed": true,
+    "validated_scope": "FP32, single GPU, four-cat composite, min/max=256/512, query=cat",
+    "report": "/sda/ggbond/falcon-perception-run/alignment/acceptance_fp32_four_cats_512/report.json",
+    "forward": {
+      "passed": true,
+      "shape": [
+        1,
+        400,
+        65536
+      ],
+      "max_abs": 0.003452301025390625,
+      "mean_abs": 4.274102875244878e-05,
+      "atol": 0.01,
+      "inputs_equal": true
+    },
+    "generation": {
+      "passed": true,
+      "required_tokens": 10,
+      "reference_length": 14,
+      "actual_length": 14,
+      "reference_prefix": [
+        268,
+        240,
+        241,
+        262,
+        240,
+        241,
+        262,
+        240,
+        241,
+        262
+      ],
+      "actual_prefix": [
+        268,
+        240,
+        241,
+        262,
+        240,
+        241,
+        262,
+        240,
+        241,
+        262
+      ],
+      "matching_prefix_length": 10,
+      "first_mismatch_index": null,
+      "sufficient_tokens": true
+    },
+    "outputs": {
+      "reference": {
+        "passed": true,
+        "instances": 4
+      },
+      "actual": {
+        "passed": true,
+        "instances": 4
+      },
+      "passed": true
+    },
+    "additional_case_1024": {
+      "passed": false,
+      "report": "/sda/ggbond/falcon-perception-run/alignment/acceptance_fp32_1024/report_cpu_rope.json",
+      "forward": {
+        "passed": false,
+        "shape": [
+          1,
+          1219,
+          65536
+        ],
+        "max_abs": 0.0360565185546875,
+        "mean_abs": 0.00012904549676208068,
+        "atol": 0.01,
+        "inputs_equal": true
+      },
+      "generation": {
+        "passed": false,
+        "required_tokens": 10,
+        "reference_length": 8,
+        "actual_length": 8,
+        "reference_prefix": [
+          268,
+          240,
+          241,
+          262,
+          240,
+          241,
+          262,
+          263
+        ],
+        "actual_prefix": [
+          268,
+          240,
+          241,
+          262,
+          240,
+          241,
+          262,
+          263
+        ],
+        "matching_prefix_length": 8,
+        "first_mismatch_index": null,
+        "sufficient_tokens": false
+      },
+      "outputs": {
+        "reference": {
+          "passed": true,
+          "instances": 2
+        },
+        "actual": {
+          "passed": true,
+          "instances": 2
+        },
+        "passed": true
+      }
+    }
+  }
+}

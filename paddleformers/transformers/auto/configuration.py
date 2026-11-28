@@ -67,6 +67,7 @@ CONFIG_MAPPING_NAMES = OrderedDict(
         ("minimax_m2", "MiniMaxM2Config"),
         ("minicpm", "MiniCPMConfig"),
         ("minicpm4_1", "MiniCPM4_1Config"),
+        ("falcon_perception", "FalconPerceptionConfig"),
         ("deepseek_v4", "DeepseekV4Config"),
         ("gpt_oss", "GptOssConfig"),
         ("minicpm3", "MiniCPM3Config"),

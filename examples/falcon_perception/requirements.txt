@@ -1,0 +1,6 @@
+# Optional dependencies on top of this repository's Paddle inference environment.
+einops>=0.8,<0.9
+pycocotools>=2.0.10,<3
+safetensors>=0.6
+# Used only by compare_reference.py for instance matching.
+scipy>=1.10

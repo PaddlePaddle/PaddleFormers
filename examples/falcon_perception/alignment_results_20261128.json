@@ -1,0 +1,275 @@
+{
+  "date": "2026-11-28",
+  "scope": "single-image FP32 inference; no training validation",
+  "pr_base_commit": "61ebce6f1d6a2ee8287d279e166d87386d22290e",
+  "environment": {
+    "paddle": {
+      "python": "3.10.22",
+      "framework": "3.4.0.post20260907+4d8f64b7049",
+      "transformers": "5.3.0"
+    },
+    "torch": {
+      "python": "3.10.22",
+      "framework": "2.11.0+cu128",
+      "transformers": "5.4.0"
+    },
+    "gpu": "NVIDIA GeForce RTX 3090 (Paddle GPU 6, PyTorch GPU 7)"
+  },
+  "settings": {
+    "dtype": "float32",
+    "tf32": false,
+    "query": "cat",
+    "min_dimension": 256,
+    "max_dimension": 512,
+    "max_new_tokens": 64,
+    "temperature": 0.0,
+    "seed": 42,
+    "torch_flex_attention_tile": [
+      32,
+      32
+    ]
+  },
+  "image": {
+    "name": "sample_four_cats.png",
+    "size_bytes": 705032,
+    "sha256": "d6800de93cdc4f4cfdaf05e30eed5bf4ffe5b07dd7cfb772ef6b114f3b90d8ec"
+  },
+  "checkpoint": {
+    "name": "Falcon_Perception",
+    "weights_sha256": "c680d5b1a834a2df61baae9dd694b95856872609d0a769702faf5ad658297641",
+    "source_code_sha256": {
+      "anyup.py": "1a150f37dbb8366954b7f62704f250ce92819a115e156b1fe53108ced44f214d",
+      "attention.py": "e7265e33ab3722bc7b001dd33ecfeb59758635eb225a4efa70707a0dcd659b42",
+      "configuration_falcon_perception.py": "ad1a0bdc9a2dca98f9657b9ee1f06deca23d80343f61b03f93f93916a44427a3",
+      "modeling_falcon_perception.py": "987b371068e6120e5f08458b37dec638d88e1ecb330a6661eeaeba6dd4a27552",
+      "processing_falcon_perception.py": "80ba44e6aa6eaa5f11b335b10fbe62bfcb63bc2b73c7a8fdbe049304b75e5d8d",
+      "rope.py": "8446ee8047a7da4291a9b4b91bbee2e7ca988dc05ab94ce65d9dc12868c345c7"
+    }
+  },
+  "prefill_inputs": {
+    "input_tokens": {
+      "shape": [
+        1,
+        400
+      ],
+      "dtype": "int64"
+    },
+    "input_rope_pos_t": {
+      "shape": [
+        1,
+        400
+      ],
+      "dtype": "int64"
+    },
+    "input_rope_pos_hw": {
+      "shape": [
+        1,
+        400,
+        2
+      ],
+      "dtype": "float32"
+    },
+    "input_pixel_values": {
+      "shape": [
+        1,
+        1,
+        512,
+        512,
+        3
+      ],
+      "dtype": "float32"
+    },
+    "input_pixel_mask": {
+      "shape": [
+        1,
+        1,
+        512,
+        512
+      ],
+      "dtype": "int64"
+    },
+    "input_coord_xy": {
+      "shape": [
+        0
+      ],
+      "dtype": "float32"
+    },
+    "input_size_hw": {
+      "shape": [
+        0
+      ],
+      "dtype": "float32"
+    }
+  },
+  "first_twenty_input_token_ids": [
+    244,
+    245,
+    246,
+    247,
+    248,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227,
+    227
+  ],
+  "acceptance": {
+    "forward": {
+      "passed": true,
+      "shape": [
+        1,
+        400,
+        65536
+      ],
+      "max_abs": 0.003452301025390625,
+      "mean_abs": 4.274102875244878e-05,
+      "atol": 0.01,
+      "first_20_positions": {
+        "positions": 20,
+        "shape": [
+          1,
+          20,
+          65536
+        ],
+        "mean_abs": 3.637876862114808e-05,
+        "max_abs": 0.000202178955078125,
+        "per_position_mean_abs": [
+          2.6438612621859647e-05,
+          1.4349010598380119e-05,
+          4.825019459531177e-06,
+          2.119297096214723e-05,
+          6.486115671577863e-05,
+          1.8267995983478613e-05,
+          0.00010330047621209815,
+          6.238947207748424e-05,
+          4.341805970398127e-05,
+          1.620172736238601e-05,
+          2.2609387542615877e-05,
+          3.19277507969673e-05,
+          6.130450537966681e-05,
+          2.8273500902287196e-05,
+          9.473631234868662e-05,
+          1.7760446098691318e-05,
+          1.9634760519693373e-05,
+          4.1311164238777565e-05,
+          1.6983771729428554e-05,
+          1.778927116902196e-05
+        ],
+        "per_position_max_abs": [
+          0.00012969970703125,
+          8.392333984375e-05,
+          2.574920654296875e-05,
+          0.000110626220703125,
+          0.00019073486328125,
+          9.5367431640625e-05,
+          0.000202178955078125,
+          0.0001220703125,
+          0.000125885009765625,
+          8.0108642578125e-05,
+          9.1552734375e-05,
+          8.7738037109375e-05,
+          0.0001220703125,
+          8.392333984375e-05,
+          0.0001544952392578125,
+          8.869171142578125e-05,
+          6.866455078125e-05,
+          9.918212890625e-05,
+          7.2479248046875e-05,
+          8.0108642578125e-05
+        ]
+      },
+      "inputs_equal": true
+    },
+    "generation": {
+      "passed": true,
+      "required_tokens": 10,
+      "reference_length": 14,
+      "actual_length": 14,
+      "reference_prefix": [
+        268,
+        240,
+        241,
+        262,
+        240,
+        241,
+        262,
+        240,
+        241,
+        262
+      ],
+      "actual_prefix": [
+        268,
+        240,
+        241,
+        262,
+        240,
+        241,
+        262,
+        240,
+        241,
+        262
+      ],
+      "matching_prefix_length": 10,
+      "first_mismatch_index": null,
+      "sufficient_tokens": true
+    },
+    "outputs": {
+      "reference": {
+        "passed": true,
+        "instances": 4
+      },
+      "actual": {
+        "passed": true,
+        "instances": 4
+      },
+      "passed": true
+    }
+  },
+  "diagnostics_passed": true,
+  "predictions": {
+    "passed": true,
+    "reference_count": 4,
+    "actual_count": 4,
+    "instances": [
+      {
+        "reference": 0,
+        "actual": 0,
+        "mask_iou": 0.9999028544597899,
+        "geometry_max_abs": 0.0,
+        "passed": true
+      },
+      {
+        "reference": 1,
+        "actual": 1,
+        "mask_iou": 0.9999826890785396,
+        "geometry_max_abs": 0.0,
+        "passed": true
+      },
+      {
+        "reference": 2,
+        "actual": 2,
+        "mask_iou": 0.9999113239336703,
+        "geometry_max_abs": 0.0,
+        "passed": true
+      },
+      {
+        "reference": 3,
+        "actual": 3,
+        "mask_iou": 0.9998707652543155,
+        "geometry_max_abs": 0.0,
+        "passed": true
+      }
+    ]
+  },
+  "passed": true
+}
