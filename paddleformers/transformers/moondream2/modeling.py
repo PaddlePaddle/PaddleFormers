@@ -735,7 +735,32 @@ class Moondream2Model(Moondream2PreTrainedModel):
             # bidirectional image block. With a single image per sample the
             # collator indices are plain causal, so drop them and build the
             # dense causal + image-block mask instead; the attention layer then
-            # falls back from flashmask to eager for this step.
+            # falls back from flashmask to eager for this step. The checks below
+            # guarantee that nothing but the padded tail is lost.
+            if row_indices.ndim == 3:
+                row_indices = row_indices.unsqueeze(-1)
+            if row_indices.shape[-1] != 1:
+                raise ValueError(
+                    "Moondream2 only supports single-bound causal `attn_mask_startend_row_indices`, "
+                    "because the image block mask replaces these indices."
+                )
+            # Dropping the indices may only lose the padded tail, never a document
+            # boundary: a single document keeps one end for every real key, while a
+            # packed row introduces a new document end in the middle of the row.
+            # Padded keys fall back to their own column index and are excluded by
+            # the 2-D key padding mask applied to the dense mask below.
+            key_columns = row_indices.astype("int64")[..., 0]
+            column_ids = paddle.arange(key_columns.shape[-1], dtype="int64")
+            real_keys = key_columns != column_ids
+            starts_new_document = paddle.logical_and(
+                key_columns[..., 1:] != key_columns[..., :-1], real_keys[..., 1:]
+            )
+            if bool(paddle.any(starts_new_document)):
+                raise ValueError(
+                    "Moondream2 does not support packed sequences: `attn_mask_startend_row_indices` "
+                    "describes more than one document per sample, so its boundaries cannot be "
+                    "replaced by the image block mask. Disable packing for this model."
+                )
             row_indices = None
 
         if row_indices is not None or (

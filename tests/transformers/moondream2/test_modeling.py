@@ -18,6 +18,7 @@ import tempfile
 import unittest
 
 import paddle
+from PIL import Image
 
 from paddleformers.transformers import (
     Moondream2Config,
@@ -27,6 +28,7 @@ from paddleformers.transformers import (
     Moondream2VisionConfig,
     Moondream2VisionModel,
 )
+from paddleformers.transformers.moondream2.image_processor import Moondream2ImageProcessor
 from tests.testing_utils import gpu_device_initializer
 from tests.transformers.test_configuration_common import ConfigTester
 from tests.transformers.test_modeling_common import ModelTesterMixin
@@ -256,6 +258,86 @@ class Moondream2ModelTest(ModelTesterMixin, unittest.TestCase):
                 return_dict=True,
             )
         self.assertTrue(paddle.allclose(outputs_2d.logits, outputs_4d.logits, atol=1e-6, rtol=1e-6))
+
+    def test_encode_image_handles_mixed_crop_counts(self):
+        model, _ = self._get_model_and_inputs()
+        image_processor = Moondream2ImageProcessor(
+            crop_size=self.model_tester.crop_size,
+            patch_size=self.model_tester.patch_size,
+            max_crops=2,
+            overlap_margin=1,
+        )
+        output = image_processor(
+            [Image.new("RGB", (8, 8)), Image.new("RGB", (40, 16))], return_tensors="pd"
+        )
+
+        # The two samples need a different number of crops and share the batch.
+        self.assertEqual(output["crop_counts"].tolist(), [2, 3])
+        self.assertEqual(output["pixel_values"].shape[1], image_processor.max_crops + 1)
+        with paddle.no_grad():
+            image_features = model.model.encode_image(
+                output["pixel_values"],
+                image_sizes=output["image_sizes"],
+                crop_counts=output["crop_counts"],
+            )
+        self.assertEqual(image_features.shape[:2], [2, self.model_tester.num_image_tokens])
+
+    def test_multimodal_forward_accepts_single_document_row_indices(self):
+        model, inputs = self._get_model_and_inputs()
+        _, input_ids, attention_mask, pixel_values, image_sizes, crop_counts, _ = inputs
+        valid_length = self.model_tester.seq_length - 2
+        # Mirrors the collator: real keys share one document end and the padded
+        # tail falls back to its own column index, so dropping the indices only
+        # drops the padding.
+        document_end = paddle.full([1, 1, valid_length, 1], valid_length, dtype="int32")
+        padded_tail = paddle.arange(valid_length, self.model_tester.seq_length, dtype="int32").reshape(
+            [1, 1, -1, 1]
+        )
+        row_indices = paddle.concat([document_end, padded_tail], axis=2).expand(
+            [self.model_tester.batch_size, -1, -1, -1]
+        )
+        padded_mask = attention_mask.clone()
+        padded_mask[:, valid_length:] = 0
+        with paddle.no_grad():
+            expected = model(
+                input_ids=input_ids,
+                attention_mask=padded_mask,
+                pixel_values=pixel_values,
+                image_sizes=image_sizes,
+                crop_counts=crop_counts,
+                return_dict=True,
+            ).logits
+            actual = model(
+                input_ids=input_ids,
+                attention_mask=padded_mask,
+                pixel_values=pixel_values,
+                image_sizes=image_sizes,
+                crop_counts=crop_counts,
+                attn_mask_startend_row_indices=row_indices,
+                return_dict=True,
+            ).logits
+        self.assertTrue(
+            paddle.allclose(expected[:, :valid_length], actual[:, :valid_length], atol=1e-6, rtol=1e-6)
+        )
+
+    def test_multimodal_forward_rejects_packed_row_indices(self):
+        model, inputs = self._get_model_and_inputs()
+        _, input_ids, attention_mask, pixel_values, image_sizes, crop_counts, _ = inputs
+        seq_length = self.model_tester.seq_length
+        # Two documents in one row: the first ends at 2, the second at seq_length.
+        row_indices = paddle.zeros([self.model_tester.batch_size, 1, seq_length, 1], dtype="int32")
+        row_indices[:, :, :2] = 2
+        row_indices[:, :, 2:] = seq_length
+        with self.assertRaisesRegex(ValueError, "does not support packed sequences"):
+            model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                pixel_values=pixel_values,
+                image_sizes=image_sizes,
+                crop_counts=crop_counts,
+                attn_mask_startend_row_indices=row_indices,
+                return_dict=True,
+            )
 
     def test_multimodal_loss_ignores_prefix_and_masked_labels(self):
         model, inputs = self._get_model_and_inputs()

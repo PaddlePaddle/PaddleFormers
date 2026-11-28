@@ -817,6 +817,7 @@ def mm_collate_fn(
         input_keys.append("image_input_idx")
         input_keys.append("image_pixel_values")
         input_keys.append("image_sizes")
+        input_keys.append("crop_counts")
         input_keys.append("image_attention_mask")
         input_keys.append("audio_input_features")
         input_keys.append("audio_embed_sizes")
@@ -877,6 +878,7 @@ def mm_collate_fn(
         batch_molmo_image_input_idx.append(molmo_image_input_idx)
         image_pixel_values = []
         image_sizes = []
+        crop_counts = []
         image_attention_mask = []
         audio_input_features = []
         audio_embed_sizes = []
@@ -901,6 +903,8 @@ def mm_collate_fn(
                 image_pixel_values.append(mm_inputs["image_pixel_values"])
             if "image_sizes" in mm_inputs:
                 image_sizes.append(mm_inputs["image_sizes"])
+            if "crop_counts" in mm_inputs:
+                crop_counts.append(mm_inputs["crop_counts"])
             if "image_attention_mask" in mm_inputs:
                 image_attention_mask.append(mm_inputs["image_attention_mask"])
             if "audio_input_features" in mm_inputs:
@@ -965,6 +969,8 @@ def mm_collate_fn(
             image_pixel_values = _pad_and_concat_multimodal_tensors(image_pixel_values)
         if len(image_sizes) > 0:
             image_sizes = paddle.concat(image_sizes, axis=0)
+        if len(crop_counts) > 0:
+            crop_counts = paddle.concat(crop_counts, axis=0)
         if len(image_attention_mask) > 0:
             image_attention_mask = _pad_and_concat_multimodal_tensors(image_attention_mask, pad_value=True)
         if len(audio_input_features) > 0:
@@ -1004,6 +1010,7 @@ def mm_collate_fn(
                     [],
                     image_pixel_values,
                     image_sizes,
+                    crop_counts,
                     image_attention_mask,
                     audio_input_features,
                     audio_embed_sizes,

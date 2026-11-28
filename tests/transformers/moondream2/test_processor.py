@@ -13,12 +13,18 @@
 # limitations under the License.
 
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
+from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from paddleformers.datasets.SFTDataset import Sequence
+from paddleformers.datasets.collate import mm_collate_fn
+from paddleformers.datasets.template.mm_plugin import Moondream2Plugin
 from paddleformers.transformers import Moondream2Processor
 from paddleformers.transformers.image_processing_utils import PaddleImageProcessingMixin
+from paddleformers.transformers.moondream2.image_processor import Moondream2ImageProcessor
 
 
 class _ImageProcessor(PaddleImageProcessingMixin):
@@ -101,6 +107,61 @@ class Moondream2ProcessorTest(unittest.TestCase):
     def test_task_prompt_invalid_text(self):
         with self.assertRaisesRegex(ValueError, "non-empty list of strings"):
             self.processor(images=["image"], text=[], task="query")
+
+
+class Moondream2CropCollateTest(unittest.TestCase):
+    """Crop padding and collation for samples that need different crop counts."""
+
+    def setUp(self):
+        # 8x8 crops with 1-patch overlap: a 1x1 image needs 2 crops in total
+        # (global + one tile), while a wide image needs 3 (global + 2 tiles).
+        self.image_processor = Moondream2ImageProcessor(
+            crop_size=8, patch_size=2, max_crops=2, overlap_margin=1
+        )
+        self.processor = Moondream2Processor(
+            image_processor=self.image_processor, tokenizer=_make_tokenizer()
+        )
+        self.plugin = Moondream2Plugin(image_token="<image>", video_token=None, audio_token=None)
+
+    def test_mm_collate_fn_preserves_per_sample_crop_counts(self):
+        small = self.plugin.get_mm_inputs([Image.new("RGB", (8, 8))], [], [], self.processor)
+        wide = self.plugin.get_mm_inputs([Image.new("RGB", (40, 16))], [], [], self.processor)
+
+        # ``max_crops`` bounds the local tiles, and the global crop is always
+        # prepended, so every sample is padded to ``max_crops + 1``.
+        expected_crops = self.image_processor.max_crops + 1
+        self.assertEqual(small["pixel_values"].shape[1], expected_crops)
+        self.assertEqual(wide["pixel_values"].shape[1], expected_crops)
+        self.assertEqual(small["crop_counts"].tolist(), [2])
+        self.assertEqual(wide["crop_counts"].tolist(), [3])
+
+        common = {"position_ids": [0, 1], "labels": [-100, 1], "num_examples": 1}
+        inputs = mm_collate_fn(
+            batch=[
+                [Sequence(token_ids=[1, 2], mm_inputs=dict(small), **common)],
+                [Sequence(token_ids=[3, 4], mm_inputs=dict(wide), **common)],
+            ],
+            template=None,
+            processor=None,
+            tokenizer=SimpleNamespace(pad_token_id=0),
+            training_args=SimpleNamespace(
+                num_nextn_predict_layers=0,
+                context_parallel_size=1,
+                tensor_model_parallel_size=1,
+                sequence_parallel=False,
+                fp8=False,
+            ),
+            model_args=SimpleNamespace(use_attn_mask_startend_row_indices=True, use_global_causal_attn=False),
+            max_seq_len=2,
+            padding_free=False,
+            model=None,
+        )
+
+        self.assertEqual(inputs["pixel_values"].shape, [2, expected_crops, 3, 8, 8])
+        self.assertEqual(inputs["image_sizes"].tolist(), [[1, 1], [1, 2]])
+        # The real crop count must reach the model; otherwise the padded zero
+        # crops are encoded as if they were image content.
+        self.assertEqual(inputs["crop_counts"].tolist(), [2, 3])
 
 
 if __name__ == "__main__":

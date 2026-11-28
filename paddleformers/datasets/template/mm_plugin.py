@@ -1907,12 +1907,15 @@ class Moondream2Plugin(BasePlugin):
 
         # The number of crops depends on the aspect ratio, so pad to the fixed
         # maximum here; otherwise ``paddle.concat`` over a batch whose images
-        # need different crop counts fails in the collator.
+        # need different crop counts fails in the collator. ``max_crops`` bounds
+        # the local tiles only and the global crop is always prepended, so the
+        # largest possible crop count is ``max_crops + 1``.
         pixel_values = mm_inputs["pixel_values"]
-        max_crops = getattr(processor.image_processor, "max_crops", None) or pixel_values.shape[1]
-        if pixel_values.shape[1] < max_crops:
+        max_crops = getattr(processor.image_processor, "max_crops", None)
+        target_crops = max_crops + 1 if max_crops else pixel_values.shape[1]
+        if pixel_values.shape[1] < target_crops:
             padding = paddle.zeros(
-                [pixel_values.shape[0], max_crops - pixel_values.shape[1], *pixel_values.shape[2:]],
+                [pixel_values.shape[0], target_crops - pixel_values.shape[1], *pixel_values.shape[2:]],
                 dtype=pixel_values.dtype,
             )
             mm_inputs["pixel_values"] = paddle.concat([pixel_values, padding], axis=1)
