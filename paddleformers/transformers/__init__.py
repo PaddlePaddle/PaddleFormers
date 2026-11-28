@@ -668,6 +668,7 @@ if TYPE_CHECKING:
     from .gemma3 import *
     from .shieldgemma2 import *
     from .glm_ocr import *
+    from .florence2 import *
     from .openelm import *
     from .stablelm import *
     from .molmo import *

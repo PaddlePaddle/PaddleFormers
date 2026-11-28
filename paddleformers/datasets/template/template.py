@@ -680,6 +680,9 @@ def get_template_and_fix_tokenizer(dataset_config) -> "Template":
     if not template.suffix:
         template.suffix = [tokenizer.eos_token]
         logger.warning("suffix is not specified, using eos token as suffix.")
+
+    if hasattr(template.mm_plugin, "validate_tokenizer"):
+        template.mm_plugin.validate_tokenizer(tokenizer, dataset_config.get("processor"))
     return template
 
 
@@ -815,12 +818,14 @@ register_template(
     mm_plugin=get_mm_plugin(name="paddleocr_vl", image_token="<|IMAGE_PLACEHOLDER|>"),
 )
 
+# Florence-2 (BART): encoder source is "<s>prompt</s>" and decoder target is "<s>response</s>",
+# matching Florence2Processor and the HF/ms-swift training format.
 register_template(
     name="florence2",
-    format_user=StringFormatter(slots=["{{content}}"]),
-    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_user=StringFormatter(slots=["{{content}}", {"eos_token"}]),
+    format_assistant=StringFormatter(slots=[{"bos_token"}, "{{content}}"]),
     format_system=StringFormatter(slots=["{{content}}"]),
-    format_prefix=EmptyFormatter(slots=[]),
+    format_prefix=EmptyFormatter(slots=[{"bos_token"}]),
     suffix=["</s>"],
     mm_plugin=get_mm_plugin(name="florence2", image_token="<image>"),
 )

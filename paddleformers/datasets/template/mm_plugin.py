@@ -550,6 +550,27 @@ class AyaVisionPlugin(BasePlugin):
 
 @dataclass
 class Florence2Plugin(BasePlugin):
+    def validate_tokenizer(self, tokenizer, processor):
+        r"""Check that the training tokenizer knows the task tokens (``<loc_*>``, ``<od>``, ...) the processor adds.
+
+        Original ``microsoft/Florence-2-*`` checkpoints ship a plain BART tokenizer and rely on the processor to add
+        these tokens; encoding SFT targets with such a tokenizer silently splits ``<loc_12>`` into sub-words.
+        """
+        task_tokens = getattr(processor, "task_tokens", None)
+        if task_tokens is None:
+            raise ValueError("Florence-2 template requires a Florence2Processor.")
+        missing = [
+            token
+            for token in task_tokens
+            if tokenizer.convert_tokens_to_ids(token) != processor.tokenizer.convert_tokens_to_ids(token)
+        ]
+        if missing:
+            raise ValueError(
+                f"The tokenizer is missing {len(missing)} Florence-2 task tokens (e.g. {missing[:3]}), so they would be "
+                "split into sub-words during training. Save the processor's tokenizer into the model directory first: "
+                "`AutoProcessor.from_pretrained(path).tokenizer.save_pretrained(path)`."
+            )
+
     @override
     def process_messages(
         self,
@@ -566,12 +587,16 @@ class Florence2Plugin(BasePlugin):
             raise ValueError("Florence-2 only supports image inputs.")
         if len(images) != 1:
             raise ValueError("Florence-2 supports exactly one image per prompt.")
+        if [message["role"] for message in messages] != ["user", "assistant"]:
+            raise ValueError("Florence-2 only supports single-turn samples (one user and one assistant message).")
+        if not hasattr(processor, "construct_prompts"):
+            raise ValueError("Florence-2 template requires a Florence2Processor to build task prompts.")
 
         messages = deepcopy(messages)
         for message in messages:
             content = message["content"].replace(IMAGE_PLACEHOLDER, "").strip()
-            if message["role"] == "user" and hasattr(processor, "_construct_prompts"):
-                content = processor._construct_prompts([content])[0]
+            if message["role"] == "user":
+                content = processor.construct_prompts([content])[0]
             message["content"] = content
         return messages
 

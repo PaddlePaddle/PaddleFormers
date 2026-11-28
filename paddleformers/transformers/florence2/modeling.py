@@ -642,7 +642,6 @@ class Florence2LanguageModel(nn.Layer):
         decoder_input_ids=None,
         decoder_attention_mask=None,
         encoder_output=None,
-        encoder_outputs=None,
         past_key_values=None,
         inputs_embeds=None,
         decoder_inputs_embeds=None,
@@ -658,7 +657,7 @@ class Florence2LanguageModel(nn.Layer):
                 self.config.pad_token_id,
                 self.config.decoder_start_token_id,
             )
-        encoder_outputs = encoder_outputs if encoder_outputs is not None else encoder_output
+        encoder_outputs = encoder_output
         if encoder_outputs is None:
             encoder_outputs = self.encoder(
                 input_ids=input_ids,
@@ -842,6 +841,7 @@ class Florence2PretrainedModel(PretrainedModel):
 
 
 class Florence2VisionModel(Florence2PretrainedModel):
+    config_class = Florence2VisionConfig
     main_input_name = "pixel_values"
 
     def __init__(self, config: Florence2VisionConfig):
@@ -869,6 +869,44 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
         )
         self.image_feature_source = config.vision_config.image_feature_source
         self.language_model = Florence2LanguageForConditionalGeneration(config.text_config)
+
+    @staticmethod
+    def _hf_transposed_weight_keys(config):
+        # Linear weights stored as [out, in] in HF checkpoints; all other keys share names and layouts.
+        keys = []
+        for stage, depth in enumerate(config.vision_config.depths):
+            for index in range(depth):
+                prefix = f"vision_tower.blocks.{stage}.{index}"
+                for block, attn in (("spatial_block", "window_attn"), ("channel_block", "channel_attn")):
+                    keys += [f"{prefix}.{block}.{attn}.fn.{name}.weight" for name in ("qkv", "proj")]
+                    keys += [f"{prefix}.{block}.ffn.fn.net.{name}.weight" for name in ("fc1", "fc2")]
+        attn_proj = ("q_proj", "k_proj", "v_proj", "out_proj")
+        for layer_id in range(config.text_config.encoder_layers):
+            prefix = f"language_model.model.encoder.layers.{layer_id}"
+            keys += [f"{prefix}.self_attn.{name}.weight" for name in attn_proj]
+            keys += [f"{prefix}.{name}.weight" for name in ("fc1", "fc2")]
+        for layer_id in range(config.text_config.decoder_layers):
+            prefix = f"language_model.model.decoder.layers.{layer_id}"
+            keys += [f"{prefix}.{attn}.{name}.weight" for attn in ("self_attn", "encoder_attn") for name in attn_proj]
+            keys += [f"{prefix}.{name}.weight" for name in ("fc1", "fc2")]
+        return keys
+
+    @classmethod
+    def _gen_aoa_config(cls, config: Florence2Config):
+        shared = "language_model.model.shared.weight"
+        aoa_statements = [f"{key}^T -> {key}" for key in cls._hf_transposed_weight_keys(config)]
+        # Encoder/decoder token embeddings are tied to `shared` and absent from HF checkpoints.
+        aoa_statements += [f"{shared} -> {shared}"]
+        aoa_statements += [
+            f"{shared} -> language_model.model.{part}.embed_tokens.weight" for part in ("encoder", "decoder")
+        ]
+        return {"aoa_statements": aoa_statements}
+
+    @classmethod
+    def _gen_inv_aoa_config(cls, config: Florence2Config):
+        aoa_statements = [f"{key}^T -> {key}" for key in cls._hf_transposed_weight_keys(config)]
+        aoa_statements += [f"language_model.model.{part}.embed_tokens.weight -> _" for part in ("encoder", "decoder")]
+        return {"aoa_statements": aoa_statements}
 
     def get_encoder(self):
         return self.language_model.get_encoder()
@@ -912,6 +950,14 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
         )
         return paddle.concat([image_features, inputs_embeds], axis=1), paddle.concat([image_mask, text_mask], axis=1)
 
+    def _get_inputs_embeds(self, input_ids=None, pixel_values=None, attention_mask=None):
+        inputs_embeds = self.get_input_embeddings()(input_ids) if input_ids is not None else None
+        if pixel_values is not None:
+            inputs_embeds, attention_mask = self._merge_image_features(
+                self._encode_image(pixel_values), inputs_embeds, attention_mask
+            )
+        return inputs_embeds, attention_mask
+
     @staticmethod
     def _is_sft_inputs(input_ids, labels):
         # PaddleFormers SFT batches carry the whole sequence with labels shifted left once
@@ -929,6 +975,16 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
         max_target = 1
         for row, label_row in zip(input_ids.tolist(), labels.tolist()):
             target_start = next((index for index, value in enumerate(label_row) if value != -100), len(row))
+            target_end = len(label_row) - next(
+                (index for index, value in enumerate(reversed(label_row)) if value != -100), len(label_row)
+            )
+            if -100 in label_row[target_start:target_end]:
+                # Packing, padding-free batches and multi-turn samples put several prompt/response pairs in one row,
+                # which cannot be mapped to a single encoder source and decoder target.
+                raise ValueError(
+                    "Florence-2 SFT expects one prompt and one response per row; "
+                    "packing, padding_free and multi-turn samples are not supported."
+                )
             # PaddleFormers SFT labels are shifted left once, so the first
             # supervised label predicts the token after this source position.
             source = row[: target_start + 1] or [self.config.bos_token_id]
@@ -954,7 +1010,6 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
         decoder_input_ids=None,
         decoder_attention_mask=None,
         encoder_output=None,
-        encoder_outputs=None,
         past_key_values=None,
         inputs_embeds=None,
         decoder_inputs_embeds=None,
@@ -963,27 +1018,22 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
         output_attentions=False,
         output_hidden_states=False,
         return_dict=True,
+        encoder_outputs=None,
         **kwargs,
     ):
+        # `encoder_outputs` is the HF name; PaddleFormers generation passes `encoder_output`.
+        if encoder_output is None:
+            encoder_output = encoder_outputs
         if self._is_sft_inputs(input_ids, labels):
             input_ids, labels, attention_mask = self._split_sft_inputs(input_ids, labels, attention_mask)
-        image_features = None
-        if encoder_output is None and encoder_outputs is None and inputs_embeds is None:
-            if input_ids is not None:
-                inputs_embeds = self.get_input_embeddings()(input_ids)
-            if pixel_values is not None:
-                image_features = self._encode_image(pixel_values)
-                inputs_embeds, attention_mask = self._merge_image_features(
-                    image_features,
-                    inputs_embeds,
-                    attention_mask,
-                )
+        if encoder_output is None and inputs_embeds is None:
+            inputs_embeds, attention_mask = self._get_inputs_embeds(input_ids, pixel_values, attention_mask)
         outputs = self.language_model(
             input_ids=None if inputs_embeds is not None else input_ids,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
             decoder_attention_mask=decoder_attention_mask,
-            encoder_output=encoder_output if encoder_output is not None else encoder_outputs,
+            encoder_output=encoder_output,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
             decoder_inputs_embeds=decoder_inputs_embeds,
@@ -995,12 +1045,28 @@ class Florence2ForConditionalGeneration(Florence2PretrainedModel, GenerationMixi
         )
         return outputs
 
-    def generate(self, input_ids=None, pixel_values=None, inputs_embeds=None, attention_mask=None, **kwargs):
+    @paddle.no_grad()
+    def generate(
+        self,
+        input_ids=None,
+        generation_config=None,
+        stopping_criteria=None,
+        streamer=None,
+        synced_gpus=None,
+        *,
+        pixel_values=None,
+        inputs_embeds=None,
+        attention_mask=None,
+        **kwargs,
+    ):
         if inputs_embeds is None:
-            if input_ids is not None:
-                inputs_embeds = self.get_input_embeddings()(input_ids)
-            if pixel_values is not None:
-                inputs_embeds, attention_mask = self._merge_image_features(
-                    self._encode_image(pixel_values), inputs_embeds, attention_mask
-                )
-        return self.language_model.generate(inputs_embeds=inputs_embeds, attention_mask=attention_mask, **kwargs)
+            inputs_embeds, attention_mask = self._get_inputs_embeds(input_ids, pixel_values, attention_mask)
+        return self.language_model.generate(
+            generation_config=generation_config,
+            stopping_criteria=stopping_criteria,
+            streamer=streamer,
+            synced_gpus=synced_gpus,
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            **kwargs,
+        )

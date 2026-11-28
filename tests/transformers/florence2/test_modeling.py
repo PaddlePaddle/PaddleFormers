@@ -2,6 +2,7 @@
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 
+import inspect
 import os
 import tempfile
 import unittest
@@ -12,6 +13,7 @@ import paddle
 from paddleformers.transformers import (
     Florence2Config,
     Florence2ForConditionalGeneration,
+    Florence2VisionModel,
 )
 from tests.testing_utils import require_package, slow
 from tests.transformers.test_configuration_common import ConfigTester
@@ -352,6 +354,50 @@ class Florence2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         paddle.testing.assert_close(loss, expected, atol=1e-6, rtol=1e-6)
         self.assertFalse(model._is_sft_inputs(input_ids, labels))
 
+    def test_sft_rows_with_several_responses_are_rejected(self):
+        # Packed / padding-free / multi-turn rows hold more than one supervised span.
+        model = Florence2ForConditionalGeneration(self.model_tester.get_config())
+        input_ids = paddle.to_tensor([[10, 11, 20, 2, 12, 13, 21, 2]])
+        labels = paddle.to_tensor([[-100, 20, 2, -100, -100, 21, 2, -100]])
+        self.assertTrue(model._is_sft_inputs(input_ids, labels))
+        with self.assertRaisesRegex(ValueError, "packing"):
+            model(input_ids=input_ids, labels=labels)
+
+    def test_hf_encoder_outputs_alias(self):
+        config, input_ids, attention_mask, decoder_input_ids, _, _ = self.model_tester.prepare_config_and_inputs()
+        model = Florence2ForConditionalGeneration(config)
+        model.eval()
+        with paddle.no_grad():
+            encoder_output = model.get_encoder()(input_ids=input_ids, attention_mask=attention_mask)
+            expected = model(
+                attention_mask=attention_mask, decoder_input_ids=decoder_input_ids, encoder_output=encoder_output
+            ).logits
+            actual = model(
+                attention_mask=attention_mask, decoder_input_ids=decoder_input_ids, encoder_outputs=encoder_output
+            ).logits
+        paddle.testing.assert_close(actual, expected)
+
+    def test_generate_keeps_base_signature(self):
+        params = list(inspect.signature(Florence2ForConditionalGeneration.generate).parameters.values())
+        self.assertEqual([param.name for param in params[1:3]], ["input_ids", "generation_config"])
+        self.assertTrue(
+            all(params[index].kind is inspect.Parameter.KEYWORD_ONLY for index in range(6, 9)),
+            "multimodal inputs must be keyword-only",
+        )
+        config, input_ids, attention_mask, _, _, pixel_values = self.model_tester.prepare_config_and_inputs()
+        model = Florence2ForConditionalGeneration(config)
+        model.eval()
+        generated = model.generate(
+            input_ids,
+            None,
+            pixel_values=pixel_values,
+            attention_mask=attention_mask,
+            max_new_tokens=2,
+            decode_strategy="greedy_search",
+        )[0]
+        self.assertEqual(generated.shape[0], input_ids.shape[0])
+        self.assertTrue(generated.stop_gradient)
+
     def test_loss_ignores_padded_labels(self):
         model = Florence2ForConditionalGeneration(self.model_tester.get_config())
         model.eval()
@@ -359,6 +405,27 @@ class Florence2ModelTest(ModelTesterMixin, GenerationTesterMixin, unittest.TestC
         loss = model(input_ids=input_ids, labels=paddle.to_tensor([[0, 20, 2]])).loss
         padded_loss = model(input_ids=input_ids, labels=paddle.to_tensor([[0, 20, 2, -100, -100]])).loss
         paddle.testing.assert_close(padded_loss, loss, atol=1e-6, rtol=1e-6)
+
+
+class Florence2VisionModelTest(unittest.TestCase):
+    def test_from_pretrained_uses_vision_config(self):
+        vision_config = Florence2ModelTester(self).get_config().vision_config
+        self.assertIs(Florence2VisionModel.config_class, type(vision_config))
+        model = Florence2VisionModel(vision_config)
+        model.eval()
+        pixel_values = floats_tensor([1, 3, 32, 32])
+        with paddle.no_grad():
+            expected = model(pixel_values)
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            model.save_pretrained(tmpdirname, save_safetensors=False, save_checkpoint_format="")
+            loaded = Florence2VisionModel.from_pretrained(tmpdirname, convert_from_hf=False, load_checkpoint_format="")
+            loaded.eval()
+            with paddle.no_grad():
+                actual = loaded(pixel_values)
+
+        self.assertEqual(list(actual.shape), [1, expected.shape[1], vision_config.dim_embed[-1]])
+        self.assertLessEqual(np.max(np.abs(expected.numpy() - actual.numpy())), 1e-5)
 
 
 class Florence2ModelIntegrationTest(unittest.TestCase):
@@ -447,6 +514,41 @@ class Florence2ModelLocalPretrainedTest(unittest.TestCase):
             with paddle.no_grad():
                 actual = loaded(**inputs_dict).logits
 
+        self.assertLessEqual(np.max(np.abs(expected.numpy() - actual.numpy())), 1e-5)
+
+    def test_aoa_config_matches_transpose_rule(self):
+        config = Florence2ModelTester(self).get_config()
+        model = Florence2ForConditionalGeneration(config)
+        expected = {
+            key
+            for key, value in model.state_dict().items()
+            if value.ndim == 2
+            and any(
+                key.endswith(f".{name}.weight") for name in Florence2ForConditionalGeneration.transpose_weight_keys
+            )
+        }
+        self.assertEqual(set(Florence2ForConditionalGeneration._hf_transposed_weight_keys(config)), expected)
+
+    def test_flex_checkpoint_save_load_consistency(self):
+        config, inputs_dict = Florence2ModelTester(self).prepare_config_and_inputs_for_common()
+        model = Florence2ForConditionalGeneration(config)
+        model.eval()
+
+        with paddle.no_grad():
+            expected = model(**inputs_dict).logits
+
+        with tempfile.TemporaryDirectory() as tmpdirname:
+            model.save_pretrained(tmpdirname, save_checkpoint_format="flex_checkpoint")
+            loaded = Florence2ForConditionalGeneration.from_pretrained(
+                tmpdirname, convert_from_hf=True, load_checkpoint_format="flex_checkpoint"
+            )
+            loaded.eval()
+            with paddle.no_grad():
+                actual = loaded(**inputs_dict).logits
+
+        self.assertIs(
+            loaded.language_model.model.encoder.embed_tokens.weight, loaded.language_model.model.shared.weight
+        )
         self.assertLessEqual(np.max(np.abs(expected.numpy() - actual.numpy())), 1e-5)
 
 

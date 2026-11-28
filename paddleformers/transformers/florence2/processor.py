@@ -17,6 +17,34 @@ class Florence2Processor(ProcessorMixin):
     image_processor_class = "AutoImageProcessor"
     tokenizer_class = ("BartTokenizer", "BartTokenizerFast")
 
+    # Task tokens Florence-2 adds on top of the BART vocabulary.
+    task_tokens = tuple(
+        ["<od>", "</od>", "<ocr>", "</ocr>"]
+        + [f"<loc_{index}>" for index in range(1000)]
+        + [
+            "<cap>",
+            "</cap>",
+            "<ncap>",
+            "</ncap>",
+            "<dcap>",
+            "</dcap>",
+            "<grounding>",
+            "</grounding>",
+            "<seg>",
+            "</seg>",
+            "<sep>",
+            "<region_cap>",
+            "</region_cap>",
+            "<region_to_desciption>",
+            "</region_to_desciption>",
+            "<proposal>",
+            "</proposal>",
+            "<poly>",
+            "</poly>",
+            "<and>",
+        ]
+    )
+
     @classmethod
     def _load_tokenizer_from_pretrained(
         cls,
@@ -34,34 +62,11 @@ class Florence2Processor(ProcessorMixin):
         if image_processor is None or tokenizer is None:
             raise ValueError("Florence2Processor requires both an image processor and a tokenizer.")
 
-        tokens = (
-            ["<od>", "</od>", "<ocr>", "</ocr>"]
-            + [f"<loc_{index}>" for index in range(1000)]
-            + [
-                "<cap>",
-                "</cap>",
-                "<ncap>",
-                "</ncap>",
-                "<dcap>",
-                "</dcap>",
-                "<grounding>",
-                "</grounding>",
-                "<seg>",
-                "</seg>",
-                "<sep>",
-                "<region_cap>",
-                "</region_cap>",
-                "<region_to_desciption>",
-                "</region_to_desciption>",
-                "<proposal>",
-                "</proposal>",
-                "<poly>",
-                "</poly>",
-                "<and>",
-            ]
-        )
         tokenizer.add_special_tokens(
-            {"additional_special_tokens": list(getattr(tokenizer, "additional_special_tokens", [])) + tokens}
+            {
+                "additional_special_tokens": list(getattr(tokenizer, "additional_special_tokens", []))
+                + list(self.task_tokens)
+            }
         )
         self.image_seq_length = getattr(image_processor, "image_seq_length", 577)
         self.task_prompts_without_inputs = {
@@ -85,7 +90,8 @@ class Florence2Processor(ProcessorMixin):
         }
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
 
-    def _construct_prompts(self, texts):
+    def construct_prompts(self, texts):
+        """Convert Florence-2 task tokens such as ``<CAPTION>`` into natural-language prompts."""
         prompts = []
         for text in texts:
             for task, prompt in self.task_prompts_without_inputs.items():
@@ -100,6 +106,9 @@ class Florence2Processor(ProcessorMixin):
                     break
             prompts.append(text)
         return prompts
+
+    # Name used by the HF processor.
+    _construct_prompts = construct_prompts
 
     def __call__(
         self,
@@ -138,7 +147,7 @@ class Florence2Processor(ProcessorMixin):
         if max_length is not None:
             max_length -= self.image_seq_length
         text_inputs = self.tokenizer(
-            self._construct_prompts(texts),
+            self.construct_prompts(texts),
             return_tensors=return_tensors,
             padding=padding,
             truncation=truncation,
