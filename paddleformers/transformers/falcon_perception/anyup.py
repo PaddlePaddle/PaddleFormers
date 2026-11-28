@@ -1,8 +1,18 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # Adapted from TII Falcon Perception (Apache-2.0).
+
 """Native Paddle AnyUp layers with chunked local cross attention."""
 import einops as E
 import paddle
@@ -80,7 +90,7 @@ class AnyUpRoPE(nn.Layer):
         super().__init__()
         self.dim = dim
         self.theta = theta
-        self.freqs = nn.Parameter(paddle.empty([2, self.dim]))
+        self.freqs = self.create_parameter([2, self.dim], default_initializer=nn.initializer.Normal(std=theta**-0.5))
 
     def forward(self, x: paddle.Tensor, coords: paddle.Tensor) -> paddle.Tensor:
         angle = coords @ self.freqs
@@ -90,8 +100,12 @@ class AnyUpRoPE(nn.Layer):
 class AttentionWrapper(nn.Layer):
     def __init__(self, qk_dim: int):
         super().__init__()
-        self.in_proj_weight = nn.Parameter(paddle.empty([qk_dim * 3, qk_dim]))
-        self.in_proj_bias = nn.Parameter(paddle.empty([qk_dim * 3]))
+        self.in_proj_weight = self.create_parameter(
+            [qk_dim * 3, qk_dim], default_initializer=nn.initializer.XavierUniform()
+        )
+        self.in_proj_bias = self.create_parameter(
+            [qk_dim * 3], is_bias=True, default_initializer=nn.initializer.Constant(0.0)
+        )
 
     def forward(self, x_q, x_k, x_v):
         w_q, w_k, w_v = self.in_proj_weight.chunk(3, axis=0)

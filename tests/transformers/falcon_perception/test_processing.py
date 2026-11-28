@@ -1,5 +1,17 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Licensed under the Apache License, Version 2.0.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Local image/token preprocessing checks; no pretrained tokenizer downloads."""
 import tempfile
 import unittest
@@ -101,6 +113,23 @@ class FalconPerceptionProcessingTest(unittest.TestCase):
         grayscale = self.processor.preprocess([Image.new("L", (12, 8), color=255)])[0]
         self.assertEqual(grayscale.shape, (1, 8, 12, 3))
         np.testing.assert_allclose(grayscale, 1.0, atol=1e-6)
+
+    def test_preprocessing_flags_override_defaults(self):
+        image = np.full([8, 12, 3], 128, dtype="uint8")
+        for default in (False, True):
+            processor = ImageProcessor(
+                patch_size=16, merge_size=1, do_resize=False, do_rescale=default, do_normalize=default
+            )
+            for rescale in (None, False, True):
+                for normalize in (None, False, True):
+                    with self.subTest(default=default, rescale=rescale, normalize=normalize):
+                        expected = image.astype("float32")
+                        if default if rescale is None else rescale:
+                            expected = expected / 255.0
+                        if default if normalize is None else normalize:
+                            expected = (expected - 0.5) / 0.5
+                        actual = processor.preprocess([image], do_rescale=rescale, do_normalize=normalize)[0]
+                        np.testing.assert_allclose(actual[0], expected, atol=1e-6)
 
     def test_empty_and_invalid_image_inputs(self):
         self.assertEqual(self.processor.preprocess(None), [])

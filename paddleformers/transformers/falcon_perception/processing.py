@@ -1,8 +1,18 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # Adapted from TII Falcon Perception (Apache-2.0).
+
 import io
 import math
 
@@ -168,9 +178,11 @@ class ImageProcessor(BaseImageProcessor):
                 min_pixels=self.min_pixels,
                 max_pixels=self.max_pixels,
             )
-        if do_rescale or self.do_rescale:
+        do_rescale = self.do_rescale if do_rescale is None else do_rescale
+        do_normalize = self.do_normalize if do_normalize is None else do_normalize
+        if do_rescale:
             image = self.rescale(image, scale=self.rescale_factor, input_data_format=input_data_format)
-        if do_normalize or self.do_normalize:
+        if do_normalize:
             image = self.normalize(
                 image=image, mean=self.image_mean, std=self.image_std, input_data_format=input_data_format
             )

@@ -1,6 +1,18 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Licensed under the Apache License, Version 2.0.
-"""Exercise the public Auto entry points with real local checkpoints."""
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Exercise AutoConfig and the explicit segmentation model loader."""
 import json
 import shutil
 
@@ -71,14 +83,15 @@ def test_auto_config_and_model_type_fallback(tmp_path):
     tiny_config().save_pretrained(str(tmp_path))
     config = AutoConfig.from_pretrained(str(tmp_path))
     assert type(config) is FalconPerceptionConfig
+    assert type(FalconPerceptionForSegmentation._from_config(config)) is FalconPerceptionForSegmentation
     for auto_class in AUTO_CLASSES:
-        assert type(auto_class.from_config(config)) is FalconPerceptionForSegmentation
+        with pytest.raises((AttributeError, ValueError)):
+            auto_class.from_config(config)
 
 
-@pytest.mark.parametrize("auto_class", AUTO_CLASSES)
-def test_auto_loads_hf_weights(auto_class, hf_checkpoint):
+def test_explicit_model_loads_hf_weights(hf_checkpoint):
     directory, expected = hf_checkpoint
-    model = auto_class.from_pretrained(str(directory), dtype="float32", local_files_only=True)
+    model = FalconPerceptionForSegmentation.from_pretrained(str(directory), dtype="float32", local_files_only=True)
     assert type(model) is FalconPerceptionForSegmentation
     assert not model.training
     assert model.weight_loading_info["num_transposed"] > 0
@@ -86,15 +99,14 @@ def test_auto_loads_hf_weights(auto_class, hf_checkpoint):
         np.testing.assert_array_equal(value.numpy(), expected[key])
 
 
-@pytest.mark.parametrize("auto_class", AUTO_CLASSES)
-def test_auto_loads_hf_subfolder(auto_class, hf_checkpoint, tmp_path):
+def test_explicit_model_loads_hf_subfolder(hf_checkpoint, tmp_path):
     directory, expected = hf_checkpoint
     nested = tmp_path / "nested"
     nested.mkdir()
     for name in ("config.json", "model.safetensors"):
         shutil.copy2(directory / name, nested / name)
     config = AutoConfig.from_pretrained(str(nested))
-    model = auto_class.from_pretrained(
+    model = FalconPerceptionForSegmentation.from_pretrained(
         str(tmp_path), subfolder="nested", config=config, cache_dir=str(tmp_path / "cache"), local_files_only=True
     )
     assert model.weight_loading_info["source"] == str(nested)
@@ -114,30 +126,27 @@ def test_auto_ignores_original_remote_code(hf_checkpoint):
     for name in ("configuration_broken.py", "modeling_broken.py"):
         (directory / name).write_text('raise RuntimeError("Original HF code must not run")\n')
     assert type(AutoConfig.from_pretrained(str(directory))) is FalconPerceptionConfig
-    assert type(AutoModelForCausalLM.from_pretrained(str(directory))) is FalconPerceptionForSegmentation
+    assert type(FalconPerceptionForSegmentation.from_pretrained(str(directory))) is FalconPerceptionForSegmentation
 
 
 def test_auto_from_config_dtype_restores_default():
     previous = paddle.get_default_dtype()
     try:
         paddle.set_default_dtype("float64")
-        model = AutoModel.from_config(tiny_config(), dtype="float32")
+        model = FalconPerceptionForSegmentation._from_config(tiny_config(), dtype="float32")
         assert model.dtype == paddle.float32
         assert paddle.get_default_dtype() == "float64"
         with pytest.raises(ValueError, match="Supported dtypes"):
-            AutoModel.from_config(tiny_config(), dtype="float16")
+            FalconPerceptionForSegmentation._from_config(tiny_config(), dtype="float16")
         assert paddle.get_default_dtype() == "float64"
     finally:
         paddle.set_default_dtype(previous)
 
 
 def test_auto_cached_inference():
-    if not paddle.is_compiled_with_cuda() or paddle.device.cuda.device_count() == 0:
-        pytest.skip("The installed RMSNorm kernel requires a GPU.")
     from paddleformers.transformers.falcon_perception.modeling import KVCache
 
-    paddle.set_device("gpu:0")
-    model = AutoModelForCausalLM.from_config(tiny_config()).eval()
+    model = FalconPerceptionForSegmentation._from_config(tiny_config()).eval()
     ids = paddle.to_tensor([[12, 13, 14, 15]], dtype="int64")
     mask = model.get_attention_mask(paddle.to_tensor([[12, 13, 14, 15, 16]]))
     cache = KVCache(1, 32, model.config.n_heads, model.config.head_dim, model.config.n_layers)

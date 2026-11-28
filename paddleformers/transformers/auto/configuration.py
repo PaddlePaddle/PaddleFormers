@@ -132,7 +132,6 @@ MODEL_NAMES_MAPPING = OrderedDict(
         ("phi4_multimodal", "Phi4MultimodalModel"),
         ("minicpm", "MiniCPM"),
         ("minicpm4_1", "MiniCPM4_1"),
-        ("falcon_perception", "FalconPerceptionForSegmentation"),
         ("cohere", "Cohere"),
         ("granite", "Granite"),
         ("gemma3", "Gemma3ForConditionalGeneration"),

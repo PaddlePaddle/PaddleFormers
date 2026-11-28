@@ -1,5 +1,17 @@
 # Copyright (c) 2026 PaddlePaddle Authors. All Rights Reserved.
-# Licensed under the Apache License, Version 2.0.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Acceptance checks must reject short prefixes and differences outside the last prompt token."""
 import importlib.util
 import json
@@ -25,6 +37,22 @@ def test_forward_checks_every_prompt_position(tmp_path):
     b[0, 0, 4] = 0.009
     np.save(tmp_path / "actual.npy", b)
     assert comparison.compare_forward_logits(tmp_path / "reference.npy", tmp_path / "actual.npy", 0.01)["passed"]
+
+
+def test_forward_reports_first_twenty_positions_separately(tmp_path):
+    reference = np.zeros([1, 25, 7], dtype="float32")
+    actual = reference.copy()
+    actual[:, :20] = 0.001
+    actual[:, 20:] = 0.02
+    np.save(tmp_path / "reference.npy", reference)
+    np.save(tmp_path / "actual.npy", actual)
+    result = comparison.compare_forward_logits(tmp_path / "reference.npy", tmp_path / "actual.npy", 0.01)
+    assert not result["passed"]  # A matching prefix must not hide later differences.
+    prefix = result["first_20_positions"]
+    assert prefix["positions"] == 20 and prefix["shape"] == [1, 20, 7]
+    assert prefix["mean_abs"] == pytest.approx(0.001)
+    assert prefix["max_abs"] == pytest.approx(0.001)
+    assert prefix["per_position_mean_abs"] == pytest.approx([0.001] * 20)
 
 
 def test_forward_rejects_missing_or_nonfinite_logits(tmp_path):
