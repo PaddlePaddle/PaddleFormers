@@ -26,7 +26,6 @@ from transformers.dynamic_module_utils import (
 )
 from transformers.models.auto.configuration_auto import (
     CONFIG_MAPPING_NAMES,
-    model_type_to_module_name,
     replace_list_option_in_docstrings,
 )
 from transformers.utils import (
@@ -42,6 +41,7 @@ from ..image_processing_utils import ImageProcessingMixin
 from ..processing_utils import ProcessorMixin
 from ..tokenizer_utils import TOKENIZER_CONFIG_FILE
 from ..video_processing_utils import BaseVideoProcessor
+from .configuration import model_type_to_module_name
 from .factory import _LazyAutoMapping
 from .image_processing import AutoImageProcessor
 from .tokenizer import AutoTokenizer
@@ -63,6 +63,7 @@ PROCESSOR_MAPPING_NAMES = OrderedDict(
         ("shieldgemma2", "ShieldGemma2Processor"),
         ("glm4v_moe", "Glm4vProcessor"),
         ("glm_ocr", "Glm46VProcessor"),
+        ("internvl_chat", "InternVL3Processor"),
         ("molmo", "MolmoProcessor"),
         ("paligemma2", "PaliGemmaProcessor"),
     ]
